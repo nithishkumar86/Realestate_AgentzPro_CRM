@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.vercel/
+*.log
+.env*
+!.env.example
+*.tsbuildinfo
+AGENTS.md
+logo.png
