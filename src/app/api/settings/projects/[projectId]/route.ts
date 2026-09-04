@@ -1,0 +1,6 @@
+import { z } from "zod";
+import { createErrorResponse, createSuccessResponse, parseJsonBody } from "@/app/api/meta/_lib/route-utils";
+import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
+import { resolveTenantRequestContext } from "@/lib/server/tenant-context";
+const schema = z.object({ projectName: z.string().trim().min(1).max(120).optional(), isActive: z.boolean().optional() }).refine((value) => value.projectName !== undefined || value.isActive !== undefined).strict();
+export async function PATCH(request: Request, { params }: { params: Promise<{ projectId: string }> }) { try { const context = await resolveTenantRequestContext(); const body = await parseJsonBody(request, schema); const { projectId } = await params; const update = { ...(body.projectName === undefined ? {} : { project_name: body.projectName }), ...(body.isActive === undefined ? {} : { is_active: body.isActive }) }; const { data, error } = await getSupabaseAdminClient().from("projects").update(update).eq("id", projectId).eq("tenant_id", context.tenantId).select("id,project_name,is_active").single(); if (error) throw error; return createSuccessResponse({ id: data.id, name: data.project_name, isActive: data.is_active }); } catch (error) { return createErrorResponse(error); } }

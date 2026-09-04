@@ -1,7 +1,7 @@
 import "server-only";
 
 import { AppError } from "@/lib/server/app-error";
-import { getServerEnvironment } from "@/lib/server/env";
+import { getMetaEnv } from "@/lib/server/env";
 
 export const REQUIRED_META_PERMISSIONS = [
   "pages_read_engagement",
@@ -33,6 +33,48 @@ type PagesResponse = {
   paging?: { next?: string };
 };
 
+type GraphErrorPayload = {
+  error?: {
+    code?: number;
+    error_subcode?: number;
+    is_transient?: boolean;
+    message?: string;
+    type?: string;
+  };
+};
+
+type PageSubscriptionResponse = { success?: boolean };
+type PageSubscriptionsResponse = { data?: Array<{ id?: string }> };
+
+export type RetrievedMetaLead = {
+  id: string;
+  created_time: string;
+  ad_id?: string;
+  form_id: string;
+  field_data: unknown[];
+  custom_disclaimer_responses?: unknown[];
+  rawPayload: Record<string, unknown>;
+};
+
+export class MetaGraphRequestError extends AppError {
+  public readonly graphErrorCode: number | null;
+  public readonly graphErrorSubcode: number | null;
+  public readonly requiresReauthorization: boolean;
+
+  public constructor(input: { status: number; graphError?: GraphErrorPayload["error"] }) {
+    const graphError = input.graphError;
+    const retryable = input.status === 429 || input.status >= 500 || graphError?.is_transient === true;
+    super(retryable ? "Facebook could not complete the request." : "Facebook rejected the request.", {
+      status: retryable ? 502 : 400,
+      code: retryable ? "META_TEMPORARY_FAILURE" : "META_REQUEST_REJECTED",
+      retryable,
+    });
+    this.graphErrorCode = typeof graphError?.code === "number" ? graphError.code : null;
+    this.graphErrorSubcode = typeof graphError?.error_subcode === "number" ? graphError.error_subcode : null;
+    this.requiresReauthorization = graphError?.type === "OAuthException" && graphError.code === 190;
+  }
+}
+
 export type ValidatedMetaToken = {
   metaUserId: string;
   grantedPermissions: string[];
@@ -49,7 +91,7 @@ export type EligibleMetaPage = {
 
 export class MetaClient {
   public async validateUserToken(inputToken: string): Promise<ValidatedMetaToken> {
-    const environment = getServerEnvironment();
+    const environment = getMetaEnv();
     const response = await this.request<DebugTokenResponse>("/debug_token", {
       input_token: inputToken,
       access_token: `${environment.META_APP_ID}|${environment.META_APP_SECRET}`,
@@ -75,7 +117,7 @@ export class MetaClient {
   }
 
   public async exchangeForLongLivedToken(shortLivedToken: string): Promise<{ accessToken: string; expiresAt: string | null }> {
-    const environment = getServerEnvironment();
+    const environment = getMetaEnv();
     const response = await this.request<TokenExchangeResponse>("/oauth/access_token", {
       grant_type: "fb_exchange_token",
       client_id: environment.META_APP_ID,
@@ -118,12 +160,74 @@ export class MetaClient {
     return pages;
   }
 
+  public async subscribePageToLeadgen(facebookPageId: string, pageAccessToken: string): Promise<void> {
+    const response = await this.requestWithBearer<PageSubscriptionResponse>(`/${facebookPageId}/subscribed_apps`, pageAccessToken, {
+      method: "POST",
+      body: new URLSearchParams({ subscribed_fields: "leadgen" }),
+    });
+
+    if (response.success !== true) {
+      throw new AppError("Facebook Page lead delivery could not be enabled.", {
+        status: 502,
+        code: "META_PAGE_SUBSCRIPTION_FAILED",
+        retryable: true,
+      });
+    }
+  }
+
+  public async confirmPageLeadgenSubscription(facebookPageId: string, pageAccessToken: string): Promise<void> {
+    const environment = getMetaEnv();
+    const response = await this.requestWithBearer<PageSubscriptionsResponse>(`/${facebookPageId}/subscribed_apps`, pageAccessToken, {
+      method: "GET",
+    });
+    const appIsSubscribed = (response.data ?? []).some((subscription) => subscription.id === environment.META_APP_ID);
+
+    if (!appIsSubscribed) {
+      throw new AppError("Facebook Page lead delivery could not be confirmed.", {
+        status: 502,
+        code: "META_PAGE_SUBSCRIPTION_UNCONFIRMED",
+        retryable: true,
+      });
+    }
+  }
+
+  public async retrieveLead(leadgenId: string, pageAccessToken: string): Promise<RetrievedMetaLead> {
+    const rawPayload = await this.requestWithBearer<Record<string, unknown>>(`/${leadgenId}`, pageAccessToken, {
+      method: "GET",
+      query: { fields: "id,created_time,ad_id,form_id,field_data,custom_disclaimer_responses" },
+    });
+
+    if (
+      typeof rawPayload.id !== "string"
+      || typeof rawPayload.created_time !== "string"
+      || typeof rawPayload.form_id !== "string"
+      || !Array.isArray(rawPayload.field_data)
+      || (rawPayload.ad_id !== undefined && typeof rawPayload.ad_id !== "string")
+      || (rawPayload.custom_disclaimer_responses !== undefined && !Array.isArray(rawPayload.custom_disclaimer_responses))
+    ) {
+      throw new AppError("Facebook returned an invalid lead response.", {
+        status: 502,
+        code: "META_LEAD_RESPONSE_INVALID",
+      });
+    }
+
+    return {
+      id: rawPayload.id,
+      created_time: rawPayload.created_time,
+      ad_id: rawPayload.ad_id as string | undefined,
+      form_id: rawPayload.form_id,
+      field_data: rawPayload.field_data,
+      custom_disclaimer_responses: rawPayload.custom_disclaimer_responses as unknown[] | undefined,
+      rawPayload,
+    };
+  }
+
   private async request<T>(path: string, query: Record<string, string>): Promise<T> {
     return this.requestUrl<T>(this.buildUrl(path, query));
   }
 
   private buildUrl(path: string, query: Record<string, string>): string {
-    const environment = getServerEnvironment();
+    const environment = getMetaEnv();
     const url = new URL(`${GRAPH_BASE_URL}/${environment.META_GRAPH_API_VERSION}${path}`);
     for (const [key, value] of Object.entries(query)) {
       url.searchParams.set(key, value);
@@ -171,6 +275,43 @@ export class MetaClient {
       code: "META_TEMPORARY_FAILURE",
       retryable: true,
     });
+  }
+
+  private async requestWithBearer<T>(path: string, accessToken: string, options: { method: "GET" | "POST"; body?: URLSearchParams; query?: Record<string, string> }): Promise<T> {
+    const environment = getMetaEnv();
+    const url = new URL(`${GRAPH_BASE_URL}/${environment.META_GRAPH_API_VERSION}${path}`);
+    for (const [key, value] of Object.entries(options.query ?? {})) {
+      url.searchParams.set(key, value);
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        method: options.method,
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          ...(options.body ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+        },
+        body: options.body,
+        signal: controller.signal,
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as GraphErrorPayload;
+        throw new MetaGraphRequestError({ status: response.status, graphError: payload.error });
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new MetaGraphRequestError({ status: 503 });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }
 

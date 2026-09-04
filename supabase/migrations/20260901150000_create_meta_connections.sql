@@ -2,7 +2,7 @@ create extension if not exists pgcrypto;
 
 create table public.meta_connections (
     id uuid primary key default gen_random_uuid(),
-    tenant_id uuid not null references public.tenants(id) on delete cascade,
+    tenant_id uuid not null references public.tenants(tenant_id) on delete cascade,
     connected_by_user_id uuid references auth.users(id) on delete set null,
     meta_user_id text not null,
     granted_permissions text[] not null default '{}'::text[],
@@ -23,7 +23,7 @@ create table public.meta_connections (
 
 create table public.facebook_pages (
     id uuid primary key default gen_random_uuid(),
-    tenant_id uuid not null references public.tenants(id) on delete cascade,
+    tenant_id uuid not null references public.tenants(tenant_id) on delete cascade,
     meta_connection_id uuid not null,
     facebook_page_id text not null,
     facebook_page_name text not null,

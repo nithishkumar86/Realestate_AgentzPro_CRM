@@ -1,431 +1,76 @@
 "use client";
 
-import Link from "next/link";
-import { Download, Eye, Loader2, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { EmptyState, Notice, PageHeader, SkeletonRows, displayValue } from "@/components/ui";
-import { formatDateTime, formatRangeForFilename, toReadableLabel } from "@/lib/date-utils";
-import { type DateFilter, type Lead, type LeadCounts, type LeadQuery, type LeadView, type PaginatedLeads } from "@/lib/types";
-import {
-  exportLeadsToCsv,
-  getAllMatchingLeads,
-  getLeadCounts,
-  getLeadDateRange,
-  getLeads,
-} from "@/services/crm-data-service";
+import { CalendarDays, Download, Filter, Tag, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LEAD_LABELS, LEAD_STATUSES, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 
-const PAGE_SIZE = 6;
+type Quick = "All Leads" | "Today Leads" | "This Month Leads";
+type Lead = { id: string; name: string; phone: string; source: string; status: LeadStatus; label: LeadLabel; project: string; date: string };
+type LeadApiRow = { id: string; leadName: string | null; phone: string | null; project: string | null; facebookPage: string; leadDate: string; status: LeadStatus; label: LeadLabel };
+type LeadQueryResponse = { items: LeadApiRow[]; timezone: string };
+type ApiError = { error?: { message?: string } };
 
-const viewLabels: Record<LeadView, string> = {
-  today: "Leads Today",
-  month: "Leads This Month",
-  all: "All Leads",
-};
+function toLead(row: LeadApiRow): Lead {
+  return { id: row.id, name: row.leadName ?? "Unnamed Lead", phone: row.phone ?? "—", source: row.facebookPage, status: row.status, label: row.label, project: row.project ?? "Unassigned", date: row.leadDate };
+}
+function buildFilterBody(quick: Quick, status: LeadStatus | "", label: LeadLabel | "", from: string, to: string) {
+  return { quickFilter: quick === "Today Leads" ? "today" : quick === "This Month Leads" ? "month" : "all", ...(status ? { status } : {}), ...(label ? { label } : {}), ...(from ? { dateFrom: from } : {}), ...(to ? { dateTo: to } : {}), pageSize: 100 };
+}
+async function readErrorMessage(response: Response, fallback: string): Promise<string> { const body = (await response.json().catch(() => null)) as ApiError | null; return body?.error?.message ?? fallback; }
 
 export function LeadsPageClient() {
-  const [activeView, setActiveView] = useState<LeadView>("today");
-  const [counts, setCounts] = useState<LeadCounts | null>(null);
-  const [leadsState, setLeadsState] = useState<PaginatedLeads | null>(null);
-  const [searchText, setSearchText] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState<DateFilter>(null);
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
-  const [page, setPage] = useState(1);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [timezone, setTimezone] = useState("UTC");
   const [isLoading, setIsLoading] = useState(true);
-  const [isPageLoading, setIsPageLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [csvMessage, setCsvMessage] = useState<{ tone: "success" | "danger" | "warning"; text: string } | null>(null);
-  const [isCsvPreparing, setIsCsvPreparing] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const lastViewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [quick, setQuick] = useState<Quick>("All Leads"); const [status, setStatus] = useState<LeadStatus | "">(""); const [label, setLabel] = useState<LeadLabel | "">(""); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [dialog, setDialog] = useState<"filter" | "date" | "status" | "label" | null>(null);
+  const [editing, setEditing] = useState<{ lead: Lead; field: "status" | "label" } | null>(null);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedSearch(searchText.trim());
-      setPage(1);
-    }, 280);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [searchText]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadCounts() {
-      try {
-        const data = await getLeadCounts();
-        if (isMounted) {
-          setCounts(data);
-        }
-      } catch {
-        if (isMounted) {
-          setErrorMessage("Lead totals could not be loaded.");
-        }
-      }
-    }
-
-    void loadCounts();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const query = useMemo<LeadQuery>(
-    () => ({
-      view: activeView,
-      search: activeView === "all" ? debouncedSearch : "",
-      dateFilter: activeView === "all" ? dateFilter : null,
-      customStartDate: activeView === "all" && dateFilter === "custom" ? customStartDate || null : null,
-      customEndDate: activeView === "all" && dateFilter === "custom" ? customEndDate || null : null,
-      page,
-      pageSize: PAGE_SIZE,
-    }),
-    [activeView, customEndDate, customStartDate, dateFilter, debouncedSearch, page],
-  );
-
-  useEffect(() => {
-    let isMounted = true;
-
+    let active = true;
     async function loadLeads() {
+      setIsLoading(true); setLoadError(null);
       try {
-        setErrorMessage(null);
-        setCsvMessage(null);
-        setIsLoading(page === 1);
-        setIsPageLoading(page > 1);
-        const data = await getLeads(query);
-        if (isMounted) {
-          setLeadsState(data);
-        }
+        const response = await fetch("/api/leads/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(buildFilterBody(quick, status, label, from, to)) });
+        if (!response.ok) throw new Error(await readErrorMessage(response, "Leads could not be loaded."));
+        const data = (await response.json()) as LeadQueryResponse;
+        if (active) { setLeads(data.items.map(toLead)); setTimezone(data.timezone); }
       } catch (error) {
-        if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : "Leads could not be loaded.");
-        }
+        if (active) setLoadError(error instanceof Error ? error.message : "Leads could not be loaded.");
       } finally {
-        if (isMounted) {
-          setIsLoading(false);
-          setIsPageLoading(false);
-        }
+        if (active) setIsLoading(false);
       }
     }
-
     void loadLeads();
+    return () => { active = false; };
+  }, [quick, status, label, from, to]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [page, query]);
-
-  function selectView(view: LeadView) {
-    setActiveView(view);
-    setPage(1);
-    if (view !== "all") {
-      setDateFilter(null);
-      setSearchText("");
-      setDebouncedSearch("");
-    }
-  }
-
-  function setFilter(nextFilter: DateFilter) {
-    setDateFilter((current) => (current === nextFilter ? null : nextFilter));
-    setPage(1);
-  }
-
-  async function handleCsvDownload() {
+  const saveTriageUpdate = async (lead: Lead, field: "status" | "label", value: string) => {
+    const previous = leads;
+    setLeads((current) => current.map((item) => (item.id !== lead.id ? item : field === "status" ? { ...item, status: value as LeadStatus } : { ...item, label: value as LeadLabel })));
+    setEditing(null); setActionError(null);
     try {
-      setCsvMessage(null);
-      setIsCsvPreparing(true);
-      const matchingLeads = await getAllMatchingLeads({
-        view: activeView,
-        search: activeView === "all" ? debouncedSearch : "",
-        dateFilter: activeView === "all" ? dateFilter : null,
-        customStartDate: activeView === "all" && dateFilter === "custom" ? customStartDate || null : null,
-        customEndDate: activeView === "all" && dateFilter === "custom" ? customEndDate || null : null,
-      });
+      const response = await fetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ [field]: value }) });
+      if (!response.ok) throw new Error(await readErrorMessage(response, "The lead could not be updated."));
+    } catch (error) { setLeads(previous); setActionError(error instanceof Error ? error.message : "The lead could not be updated."); }
+  };
 
-      if (!matchingLeads.length) {
-        setCsvMessage({ tone: "warning", text: "No leads match the selected filter." });
-        return;
-      }
+  const download = async () => {
+    setActionError(null);
+    try {
+      const response = await fetch("/api/leads/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(buildFilterBody(quick, status, label, from, to)) });
+      if (!response.ok) throw new Error(await readErrorMessage(response, "Leads could not be exported."));
+      const link = document.createElement("a"); link.href = URL.createObjectURL(await response.blob()); link.download = "agentzpro-leads.csv"; link.click(); URL.revokeObjectURL(link.href);
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Leads could not be exported."); }
+  };
 
-      const csv = exportLeadsToCsv(matchingLeads);
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const objectUrl = URL.createObjectURL(blob);
-      const downloadLink = document.createElement("a");
-      const range = getLeadDateRange({
-        view: activeView,
-        search: debouncedSearch,
-        dateFilter,
-        customStartDate: customStartDate || null,
-        customEndDate: customEndDate || null,
-      });
-      downloadLink.href = objectUrl;
-      downloadLink.download = `${formatRangeForFilename(range)}.csv`;
-      downloadLink.click();
-      URL.revokeObjectURL(objectUrl);
-      setCsvMessage({ tone: "success", text: "CSV download prepared." });
-    } catch (error) {
-      setCsvMessage({ tone: "danger", text: error instanceof Error ? error.message : "CSV download failed. Try again." });
-    } finally {
-      setIsCsvPreparing(false);
-    }
-  }
+  const formatDate = (value: string) => new Intl.DateTimeFormat("en-IN", { timeZone: timezone, dateStyle: "medium" }).format(new Date(value));
 
-  const isFiltered = Boolean(debouncedSearch || dateFilter);
-  const emptyTitle = getEmptyTitle(activeView, isFiltered, debouncedSearch);
-
-  return (
-    <div className="stack">
-      <PageHeader title="Leads" description="Review, search, filter, and download Meta Lead Ads enquiries." />
-
-      <Notice
-        tone="warning"
-        title="Facebook connection requires attention. New leads may not be received."
-        action={<Link className="button button--secondary" href="/connection">Reconnect Facebook</Link>}
-      />
-
-      <section className="panel">
-        <div className="panel__body stack">
-          <div className="tabs" role="tablist" aria-label="Lead views">
-            {(["today", "month", "all"] as const).map((view) => (
-              <button
-                key={view}
-                ref={activeView === view ? lastViewButtonRef : undefined}
-                className="tab-button"
-                type="button"
-                role="tab"
-                aria-selected={activeView === view}
-                onClick={() => selectView(view)}
-              >
-                {viewLabels[view]} {counts ? `(${counts[view]})` : ""}
-              </button>
-            ))}
-          </div>
-
-          {activeView === "all" ? (
-            <div className="stack">
-              <div className="toolbar">
-                <label className="field">
-                  <span>Search</span>
-                  <span style={{ position: "relative" }}>
-                    <Search aria-hidden="true" size={18} style={{ left: 12, position: "absolute", top: 12 }} />
-                    <input
-                      aria-label="Search by name, phone, or email"
-                      style={{ paddingLeft: 38 }}
-                      value={searchText}
-                      onChange={(event) => setSearchText(event.target.value)}
-                      placeholder="Name, phone, or email"
-                    />
-                  </span>
-                </label>
-                <button className="button button--secondary" type="button" onClick={() => void handleCsvDownload()} disabled={isCsvPreparing}>
-                  {isCsvPreparing ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Download aria-hidden="true" size={18} />}
-                  {isCsvPreparing ? "Preparing download..." : isFiltered ? "Download Filtered Leads" : "Download All Leads"}
-                </button>
-              </div>
-
-              <div className="filter-row" aria-label="Date filters">
-                {(["today", "week", "month"] as const).map((filter) => (
-                  <button
-                    key={filter}
-                    className="filter-button"
-                    type="button"
-                    aria-pressed={dateFilter === filter}
-                    onClick={() => setFilter(filter)}
-                  >
-                    {filter === "today" ? "Today" : filter === "week" ? "This Week" : "This Month"}
-                  </button>
-                ))}
-                <button className="filter-button" type="button" aria-pressed={dateFilter === "custom"} onClick={() => setFilter("custom")}>
-                  Custom date range
-                </button>
-                {dateFilter ? (
-                  <button className="button button--secondary" type="button" onClick={() => setFilter(null)}>
-                    <X aria-hidden="true" size={16} />
-                    Clear filter
-                  </button>
-                ) : null}
-              </div>
-
-              {dateFilter === "custom" ? (
-                <div className="custom-dates">
-                  <label className="field">
-                    <span>Start date</span>
-                    <input type="date" value={customStartDate} onChange={(event) => { setCustomStartDate(event.target.value); setPage(1); }} />
-                  </label>
-                  <label className="field">
-                    <span>End date</span>
-                    <input type="date" value={customEndDate} onChange={(event) => { setCustomEndDate(event.target.value); setPage(1); }} />
-                  </label>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      {errorMessage ? <Notice tone="danger" title={errorMessage} /> : null}
-      {csvMessage ? <Notice tone={csvMessage.tone} title={csvMessage.text} /> : null}
-
-      {isLoading ? <SkeletonRows count={5} /> : null}
-
-      {!isLoading && leadsState && leadsState.items.length > 0 ? (
-        <section className="panel">
-          <div className="panel__body">
-            <LeadList leads={leadsState.items} onViewLead={setSelectedLead} />
-            <div className="pagination">
-              <button className="button button--secondary" type="button" disabled={page <= 1 || isPageLoading} onClick={() => setPage((current) => Math.max(current - 1, 1))}>
-                Previous
-              </button>
-              <span className="field-help">
-                Page {leadsState.page} of {leadsState.totalPages} · {leadsState.total} leads
-                {isPageLoading ? " · Loading..." : ""}
-              </span>
-              <button
-                className="button button--secondary"
-                type="button"
-                disabled={page >= leadsState.totalPages || isPageLoading}
-                onClick={() => setPage((current) => current + 1)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {!isLoading && leadsState && leadsState.items.length === 0 ? (
-        <EmptyState title={emptyTitle} description={activeView === "all" ? "Adjust search or date filters to widen the results." : emptyTitle} />
-      ) : null}
-
-      {selectedLead ? <LeadDetailsModal lead={selectedLead} onClose={() => setSelectedLead(null)} /> : null}
-    </div>
-  );
+  return <div className="mvp-leads"><section className="mvp-filter-actions"><ToolButton icon={<Filter size={17} />} label="Filter" onClick={() => setDialog("filter")} /><ToolButton icon={<CalendarDays size={17} />} label="Date-wise Filter" onClick={() => setDialog("date")} /><ToolButton icon={<Filter size={17} />} label="Status" onClick={() => setDialog("status")} /><ToolButton icon={<Tag size={17} />} label="Label" onClick={() => setDialog("label")} /><button className="button" type="button" onClick={() => void download()}><Download size={17} />Download</button></section>{actionError ? <div className="mvp-inline-error"><span>{actionError}</span><button type="button" onClick={() => setActionError(null)}><X size={15} /></button></div> : null}{quick !== "All Leads" || status || label || from || to ? <div className="mvp-active-filters"><span>Active Filters:</span>{quick !== "All Leads" ? <button type="button" onClick={() => setQuick("All Leads")}>Filter: {quick} <X size={13} /></button> : null}{status ? <button type="button" onClick={() => setStatus("")}>Status: {status} <X size={13} /></button> : null}{label ? <button type="button" onClick={() => setLabel("")}>Label: {label} <X size={13} /></button> : null}{from || to ? <button type="button" onClick={() => { setFrom(""); setTo(""); }}>Date: {from || "…"} – {to || "…"} <X size={13} /></button> : null}<button type="button" className="mvp-clear-all" onClick={() => { setQuick("All Leads"); setStatus(""); setLabel(""); setFrom(""); setTo(""); }}>Clear all</button></div> : null}<section className="mvp-table-wrap"><table className="mvp-table"><thead><tr>{["Client Name", "Phone", "Source", "Status", "Label", "Project", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>{isLoading ? <tr><td className="mvp-empty" colSpan={7}>Loading leads…</td></tr> : loadError ? <tr><td className="mvp-empty" colSpan={7}>{loadError}</td></tr> : leads.length === 0 ? <tr><td className="mvp-empty" colSpan={7}>No leads match these filters.</td></tr> : leads.map((lead) => <tr key={lead.id}><td>{lead.name}</td><td>{lead.phone}</td><td>{lead.source}</td><td><button type="button" className={`mvp-edit-button mvp-edit-button--${tone(lead.status)}`} onClick={() => setEditing({ lead, field: "status" })}>{lead.status}</button></td><td><button type="button" className={`mvp-edit-button mvp-edit-button--${labelTone(lead.label)}`} onClick={() => setEditing({ lead, field: "label" })}>{lead.label}</button></td><td>{lead.project}</td><td>{formatDate(lead.date)}</td></tr>)}</tbody></table></section>{dialog === "filter" ? <Choice title="Filter Leads" values={["All Leads", "Today Leads", "This Month Leads"]} value={quick} instant onCancel={() => setDialog(null)} onSave={(value) => { setQuick(value as Quick); setDialog(null); }} /> : null}{dialog === "status" ? <Choice title="Select Status" values={["All Statuses", ...LEAD_STATUSES]} value={status || "All Statuses"} instant onCancel={() => setDialog(null)} onSave={(value) => { setStatus(value === "All Statuses" ? "" : (value as LeadStatus)); setDialog(null); }} /> : null}{dialog === "label" ? <Choice title="Select Label" values={["All Labels", ...LEAD_LABELS]} value={label || "All Labels"} instant onCancel={() => setDialog(null)} onSave={(value) => { setLabel(value === "All Labels" ? "" : (value as LeadLabel)); setDialog(null); }} /> : null}{dialog === "date" ? <DateDialog from={from} to={to} onCancel={() => setDialog(null)} onSave={(start, end) => { setFrom(start); setTo(end); setQuick("All Leads"); setDialog(null); }} /> : null}{editing ? <Choice title={`Update ${editing.field === "status" ? "Status" : "Label"} — ${editing.lead.name}`} values={editing.field === "status" ? [...LEAD_STATUSES] : [...LEAD_LABELS]} value={editing.lead[editing.field]} instant onCancel={() => setEditing(null)} onSave={(value) => void saveTriageUpdate(editing.lead, editing.field, value)} /> : null}</div>;
 }
-
-function LeadList({ leads, onViewLead }: { leads: Lead[]; onViewLead: (lead: Lead) => void }) {
-  return (
-    <>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Phone</th>
-            <th>Email</th>
-            <th>Facebook Page</th>
-            <th>Received</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {leads.map((lead) => (
-            <tr key={lead.id}>
-              <td className="truncate" title={displayValue(lead.fullName)}>{displayValue(lead.fullName)}</td>
-              <td>{lead.phoneNumber ? <a href={`tel:${lead.phoneNumber}`}>{lead.phoneNumber}</a> : "—"}</td>
-              <td className="truncate" title={displayValue(lead.emailAddress)}>{lead.emailAddress ? <a href={`mailto:${lead.emailAddress}`}>{lead.emailAddress}</a> : "—"}</td>
-              <td className="truncate" title={lead.facebookPageName}>{lead.facebookPageName}</td>
-              <td>{formatDateTime(lead.receivedAt)}</td>
-              <td>
-                <button className="button button--secondary" type="button" onClick={() => onViewLead(lead)}>
-                  <Eye aria-hidden="true" size={17} />
-                  View
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div className="lead-card-list">
-        {leads.map((lead) => (
-          <article className="lead-card" key={lead.id}>
-            <div className="lead-card__top">
-              <strong>{displayValue(lead.fullName)}</strong>
-              <button className="button button--secondary" type="button" onClick={() => onViewLead(lead)}>
-                <Eye aria-hidden="true" size={17} />
-                View
-              </button>
-            </div>
-            <span>{lead.phoneNumber ? <a href={`tel:${lead.phoneNumber}`}>{lead.phoneNumber}</a> : "—"}</span>
-            <span>{lead.emailAddress ? <a href={`mailto:${lead.emailAddress}`}>{lead.emailAddress}</a> : "—"}</span>
-            <span>{lead.facebookPageName}</span>
-            <span>{formatDateTime(lead.receivedAt)}</span>
-          </article>
-        ))}
-      </div>
-    </>
-  );
-}
-
-function LeadDetailsModal({ lead, onClose }: { lead: Lead; onClose: () => void }) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="lead-details-title" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="modal__header">
-          <h2 id="lead-details-title">Lead details</h2>
-          <button className="icon-button" type="button" aria-label="Close lead details" onClick={onClose}>
-            <X aria-hidden="true" size={20} />
-          </button>
-        </div>
-        <div className="modal__body">
-          <dl className="detail-list">
-            <dt>Received</dt>
-            <dd>{formatDateTime(lead.receivedAt)}</dd>
-            <dt>Facebook Page</dt>
-            <dd>{lead.facebookPageName}</dd>
-            <dt>Full name</dt>
-            <dd>{displayValue(lead.fullName)}</dd>
-            <dt>Phone number</dt>
-            <dd>{displayValue(lead.phoneNumber)}</dd>
-            <dt>Email address</dt>
-            <dd>{displayValue(lead.emailAddress)}</dd>
-            {lead.fields.map((field) => (
-              <DetailField key={field.key} label={toReadableLabel(field.key)} values={field.values} />
-            ))}
-          </dl>
-        </div>
-        <div className="modal__footer">
-          <span className="field-help">All available form answers are shown dynamically.</span>
-          <button className="button button--secondary" type="button" onClick={onClose}>Close</button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function DetailField({ label, values }: { label: string; values: string[] }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{values.length ? values.join(", ") : "—"}</dd>
-    </>
-  );
-}
-
-function getEmptyTitle(view: LeadView, isFiltered: boolean, search: string): string {
-  if (isFiltered || search) {
-    return "No matching leads found";
-  }
-
-  if (view === "today") {
-    return "No leads received today.";
-  }
-
-  if (view === "month") {
-    return "No leads received this month.";
-  }
-
-  return "No leads available";
-}
+function ToolButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) { return <button type="button" className="mvp-tool-button" onClick={onClick}>{icon}{label}</button>; }
+function Choice({ title, values, value, instant, onCancel, onSave }: { title: string; values: readonly string[]; value: string; instant?: boolean; onCancel: () => void; onSave: (value: string) => void }) { const [selected, setSelected] = useState(value); return <div className="mvp-status-dialog-backdrop"><section className="mvp-status-dialog" role="dialog" aria-modal="true"><header><h2>{title}</h2><button type="button" className="mvp-dialog-close" onClick={onCancel}><X size={18} /></button></header><div className="mvp-status-dialog__options" role="radiogroup">{values.map((item) => <button type="button" role="radio" aria-checked={selected === item} className={selected === item ? "mvp-status-dialog-option mvp-status-dialog-option--selected" : "mvp-status-dialog-option"} key={item} onClick={() => { setSelected(item); if (instant) onSave(item); }}><span className="mvp-status-radio">{selected === item ? <span /> : null}</span><span>{item}</span></button>)}</div>{!instant ? <footer><button className="button button--secondary" type="button" onClick={onCancel}>Cancel</button><button className="button" type="button" onClick={() => onSave(selected)}>Save</button></footer> : null}</section></div>; }
+function DateDialog({ from, to, onCancel, onSave }: { from: string; to: string; onCancel: () => void; onSave: (from: string, to: string) => void }) { const [start, setStart] = useState(from); const [end, setEnd] = useState(to); return <div className="mvp-status-dialog-backdrop"><section className="mvp-status-dialog" role="dialog" aria-modal="true"><header><h2>Date-wise Filter</h2><button type="button" className="mvp-dialog-close" onClick={onCancel}><X size={18} /></button></header><div className="mvp-date-dialog"><label>From<input type="date" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>To<input type="date" min={start || undefined} value={end} onChange={(event) => setEnd(event.target.value)} /></label></div><footer><button className="button" type="button" onClick={() => onSave(start, end)}>Apply</button></footer></section></div>; }
+function tone(value: LeadStatus): string { return value === "New Lead" || value === "Archived" || value === "Disqualified" ? "red" : value === "Not reachable" || value === "Site visit pending" || value === "Final call" ? "yellow" : value === "Working" || value === "Next project" || value === "Didn't pick the call" ? "pink" : value === "Closed" ? "teal" : value === "Sale" || value === "Site visit done" || value === "Details send via WhatsApp" ? "green" : "blue"; }
+function labelTone(value: LeadLabel): string { return value === "Hot" ? "red" : value === "Warm" ? "yellow" : value === "Cold" ? "blue" : "gray"; }

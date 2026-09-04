@@ -106,6 +106,18 @@ export class ConnectionService {
 
     const sourcePages = await this.getSourcePages(tenantId, connectionId);
     const sourcePagesById = new Map(sourcePages.map((page) => [page.facebookPageId, page]));
+    for (const facebookPageId of facebookPageIds) {
+      const sourcePage = sourcePagesById.get(facebookPageId);
+      if (!sourcePage) {
+        throw new AppError("One or more selected Facebook Pages are no longer available.", {
+          status: 422,
+          code: "META_PAGE_SELECTION_INVALID",
+        });
+      }
+      await this.metaClient.subscribePageToLeadgen(sourcePage.facebookPageId, sourcePage.pageAccessToken);
+      await this.metaClient.confirmPageLeadgenSubscription(sourcePage.facebookPageId, sourcePage.pageAccessToken);
+    }
+
     const persistencePayload = facebookPageIds.map((facebookPageId) => {
       const sourcePage = sourcePagesById.get(facebookPageId);
       if (!sourcePage) {

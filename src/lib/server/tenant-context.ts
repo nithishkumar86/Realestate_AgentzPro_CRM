@@ -1,15 +1,30 @@
 import "server-only";
 
-import { AppError } from "@/lib/server/app-error";
-import { getServerEnvironment } from "@/lib/server/env";
+import { requireCrmAccess } from "@/lib/server/auth/access";
+
+export interface TenantRequestContext {
+  tenantId: string;
+  userId: string;
+}
+
+/**
+ * Resolves the current request's tenant and user from a verified Supabase
+ * session, per login_system_plan.md sections 6 and 8. This composes
+ * session verification, login-state resolution, and the subscription/
+ * membership/tenant-status access predicate — throwing a typed AppError
+ * (401 unauthenticated, 403 onboarding required / integrity error / access
+ * denied) rather than ever falling back to an environment-variable tenant
+ * or a null user, in development or production alike.
+ *
+ * Every tenant-scoped API route and server-side data access goes through
+ * this function; nothing infers tenant identity from a request body or
+ * header.
+ */
+export async function resolveTenantRequestContext(): Promise<TenantRequestContext> {
+  const access = await requireCrmAccess();
+  return { tenantId: access.tenantId, userId: access.userId };
+}
 
 export async function resolveTenantId(): Promise<string> {
-  if (process.env.NODE_ENV === "production") {
-    throw new AppError("Tenant authentication is required before this endpoint can run in production.", {
-      status: 503,
-      code: "TENANT_CONTEXT_UNAVAILABLE",
-    });
-  }
-
-  return getServerEnvironment().META_TEST_TENANT_ID;
+  return (await resolveTenantRequestContext()).tenantId;
 }

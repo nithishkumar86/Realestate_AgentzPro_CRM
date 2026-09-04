@@ -1,10 +1,5 @@
 import type { Metadata } from "next";
 import { DashboardPageClient } from "@/features/dashboard/dashboard-page-client";
 
-export const metadata: Metadata = {
-  title: "Dashboard",
-};
-
-export default function DashboardPage() {
-  return <DashboardPageClient />;
-}
+export const metadata: Metadata = { title: "Dashboard" };
+export default function DashboardPage() { return <DashboardPageClient />; }
