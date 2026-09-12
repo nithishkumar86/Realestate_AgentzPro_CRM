@@ -29,21 +29,25 @@ function loadTurnstileScript(): Promise<void> {
   }
 
   if (!turnstileScriptLoadPromise) {
-    turnstileScriptLoadPromise = new Promise((resolve, reject) => {
+    turnstileScriptLoadPromise = new Promise<void>((resolve, reject) => {
       const existingScript = document.querySelector<HTMLScriptElement>(`script[src="${TURNSTILE_SCRIPT_SRC}"]`);
-      if (existingScript) {
-        existingScript.addEventListener("load", () => resolve(), { once: true });
-        existingScript.addEventListener("error", () => reject(new Error("Turnstile script failed to load.")), { once: true });
-        return;
-      }
+      const script = existingScript ?? document.createElement("script");
 
-      const script = document.createElement("script");
-      script.src = TURNSTILE_SCRIPT_SRC;
-      script.async = true;
-      script.defer = true;
       script.addEventListener("load", () => resolve(), { once: true });
       script.addEventListener("error", () => reject(new Error("Turnstile script failed to load.")), { once: true });
-      document.head.appendChild(script);
+
+      if (!existingScript) {
+        script.src = TURNSTILE_SCRIPT_SRC;
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+      }
+    }).catch((error: unknown) => {
+      // Do not cache a rejected promise: a single transient network blip
+      // would otherwise disable the CAPTCHA — and therefore login — for
+      // the entire lifetime of the page, with a retry impossible.
+      turnstileScriptLoadPromise = null;
+      throw error;
     });
   }
 
@@ -54,11 +58,31 @@ export interface TurnstileWidgetProps {
   siteKey: string;
   onVerify: (token: string) => void;
   onExpire?: () => void;
+  /**
+   * Increment to discard the current token and issue a fresh challenge.
+   * Required after every submit: Turnstile tokens are single-use, so
+   * resubmitting a spent one always fails server-side verification.
+   */
+  resetSignal?: number;
 }
 
-export function TurnstileWidget({ siteKey, onVerify, onExpire }: TurnstileWidgetProps) {
+export function TurnstileWidget({ siteKey, onVerify, onExpire, resetSignal = 0 }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
+
+  // The callbacks are held in refs and read indirectly so that a parent
+  // passing inline arrow functions (a new identity on every render) does
+  // not re-run the effect. Putting them in the dependency array instead
+  // tears down and re-renders the whole widget on every keystroke in the
+  // parent's form, which visibly flickers and makes an interactive
+  // challenge impossible to complete.
+  const onVerifyRef = useRef(onVerify);
+  const onExpireRef = useRef(onExpire);
+
+  useEffect(() => {
+    onVerifyRef.current = onVerify;
+    onExpireRef.current = onExpire;
+  }, [onVerify, onExpire]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,8 +94,9 @@ export function TurnstileWidget({ siteKey, onVerify, onExpire }: TurnstileWidget
         }
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
-          callback: onVerify,
-          "expired-callback": onExpire,
+          callback: (token) => onVerifyRef.current(token),
+          "expired-callback": () => onExpireRef.current?.(),
+          "error-callback": () => onExpireRef.current?.(),
         });
       })
       .catch(() => {
@@ -87,7 +112,17 @@ export function TurnstileWidget({ siteKey, onVerify, onExpire }: TurnstileWidget
         widgetIdRef.current = null;
       }
     };
-  }, [siteKey, onVerify, onExpire]);
+  }, [siteKey]);
+
+  useEffect(() => {
+    // Skip the initial render; the widget is already fresh there.
+    if (resetSignal === 0) {
+      return;
+    }
+    if (widgetIdRef.current && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+  }, [resetSignal]);
 
   return <div ref={containerRef} className="auth-turnstile" />;
 }

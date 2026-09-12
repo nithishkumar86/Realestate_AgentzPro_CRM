@@ -12,7 +12,8 @@ export interface LeadSearchRequest {
   quickFilter?: QuickFilter;
   dateFrom?: string;
   dateTo?: string;
-  projectId?: string | "unassigned";
+  pageRecordId?: string;
+  adId?: string | "unattributed";
   status?: LeadStatus;
   label?: LeadLabel;
   page?: number;
@@ -22,7 +23,7 @@ export interface LeadSearchRequest {
 }
 export interface LeadRow {
   id: string; leadName: string | null; email: string | null; phone: string | null;
-  project: string | null; facebookPage: string; adName: string; leadDate: string;
+  adId: string | null; facebookPage: string; adName: string; leadDate: string;
   status: LeadStatus; label: LeadLabel;
 }
 export interface PaginatedLeadRows { items: LeadRow[]; total: number; page: number; pageSize: number; totalPages: number; timezone: string; }
@@ -34,10 +35,11 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const sortField = request.sortField ?? "leadDate";
   const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name_snapshot,lead_created_time,project_id,status,label,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name),projects!lead_data_tenant_project_fk(project_name)", { count: "exact" })
+    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
-  if (request.projectId === "unassigned") query = query.is("project_id", null);
-  else if (request.projectId) query = query.eq("project_id", request.projectId);
+  if (request.pageRecordId) query = query.eq("facebook_page_record_id", request.pageRecordId);
+  if (request.adId === "unattributed") query = query.is("ad_id", null);
+  else if (request.adId) query = query.eq("ad_id", request.adId);
   if (request.status) query = query.eq("status", request.status);
   if (request.label) query = query.eq("label", request.label);
   if (request.search?.trim()) {
@@ -60,10 +62,41 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
 
 function toLeadRow(lead: Record<string, unknown>): LeadRow {
   const page = lead.facebook_pages as { facebook_page_name?: string } | null;
-  const project = lead.projects as { project_name?: string } | null;
   const adId = typeof lead.ad_id === "string" ? lead.ad_id : null;
-  const snapshot = typeof lead.ad_name_snapshot === "string" && lead.ad_name_snapshot.trim() ? lead.ad_name_snapshot : null;
-  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), project: project?.project_name ?? null, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: snapshot ?? (adId ? `Advertisement ••••${adId.slice(-4)} — name unavailable` : "Organic / Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel };
+  const adName = asNullableString(lead.ad_name);
+  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel };
+}
+
+export type LeadFilterOptions = {
+  pages: Array<{ id: string; name: string }>;
+  ads: Array<{ id: string; name: string | null }>;
+  defaultAdId: string | null;
+};
+
+export async function getLeadFilterOptions(context: TenantRequestContext, pageRecordId?: string): Promise<LeadFilterOptions> {
+  const db = getSupabaseAdminClient();
+  const { data: pages, error: pagesError } = await db.from("facebook_pages")
+    .select("id,facebook_page_name")
+    .eq("tenant_id", context.tenantId)
+    .eq("connection_status", "active")
+    .order("facebook_page_name");
+  if (pagesError) throw new AppError("Lead filters could not be loaded.", { status: 500, code: "LEAD_FILTERS_FAILED" });
+  const selectedPageId = pageRecordId && (pages ?? []).some((page) => page.id === pageRecordId) ? pageRecordId : undefined;
+  let adQuery = db.from("lead_data")
+    .select("ad_id,ad_name,lead_created_time")
+    .eq("tenant_id", context.tenantId)
+    .not("ad_id", "is", null)
+    .order("lead_created_time", { ascending: false })
+    .limit(500);
+  if (selectedPageId) adQuery = adQuery.eq("facebook_page_record_id", selectedPageId);
+  const { data: leads, error: adsError } = await adQuery;
+  if (adsError) throw new AppError("Lead filters could not be loaded.", { status: 500, code: "LEAD_FILTERS_FAILED" });
+  const ads = new Map<string, { id: string; name: string | null }>();
+  for (const lead of leads ?? []) {
+    if (typeof lead.ad_id === "string" && !ads.has(lead.ad_id)) ads.set(lead.ad_id, { id: lead.ad_id, name: asNullableString(lead.ad_name) });
+  }
+  const values = [...ads.values()].sort((left, right) => (left.name ?? left.id).localeCompare(right.name ?? right.id));
+  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null };
 }
 
 /**

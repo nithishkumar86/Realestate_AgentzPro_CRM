@@ -2,6 +2,7 @@ import { z } from "zod";
 import { parseJsonBody, createSuccessResponse, createErrorResponse } from "@/app/api/meta/_lib/route-utils";
 import { requestOtp } from "@/lib/server/auth/otp-service";
 import { getRequestSourceIp } from "@/lib/server/auth/request-ip";
+import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,7 @@ const requestSchema = z.object({
  */
 export async function POST(request: Request): Promise<Response> {
   try {
+    assertSameOrigin(request);
     const body = await parseJsonBody(request, requestSchema);
     const sourceIp = getRequestSourceIp(request);
 

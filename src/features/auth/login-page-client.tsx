@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { BrandLogo } from "@/components/brand-logo";
 import { TurnstileWidget } from "@/features/auth/turnstile-widget";
+import { resetInactivityAfterLogin } from "@/features/auth/inactivity";
 
 type Step = "email" | "otp";
 
@@ -26,11 +27,29 @@ export function LoginPageClient({ turnstileSiteKey }: { turnstileSiteKey: string
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileResetSignal, setTurnstileResetSignal] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const requiresTurnstile = Boolean(turnstileSiteKey);
+
+  // Stable identities: an inline arrow here would give the widget a new
+  // prop on every keystroke in the email field.
+  const handleTurnstileVerify = useCallback((token: string) => setTurnstileToken(token), []);
+  const handleTurnstileExpire = useCallback(() => setTurnstileToken(null), []);
+
+  /**
+   * Turnstile tokens are single-use — the server redeems this one during
+   * verification. Whatever the outcome, it must be discarded and a fresh
+   * challenge issued, or a retry silently resubmits a spent token: the
+   * server rejects it, the response stays deliberately generic, and the UI
+   * advances to the code step announcing an email that was never sent.
+   */
+  function resetTurnstile(): void {
+    setTurnstileToken(null);
+    setTurnstileResetSignal((signal) => signal + 1);
+  }
 
   async function handleRequestOtp(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -59,6 +78,7 @@ export function LoginPageClient({ turnstileSiteKey }: { turnstileSiteKey: string
     } catch {
       setErrorMessage(GENERIC_ERROR_MESSAGE);
     } finally {
+      resetTurnstile();
       setIsSubmitting(false);
     }
   }
@@ -81,6 +101,7 @@ export function LoginPageClient({ turnstileSiteKey }: { turnstileSiteKey: string
         throw new Error(body?.blocked ? "Too many attempts. Please try again in a while." : "The code is incorrect or has expired.");
       }
 
+      resetInactivityAfterLogin();
       router.replace(body.redirectTo ?? "/leads");
       router.refresh();
     } catch (error) {
@@ -94,7 +115,7 @@ export function LoginPageClient({ turnstileSiteKey }: { turnstileSiteKey: string
     setStep("email");
     setEmail("");
     setOtp("");
-    setTurnstileToken(null);
+    resetTurnstile();
     setErrorMessage(null);
     setStatusMessage(null);
   }
@@ -121,7 +142,14 @@ export function LoginPageClient({ turnstileSiteKey }: { turnstileSiteKey: string
             />
           </label>
 
-          {turnstileSiteKey ? <TurnstileWidget siteKey={turnstileSiteKey} onVerify={setTurnstileToken} onExpire={() => setTurnstileToken(null)} /> : null}
+          {turnstileSiteKey ? (
+            <TurnstileWidget
+              siteKey={turnstileSiteKey}
+              onVerify={handleTurnstileVerify}
+              onExpire={handleTurnstileExpire}
+              resetSignal={turnstileResetSignal}
+            />
+          ) : null}
 
           {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
 

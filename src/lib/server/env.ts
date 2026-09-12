@@ -70,6 +70,18 @@ const authEnvironmentSchema = z.object({
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
   UPSTASH_REDIS_REST_URL: z.preprocess(emptyStringToUndefined, z.url().optional()),
   UPSTASH_REDIS_REST_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  // Number of trusted reverse proxies/CDNs between the public internet and
+  // this app. Used to index `x-forwarded-for` from the right, since its
+  // leftmost entries are client-supplied and forgeable (see
+  // src/lib/server/auth/request-ip.ts). Defaults to 1, which is correct for
+  // a standard Vercel or single-nginx deployment. Raise it only if you add
+  // another proxy layer; setting it too high selects a proxy's own address
+  // and lumps all users into one rate-limit bucket, setting it too low
+  // trusts a client-supplied value.
+  TRUSTED_PROXY_HOP_COUNT: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().min(1).max(10).optional(),
+  ),
 });
 
 export type AuthEnvironment = z.infer<typeof authEnvironmentSchema>;
@@ -105,6 +117,25 @@ export function getAuthEnv(): AuthEnvironment {
 
   cachedAuthEnvironment = result.data;
   return cachedAuthEnvironment;
+}
+
+/**
+ * Trusted reverse-proxy depth used when parsing `x-forwarded-for`.
+ * Defaults to 1.
+ *
+ * Deliberately reads process.env directly rather than going through
+ * getAuthEnv(): this is called on the OTP request/verify hot path to build
+ * rate-limit keys, and it must never throw. Routing an unrelated missing
+ * auth variable into an exception here would take down rate limiting
+ * along with it. An absent, malformed, or out-of-range value falls back to
+ * the safe default instead.
+ */
+export function getTrustedProxyHopCount(): number {
+  const parsed = Number(process.env.TRUSTED_PROXY_HOP_COUNT);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10) {
+    return 1;
+  }
+  return parsed;
 }
 
 function hasTurnstileCredentials(environment: AuthEnvironment): boolean {

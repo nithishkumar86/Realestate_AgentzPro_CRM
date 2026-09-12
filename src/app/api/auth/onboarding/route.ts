@@ -1,6 +1,7 @@
 import { createSuccessResponse, createErrorResponse } from "@/app/api/meta/_lib/route-utils";
 import { AppError } from "@/lib/server/app-error";
 import { verifySession } from "@/lib/server/auth/session";
+import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { completeOwnerOnboarding } from "@/lib/server/auth/onboarding-service";
 
 export const runtime = "nodejs";
@@ -15,6 +16,7 @@ export const runtime = "nodejs";
  */
 export async function POST(request: Request): Promise<Response> {
   try {
+    assertSameOrigin(request);
     const session = await verifySession();
     if (!session) {
       throw new AppError("Authentication is required to complete onboarding.", {

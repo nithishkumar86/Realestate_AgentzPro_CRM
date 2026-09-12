@@ -15,8 +15,8 @@ vi.mock("@/lib/server/env", () => ({
 }));
 
 /**
- * Fakes only the 5 raw Redis commands rate-limit.ts calls directly
- * (get/set/incr/expire/ttl) for the verify-block logic, with real TTL
+ * Fakes only the raw Redis commands rate-limit.ts calls directly
+ * (get/set/incr/expire/ttl/del) for the verify-block logic, with real TTL
  * semantics driven by wall-clock time rather than the Upstash server.
  */
 class FakeRedis {
@@ -61,6 +61,14 @@ class FakeRedis {
     const entry = this.store.get(key);
     if (!entry || entry.expiresAt === null) return -1;
     return Math.ceil((entry.expiresAt - Date.now()) / 1000);
+  }
+
+  async del(...keys: string[]): Promise<number> {
+    let deleted = 0;
+    for (const key of keys) {
+      if (this.store.delete(key)) deleted += 1;
+    }
+    return deleted;
   }
 }
 
@@ -118,6 +126,7 @@ const {
   checkOtpSendCooldown,
   checkOtpSendEmailWindow,
   checkOtpSendIpWindow,
+  clearOtpVerificationAttempts,
   isOtpVerifyBlocked,
   recordFailedOtpVerification,
 } = await import("@/lib/server/auth/rate-limit");
@@ -168,6 +177,49 @@ describe("OTP rate limiting", () => {
     const blockedCheck = await isOtpVerifyBlocked(email, ip);
     expect(blockedCheck.allowed).toBe(false);
     expect(blockedCheck.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it("clears the attempt counter on success so earlier typos do not carry forward", async () => {
+    // Regression guard: without the reset, a user who mistyped 4 times,
+    // succeeded, then re-logged in within the same window was locked out
+    // for 30 minutes by a single further typo.
+    const email = "reset-on-success@example.com";
+    const ip = "203.0.113.101";
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect((await recordFailedOtpVerification(email, ip)).allowed).toBe(true);
+    }
+
+    await clearOtpVerificationAttempts(email, ip);
+
+    // The counter restarted, so the next 4 wrong attempts are allowed again
+    // and only the 5th since the reset blocks.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect((await recordFailedOtpVerification(email, ip)).allowed).toBe(true);
+    }
+    expect((await recordFailedOtpVerification(email, ip)).allowed).toBe(false);
+  });
+
+  it("clears an active block on success", async () => {
+    const email = "reset-clears-block@example.com";
+    const ip = "203.0.113.102";
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await recordFailedOtpVerification(email, ip);
+    }
+    expect((await isOtpVerifyBlocked(email, ip)).allowed).toBe(false);
+
+    await clearOtpVerificationAttempts(email, ip);
+    expect((await isOtpVerifyBlocked(email, ip)).allowed).toBe(true);
+  });
+
+  it("is a no-op, not a throw, when clearing while Upstash is unconfigured", async () => {
+    upstashConfigured = false;
+    try {
+      await expect(clearOtpVerificationAttempts("nobody@example.com", "203.0.113.204")).resolves.toBeUndefined();
+    } finally {
+      upstashConfigured = true;
+    }
   });
 
   it("bypasses every check when Upstash is not configured, and flags the bypass", async () => {

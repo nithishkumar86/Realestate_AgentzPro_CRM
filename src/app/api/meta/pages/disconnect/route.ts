@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { ConnectionService } from "@/lib/server/connection-service";
 import { createErrorResponse, createSuccessResponse, parseJsonBody } from "@/app/api/meta/_lib/route-utils";
 
@@ -8,9 +9,10 @@ const disconnectPageSchema = z.object({ page_record_id: z.uuid() }).strict();
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const body = await parseJsonBody(request, disconnectPageSchema);
     return createSuccessResponse(await new ConnectionService().disconnectPage(body.page_record_id));
   } catch (error) {
-    return createErrorResponse(error);
+    return createErrorResponse(error, request);
   }
 }

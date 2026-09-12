@@ -3,10 +3,10 @@ import { createErrorResponse, createSuccessResponse } from "@/app/api/meta/_lib/
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     return createSuccessResponse(await new ConnectionService().getOverview());
   } catch (error) {
-    return createErrorResponse(error);
+    return createErrorResponse(error, request);
   }
 }

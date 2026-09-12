@@ -170,9 +170,20 @@ export async function recordFailedOtpVerification(email: string, sourceIp: strin
   const redis = getRedisClient();
 
   const attemptCount = await redis.incr(attemptsKey);
-  if (attemptCount === 1) {
-    await redis.expire(attemptsKey, VERIFY_ATTEMPT_WINDOW_SECONDS);
-  }
+
+  // The TTL is (re)asserted on every attempt, not only when the counter
+  // reads 1. If a crash or a transient Upstash error lands between the
+  // INCR and the EXPIRE, a counter set once at attempt 1 would keep its
+  // value forever with no expiry — and once it passed the threshold, that
+  // email+IP pair would be locked out permanently with nothing to reset
+  // it. Re-asserting is idempotent and self-heals a missed EXPIRE.
+  //
+  // This makes the window sliding rather than fixed (each wrong attempt
+  // extends it by 15 minutes), which is the safer direction: it lengthens
+  // an attacker's window without ever stranding a legitimate user, since
+  // a successful verification clears the counter outright — see
+  // clearOtpVerificationAttempts().
+  await redis.expire(attemptsKey, VERIFY_ATTEMPT_WINDOW_SECONDS);
 
   if (attemptCount >= VERIFY_ATTEMPT_LIMIT) {
     await redis.set(blockKey, "1", { ex: VERIFY_BLOCK_SECONDS });
@@ -180,4 +191,22 @@ export async function recordFailedOtpVerification(email: string, sourceIp: strin
   }
 
   return { allowed: true, bypassed: false };
+}
+
+/**
+ * Clears the failed-attempt counter and any block for this email/IP after
+ * a successful verification.
+ *
+ * Without this, wrong attempts accumulate across successful logins: a user
+ * who mistypes four times, succeeds, then logs in again within the same
+ * 15-minute window is locked out for 30 minutes by a single further typo,
+ * having only ever got one code wrong in that session.
+ */
+export async function clearOtpVerificationAttempts(email: string, sourceIp: string): Promise<void> {
+  if (!isUpstashConfigured()) {
+    return;
+  }
+
+  const verifyKey = buildOtpVerifyKey(email, sourceIp);
+  await getRedisClient().del(`${verifyKey}:attempts`, `${verifyKey}:blocked`);
 }

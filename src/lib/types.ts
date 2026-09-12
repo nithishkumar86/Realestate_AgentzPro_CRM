@@ -20,6 +20,11 @@ export interface EligibleFacebookPage {
   facebookPageName: string;
   assignedTasks: string[];
   pageIdLastFour: string;
+  /**
+   * Page access this integration still needs before the Page can be connected. Empty means connectable.
+   * Reported rather than the Page being hidden, so "my Page isn't listed" becomes "you need MANAGE on it".
+   */
+  missingTasks: string[];
 }
 
 export type ConnectionAction = "connect" | "reconnect" | "disconnect";

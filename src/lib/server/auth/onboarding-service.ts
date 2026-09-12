@@ -24,6 +24,11 @@ const onboardingInputSchema = z.object({
   phoneNumber: z.string().trim().min(1).max(20),
   companyName: z.string().trim().min(1).max(200),
   professionalRole: z.string().trim().min(1).max(120),
+  // The browser's own IANA zone, e.g. "Asia/Kolkata". Optional, and never trusted: the RPC
+  // checks it against pg_timezone_names and substitutes a usable zone if it is absent or
+  // unknown, so a missing or hostile value can never leave the tenant on the 'UTC' default
+  // that getTenantTimezone rejects with a 503.
+  timezone: z.string().trim().max(64).optional(),
 });
 
 export type OnboardingInput = z.infer<typeof onboardingInputSchema>;
@@ -56,6 +61,7 @@ export async function completeOwnerOnboarding(rawInput: unknown): Promise<Onboar
     p_phone_number: normalizedPhone,
     p_tenant_name: input.companyName,
     p_professional_role: input.professionalRole,
+    p_timezone: input.timezone ?? null,
   });
 
   if (error) {

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { CrmShell } from "@/components/crm-shell";
+import { InactivityLogout } from "@/features/auth/inactivity-logout";
 import { requireCrmAccess } from "@/lib/server/auth/access";
 import { isAppError } from "@/lib/server/app-error";
 
@@ -43,6 +44,7 @@ export default async function CrmLayout({ children }: Readonly<{ children: React
 
   return (
     <CrmShell fullName={access.fullName} tenantName={access.tenantName}>
+      <InactivityLogout />
       {children}
     </CrmShell>
   );

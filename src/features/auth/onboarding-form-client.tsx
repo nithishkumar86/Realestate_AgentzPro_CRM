@@ -9,6 +9,21 @@ interface OnboardingErrorBody {
   error?: { message?: string };
 }
 
+/**
+ * The tenant's timezone decides what "Today's Leads" means and how every lead date reads, so it
+ * has to be recorded at signup — a tenant left on the stored 'UTC' default cannot load leads at
+ * all. The browser already knows it, so it is read here instead of being asked for: one less
+ * field to fill in, and right on the first try for anyone not travelling. Returns undefined when
+ * the environment has no resolvable zone; the server then falls back on its own.
+ */
+function detectTimezone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function OnboardingFormClient() {
   const router = useRouter();
   const [fullName, setFullName] = useState("");
@@ -27,7 +42,7 @@ export function OnboardingFormClient() {
       const response = await fetch("/api/auth/onboarding", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fullName, phoneNumber, companyName, professionalRole }),
+        body: JSON.stringify({ fullName, phoneNumber, companyName, professionalRole, timezone: detectTimezone() }),
       });
 
       if (!response.ok) {

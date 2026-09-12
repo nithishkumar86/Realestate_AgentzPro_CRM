@@ -19,30 +19,64 @@ function getServerSnapshot(): boolean {
   return false;
 }
 
-export function SidebarToggle() {
-  const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+/** Reads the collapsed state written by the blocking script in the root layout. */
+function useSidebarCollapsed(): boolean {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
 
-  function toggle() {
-    const next = !collapsed;
-    document.documentElement.dataset.sidebar = next ? "collapsed" : "expanded";
-    try {
-      localStorage.setItem(STORAGE_KEY, next ? "collapsed" : "expanded");
-    } catch {
-      // Ignore storage failures (private browsing, disabled storage, etc.)
-    }
-    window.dispatchEvent(new Event(CHANGE_EVENT));
+function setCollapsed(collapsed: boolean): void {
+  const value = collapsed ? "collapsed" : "expanded";
+  document.documentElement.dataset.sidebar = value;
+  try {
+    localStorage.setItem(STORAGE_KEY, value);
+  } catch {
+    // Ignore storage failures (private browsing, disabled storage, etc.)
+  }
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+/** Collapse control: lives inside the sidebar and hides it entirely. */
+export function SidebarCollapseButton() {
+  const collapsed = useSidebarCollapsed();
+
+  if (collapsed) {
+    return null;
   }
 
   return (
     <button
       type="button"
       className="sidebar-collapse-btn"
-      onClick={toggle}
-      aria-pressed={collapsed}
-      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      onClick={() => setCollapsed(true)}
+      aria-label="Collapse sidebar"
+      aria-controls="primary-sidebar"
+      aria-expanded
+      title="Collapse sidebar"
     >
-      {collapsed ? <PanelLeftOpen size={14} aria-hidden="true" /> : <PanelLeftClose size={14} aria-hidden="true" />}
+      <PanelLeftClose size={14} aria-hidden="true" />
+    </button>
+  );
+}
+
+/** The only affordance shown while the sidebar is hidden. */
+export function SidebarExpandButton() {
+  const collapsed = useSidebarCollapsed();
+
+  if (!collapsed) {
+    return null;
+  }
+
+  return (
+    <button
+      type="button"
+      className="sidebar-expand-btn"
+      onClick={() => setCollapsed(false)}
+      aria-label="Expand sidebar"
+      aria-controls="primary-sidebar"
+      aria-expanded={false}
+      title="Expand sidebar"
+    >
+      <PanelLeftOpen size={17} aria-hidden="true" />
     </button>
   );
 }

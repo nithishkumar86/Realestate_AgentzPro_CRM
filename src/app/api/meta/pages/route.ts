@@ -15,6 +15,6 @@ export async function GET(request: Request) {
     }
     return createSuccessResponse({ pages: await new ConnectionService().getEligiblePages(connectionId.data) });
   } catch (error) {
-    return createErrorResponse(error);
+    return createErrorResponse(error, request);
   }
 }

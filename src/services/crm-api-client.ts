@@ -1,13 +1,30 @@
 import type { ConnectionOverview, EligibleFacebookPage } from "@/lib/types";
 
-type ApiErrorPayload = { error?: { message?: string } };
+type ApiErrorPayload = { error?: { message?: string; code?: string; details?: Record<string, unknown> } };
+
+/**
+ * Carries the server's machine-readable error code and details alongside the message, so callers can
+ * branch on the failure instead of matching on prose. Needed so the connection page can recognise
+ * META_PERMISSION_DENIED and re-request exactly the Facebook permissions that were declined.
+ */
+export class ApiError extends Error {
+  public readonly code?: string;
+  public readonly details?: Record<string, unknown>;
+
+  public constructor(message: string, code?: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.details = details;
+  }
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, credentials: "same-origin", headers: { "content-type": "application/json", ...init?.headers } });
   const payload = (await response.json().catch(() => null)) as T | ApiErrorPayload | null;
   if (!response.ok) {
-    const message = payload && typeof payload === "object" && "error" in payload ? payload.error?.message : undefined;
-    throw new Error(message ?? "The request could not be completed.");
+    const apiError = payload && typeof payload === "object" && "error" in payload ? payload.error : undefined;
+    throw new ApiError(apiError?.message ?? "The request could not be completed.", apiError?.code, apiError?.details);
   }
   return payload as T;
 }

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
 import { normalizeEmail } from "@/lib/server/auth/otp-identifiers";
-import { checkOtpSendCooldown, checkOtpSendEmailWindow, checkOtpSendIpWindow, isOtpVerifyBlocked, recordFailedOtpVerification } from "@/lib/server/auth/rate-limit";
+import { checkOtpSendCooldown, checkOtpSendEmailWindow, checkOtpSendIpWindow, clearOtpVerificationAttempts, isOtpVerifyBlocked, recordFailedOtpVerification } from "@/lib/server/auth/rate-limit";
 import { verifyTurnstileToken } from "@/lib/server/auth/turnstile";
 
 /**
@@ -78,18 +78,49 @@ export async function requestOtp(params: OtpRequestParams): Promise<void> {
       // (login_system_plan.md section 4), so this is left at its true
       // default and stated explicitly rather than left implicit.
       shouldCreateUser: true,
-      // Passed through for Supabase Auth's own native CAPTCHA protection
-      // (configured separately in the Supabase dashboard against the same
-      // Turnstile site) as a second, independent verification of the same
-      // token — this application's own verifyTurnstileToken() check above
-      // already ran regardless of whether that dashboard setting is on.
-      captchaToken: params.turnstileToken,
+      // `captchaToken` is deliberately NOT passed here.
+      //
+      // Cloudflare Turnstile tokens are single-use: siteverify redeems a
+      // token on first validation and every later validation of the same
+      // token fails with `timeout-or-duplicate`. verifyTurnstileToken()
+      // above has already redeemed this one. Forwarding it to Supabase
+      // would spend it a second time, so if the Supabase dashboard's own
+      // CAPTCHA setting were enabled, signInWithOtp would reject EVERY
+      // login attempt while this route still returned its generic success
+      // response — login would be completely broken and look healthy.
+      //
+      // REQUIRED CONFIGURATION: Supabase Dashboard → Authentication →
+      // Attack Protection → CAPTCHA protection must stay DISABLED. The
+      // CAPTCHA is enforced by this application instead, before any rate
+      // limit is consumed.
     },
   });
 
   if (error) {
-    logOtpEvent("otp_send", "SUPABASE_SEND_FAILED");
+    // Deliberately not surfaced to the caller: the response must stay
+    // generic so it cannot be used to enumerate registered emails. But
+    // this is the one failure here that means "the user asked for a code
+    // and no code was sent", so it is logged at error level with the
+    // provider's reason attached, rather than warn with a bare code.
+    logOtpSendFailure(error);
   }
+}
+
+/**
+ * Logs a Supabase send failure loudly. The email is never included; the
+ * provider's own message is, since it is the only signal distinguishing a
+ * misconfiguration (CAPTCHA enabled, SMTP unset, provider outage) from an
+ * expected per-user limit.
+ */
+function logOtpSendFailure(error: { message: string; status?: number }): void {
+  console.error(
+    JSON.stringify({
+      operation: "otp_send",
+      reason: "SUPABASE_SEND_FAILED",
+      providerStatus: error.status,
+      providerMessage: error.message,
+    }),
+  );
 }
 
 export interface OtpVerifyParams {
@@ -130,6 +161,16 @@ export async function verifyOtp(params: OtpVerifyParams): Promise<OtpVerificatio
     await recordFailedOtpVerification(normalizedEmail, params.sourceIp);
     logOtpEvent("otp_verify", "OTP_INVALID_OR_EXPIRED");
     return { verified: false };
+  }
+
+  // Clear the failed-attempt counter so earlier typos in this window
+  // cannot push a later, legitimate login straight into a 30-minute block.
+  // A failure here must not fail the login itself — the user has already
+  // proved possession of the code.
+  try {
+    await clearOtpVerificationAttempts(normalizedEmail, params.sourceIp);
+  } catch {
+    logOtpEvent("otp_verify", "ATTEMPT_COUNTER_RESET_FAILED");
   }
 
   return { verified: true, userId: data.user.id };

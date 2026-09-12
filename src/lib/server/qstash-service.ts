@@ -19,12 +19,18 @@ export function getRecoveryWorkerUrl(): string {
   return buildInternalUrl(RECOVERY_PATH);
 }
 
-export async function publishLeadRetrievalJob(job: LeadRetrievalJob): Promise<void> {
+/**
+ * Flow control is keyed per tenant. A single global key with parallelism 1 serialised every tenant on
+ * the platform behind one in-flight Graph call, so one slow or throttled tenant stalled everyone else.
+ * Per-tenant keys keep the original guarantee that a tenant never hits Meta concurrently for its own
+ * Pages (which is what protects the per-Page lead rate limit) while letting tenants run independently.
+ */
+export async function publishLeadRetrievalJob(job: LeadRetrievalJob, tenantId: string): Promise<void> {
   await getQstashClient().publishJSON({
     url: getLeadRetrievalWorkerUrl(),
     body: job,
     retries: 3,
-    flowControl: { key: LEAD_RETRIEVAL_FLOW_CONTROL_KEY, parallelism: 1 },
+    flowControl: { key: `${LEAD_RETRIEVAL_FLOW_CONTROL_KEY}-${tenantId}`, parallelism: 1 },
   });
 }
 

@@ -81,7 +81,40 @@ describe("completeOwnerOnboarding", () => {
       p_phone_number: "919876543210",
       p_tenant_name: "BRIQ Aastha",
       p_professional_role: "Real Estate Agent",
+      p_timezone: null,
     });
+  });
+
+  /**
+   * A tenant left on the stored 'UTC' default cannot load leads at all — getTenantTimezone
+   * rejects it with a 503 before any filter runs — so onboarding has to carry a zone through.
+   */
+  it("passes the browser's timezone through to the RPC", async () => {
+    rpcMock.mockClear();
+    rpcMock.mockResolvedValue({ data: [{ tenant_id: "tenant-1", subscription_status: "trialing" }], error: null });
+
+    await completeOwnerOnboarding({ ...VALID_INPUT, timezone: "Asia/Kolkata" });
+
+    expect(rpcMock.mock.calls[0][1]).toMatchObject({ p_timezone: "Asia/Kolkata" });
+  });
+
+  it("sends null rather than omitting the timezone when the browser could not resolve one", async () => {
+    rpcMock.mockClear();
+    rpcMock.mockResolvedValue({ data: [{ tenant_id: "tenant-1", subscription_status: "trialing" }], error: null });
+
+    await completeOwnerOnboarding(VALID_INPUT);
+
+    // Explicit null keeps the RPC on its own fallback instead of leaving the parameter to chance.
+    expect(rpcMock.mock.calls[0][1]).toHaveProperty("p_timezone", null);
+  });
+
+  it("rejects a timezone long enough to be an injection attempt rather than a zone name", async () => {
+    rpcMock.mockClear();
+    await expect(completeOwnerOnboarding({ ...VALID_INPUT, timezone: "a".repeat(65) })).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_ONBOARDING_INPUT",
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 
   it("ignores a browser-supplied user_id, tenant_id, or membership_role in the input", async () => {
@@ -96,7 +129,7 @@ describe("completeOwnerOnboarding", () => {
     });
 
     const [, rpcParams] = rpcMock.mock.calls[0];
-    expect(Object.keys(rpcParams).sort()).toEqual(["p_full_name", "p_phone_number", "p_professional_role", "p_tenant_name"]);
+    expect(Object.keys(rpcParams).sort()).toEqual(["p_full_name", "p_phone_number", "p_professional_role", "p_tenant_name", "p_timezone"]);
     expect(rpcParams).not.toHaveProperty("user_id");
     expect(rpcParams).not.toHaveProperty("tenant_id");
     expect(rpcParams).not.toHaveProperty("membership_role");

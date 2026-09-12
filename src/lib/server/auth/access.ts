@@ -12,12 +12,21 @@ export interface CrmAccessGranted {
 }
 
 /**
- * login_system_plan.md section 5 CRM-access predicate, implemented in
- * TypeScript as defence-in-depth alongside the equivalent
- * private.has_crm_access() Postgres function. `blocked`, any suspended
- * tenant, and any blocked membership never grant access; a trial or paid
- * period only grants access while its own end timestamp is still in the
- * future.
+ * login_system_plan.md section 5 CRM-access predicate. `blocked`, any
+ * suspended tenant, and any blocked membership never grant access; a trial
+ * or paid period only grants access while its own end timestamp is still
+ * in the future.
+ *
+ * NOTE ON DEFENCE-IN-DEPTH: an equivalent `private.has_crm_access()`
+ * Postgres function exists in the auth/tenancy migration, but nothing
+ * currently calls it — no RLS policy references it and no query invokes
+ * it. The CRM tables have RLS enabled with zero policies and are read
+ * exclusively through the service-role client, which bypasses RLS
+ * entirely. This predicate is therefore the ONLY enforcement of CRM
+ * access, and tenant isolation rests entirely on every query carrying an
+ * explicit `.eq("tenant_id", context.tenantId)` filter. Treat a missing
+ * tenant filter as a data-leak bug, not a style issue — there is no
+ * database-level backstop behind it.
  */
 export function evaluateCrmAccess(state: LoginState): boolean {
   if (state.status !== "ready") {

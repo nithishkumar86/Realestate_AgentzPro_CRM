@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/server/env";
+import { AUTH_COOKIE_OPTIONS } from "@/lib/server/auth/cookie-options";
 
 /**
  * Next.js 16 renamed `middleware.ts` to `proxy.ts`; functionality is
@@ -24,6 +25,11 @@ import { getSupabaseEnv } from "@/lib/server/env";
 const CRM_PATH_PREFIXES = ["/leads", "/dashboard", "/connection", "/settings"];
 const LOGIN_PATH = "/login";
 
+/** Matches a path exactly, tolerating a trailing slash. */
+function isPath(pathname: string, target: string): boolean {
+  return pathname === target || pathname === `${target}/`;
+}
+
 function isCrmPath(pathname: string): boolean {
   return CRM_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
@@ -33,6 +39,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   const environment = getSupabaseEnv();
   const supabase = createServerClient(environment.SUPABASE_URL, environment.SUPABASE_PUBLISHABLE_KEY, {
+    // Without this the library's DEFAULT_COOKIE_OPTIONS apply, which leave
+    // the access and refresh tokens readable by client-side JavaScript for
+    // 400 days. See src/lib/server/auth/cookie-options.ts.
+    cookieOptions: AUTH_COOKIE_OPTIONS,
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -46,7 +56,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         }
         response = NextResponse.next({ request });
         for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
+          response.cookies.set(name, value, { ...options, ...AUTH_COOKIE_OPTIONS });
         }
         // Responses that set auth cookies must not be cached by CDNs or
         // reverse proxies, or one user's session token can be served to a
@@ -64,14 +74,40 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   const pathname = request.nextUrl.pathname;
 
   if (!hasSession && isCrmPath(pathname)) {
-    return NextResponse.redirect(new URL(LOGIN_PATH, request.url));
+    return redirectPreservingCookies(request, LOGIN_PATH, response);
   }
 
-  if (hasSession && pathname === LOGIN_PATH) {
-    return NextResponse.redirect(new URL("/leads", request.url));
+  if (hasSession && isPath(pathname, LOGIN_PATH)) {
+    return redirectPreservingCookies(request, "/leads", response);
   }
 
   return response;
+}
+
+/**
+ * A redirect built from scratch carries none of the cookies `setAll` wrote
+ * onto `response`. If the session was refreshed during this invocation and
+ * we then redirect, dropping those cookies leaves the browser holding the
+ * old (possibly now-rotated) refresh token, desynchronising it from
+ * Supabase. Carry them, and the no-cache headers, onto the redirect.
+ */
+function redirectPreservingCookies(
+  request: NextRequest,
+  destination: string,
+  source: NextResponse,
+): NextResponse {
+  const redirect = NextResponse.redirect(new URL(destination, request.url));
+
+  for (const cookie of source.cookies.getAll()) {
+    redirect.cookies.set(cookie);
+  }
+  for (const [key, value] of source.headers.entries()) {
+    if (key.toLowerCase() === "cache-control" || key.toLowerCase() === "pragma" || key.toLowerCase() === "expires") {
+      redirect.headers.set(key, value);
+    }
+  }
+
+  return redirect;
 }
 
 export const config = {

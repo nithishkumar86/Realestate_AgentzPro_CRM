@@ -48,7 +48,21 @@ type PageConnectionRow = {
 
 type NewWebhookEvent = {
   id: string;
+  dispatch_generation: string;
 };
+
+type DispatchableEvent = NewWebhookEvent & { tenant_id: string };
+
+export type ParsedMetaLeadWebhook = {
+  changes: NormalizedLeadgenChange[];
+  /**
+   * leadgen changes whose value did not match Meta's documented shape. They are counted and skipped
+   * rather than thrown, so one malformed change cannot discard the valid leads delivered beside it.
+   */
+  rejectedChangeCount: number;
+};
+
+type InitialEventStatus = "pending" | "pending_reconnect";
 
 type NormalizedLeadgenChange = {
   metaEntryId: string;
@@ -62,9 +76,10 @@ type NormalizedLeadgenChange = {
   rawWebhookChange: Record<string, unknown>;
 };
 
-export function parseMetaLeadWebhook(rawBody: string): NormalizedLeadgenChange[] {
+export function parseMetaLeadWebhook(rawBody: string): ParsedMetaLeadWebhook {
   const payload = metaWebhookSchema.parse(JSON.parse(rawBody));
   const normalizedChanges: NormalizedLeadgenChange[] = [];
+  let rejectedChangeCount = 0;
 
   for (const entry of payload.entry) {
     for (const change of entry.changes) {
@@ -72,47 +87,59 @@ export function parseMetaLeadWebhook(rawBody: string): NormalizedLeadgenChange[]
         continue;
       }
 
-      const leadgenChange = leadgenChangeSchema.parse(change);
+      // Isolated per change: Meta batches several leads into one notification, and a single change we
+      // cannot normalize must not discard its siblings or force the whole delivery to be rejected.
+      const leadgenChange = leadgenChangeSchema.safeParse(change);
+      if (!leadgenChange.success) {
+        rejectedChangeCount += 1;
+        continue;
+      }
+
       normalizedChanges.push({
         metaEntryId: entry.id,
         metaEntryTime: entry.time,
-        leadgenId: leadgenChange.value.leadgen_id,
-        facebookPageId: leadgenChange.value.page_id,
-        formId: leadgenChange.value.form_id,
-        adgroupId: leadgenChange.value.adgroup_id ?? null,
-        adId: leadgenChange.value.ad_id ?? null,
-        leadCreatedTime: leadgenChange.value.created_time,
-        rawWebhookChange: leadgenChange,
+        leadgenId: leadgenChange.data.value.leadgen_id,
+        facebookPageId: leadgenChange.data.value.page_id,
+        formId: leadgenChange.data.value.form_id,
+        adgroupId: leadgenChange.data.value.adgroup_id ?? null,
+        adId: leadgenChange.data.value.ad_id ?? null,
+        leadCreatedTime: leadgenChange.data.value.created_time,
+        rawWebhookChange: leadgenChange.data,
       });
     }
   }
 
-  return normalizedChanges;
+  return { changes: normalizedChanges, rejectedChangeCount };
 }
 
 export class LeadWebhookService {
   public async ingest(rawBody: string): Promise<void> {
-    const changes = parseMetaLeadWebhook(rawBody);
-    const newEventIds: string[] = [];
+    const { changes, rejectedChangeCount } = parseMetaLeadWebhook(rawBody);
+    if (rejectedChangeCount > 0) {
+      console.error(JSON.stringify({ operation: "lead_webhook_ingestion", code: "LEADGEN_CHANGE_REJECTED", rejectedChangeCount }));
+    }
+    const newEvents: DispatchableEvent[] = [];
 
     for (const change of changes) {
       const pageConnection = await this.findPageConnection(change);
       if (!pageConnection) {
-        this.logUnroutableLead(change, "PAGE_CONNECTION_NOT_FOUND");
-        continue;
-      }
-      if (pageConnection.connection_status !== "active" || pageConnection.token_status !== "active") {
-        this.logUnroutableLead(change, "PAGE_CONNECTION_NOT_READY");
+        this.logLeadRouting(change, "PAGE_CONNECTION_NOT_FOUND");
         continue;
       }
 
-      const eventId = await this.insertEvent(pageConnection, change);
-      if (eventId) {
-        newEventIds.push(eventId);
+      // Held rather than dropped: release_pending_reconnect_meta_events sends it through the normal pipeline once the Page reconnects.
+      const awaitingReconnect = pageConnection.connection_status !== "active" || pageConnection.token_status !== "active";
+      const event = await this.insertEvent(pageConnection, change, awaitingReconnect ? "pending_reconnect" : "pending");
+      if (awaitingReconnect) {
+        this.logLeadRouting(change, "PAGE_AWAITING_RECONNECT");
+        continue;
+      }
+      if (event) {
+        newEvents.push({ ...event, tenant_id: pageConnection.tenant_id });
       }
     }
 
-    await Promise.all(newEventIds.map((eventId) => this.dispatchEvent(eventId)));
+    await Promise.all(newEvents.map((event) => this.dispatchEvent(event)));
   }
 
   private async findPageConnection(change: NormalizedLeadgenChange): Promise<PageConnectionRow | null> {
@@ -121,7 +148,11 @@ export class LeadWebhookService {
       .select("id,tenant_id,facebook_page_id,connection_status,token_status")
       .eq("facebook_page_id", change.facebookPageId)
       .neq("connection_status", "disconnected")
-      .lte("connected_at", change.leadCreatedTime)
+      // lead_eligible_since, not connected_at: connected_at is rewritten on every reconnect, so using it
+      // here silently discarded every lead created in the moments before a tenant reconnected the Page.
+      // lead_eligible_since is stamped once when the tenant first claims the Page and survives reconnects,
+      // so the "no backfill of leads from before this tenant owned the Page" guarantee is unchanged.
+      .lte("lead_eligible_since", change.leadCreatedTime)
       .maybeSingle();
 
     if (error) {
@@ -130,10 +161,11 @@ export class LeadWebhookService {
     return (data as PageConnectionRow | null) ?? null;
   }
 
-  private async insertEvent(pageConnection: PageConnectionRow, change: NormalizedLeadgenChange): Promise<string | null> {
+  private async insertEvent(pageConnection: PageConnectionRow, change: NormalizedLeadgenChange, status: InitialEventStatus): Promise<NewWebhookEvent | null> {
     const { data, error } = await getSupabaseAdminClient()
       .from("meta_webhook_notification_events")
       .upsert({
+        processing_status: status,
         tenant_id: pageConnection.tenant_id,
         facebook_page_record_id: pageConnection.id,
         facebook_page_id: change.facebookPageId,
@@ -146,19 +178,23 @@ export class LeadWebhookService {
         lead_created_time: change.leadCreatedTime,
         raw_webhook_change: change.rawWebhookChange,
       }, { onConflict: "leadgen_id", ignoreDuplicates: true })
-      .select("id")
+      .select("id,dispatch_generation")
       .maybeSingle();
 
     if (error) {
       throw new Error("Webhook notification event could not be saved.");
     }
-    return (data as NewWebhookEvent | null)?.id ?? null;
+    return (data as NewWebhookEvent | null) ?? null;
   }
 
-  private async dispatchEvent(eventId: string): Promise<void> {
+  private async dispatchEvent(event: DispatchableEvent): Promise<void> {
+    const eventId = event.id;
     try {
-      await publishLeadRetrievalJob({ webhook_notification_event_id: eventId });
-      const { error } = await getSupabaseAdminClient().rpc("mark_meta_webhook_event_dispatched", { p_event_id: eventId });
+      await publishLeadRetrievalJob({ webhook_notification_event_id: eventId }, event.tenant_id);
+      const { error } = await getSupabaseAdminClient().rpc("mark_meta_webhook_event_dispatched", {
+        p_event_id: eventId,
+        p_dispatch_generation: event.dispatch_generation,
+      });
       if (error) {
         throw new Error("Webhook notification event dispatch could not be recorded.");
       }
@@ -167,7 +203,7 @@ export class LeadWebhookService {
     }
   }
 
-  private logUnroutableLead(change: NormalizedLeadgenChange, code: string): void {
+  private logLeadRouting(change: NormalizedLeadgenChange, code: string): void {
     console.warn(JSON.stringify({
       operation: "lead_webhook_routing",
       code,

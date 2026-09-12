@@ -1,12 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { BarChart3, ClipboardList, Link2, LogOut } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { BarChart3, ClipboardList, Link2 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { SidebarToggle } from "@/components/sidebar-toggle";
+import { SidebarCollapseButton, SidebarExpandButton } from "@/components/sidebar-toggle";
+import { UserMenu } from "@/components/user-menu";
 
 const navigation = [
   { href: "/leads", label: "Leads", icon: ClipboardList },
@@ -22,26 +21,12 @@ export interface CrmShellProps {
 
 export function CrmShell({ children, fullName, tenantName }: Readonly<CrmShellProps>) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [isSigningOut, setIsSigningOut] = useState(false);
-
-  async function handleSignOut(): Promise<void> {
-    setIsSigningOut(true);
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } finally {
-      router.replace("/login");
-      router.refresh();
-    }
-  }
 
   return (
     <div className="mvp-shell">
-      <div className="theme-toggle-fixed">
-        <ThemeToggle />
-      </div>
-      <aside className="mvp-sidebar" aria-label="Primary navigation">
-        <SidebarToggle />
+      <SidebarExpandButton />
+      <aside className="mvp-sidebar" id="primary-sidebar" aria-label="Primary navigation">
+        <SidebarCollapseButton />
         <Link className="mvp-sidebar__brand" href="/leads" aria-label="Go to Leads">
           <BrandLogo />
         </Link>
@@ -58,22 +43,7 @@ export function CrmShell({ children, fullName, tenantName }: Readonly<CrmShellPr
             </Link>
           ))}
         </nav>
-        <div className="mvp-sidebar__user">
-          <div className="mvp-sidebar__user-info">
-            <strong className="mvp-sidebar__user-name">{fullName}</strong>
-            <span className="mvp-sidebar__user-tenant">{tenantName}</span>
-          </div>
-          <button
-            type="button"
-            className="mvp-sidebar__sign-out"
-            title="Sign out"
-            disabled={isSigningOut}
-            onClick={() => void handleSignOut()}
-          >
-            <LogOut size={17} aria-hidden="true" />
-            <span className="mvp-nav-link__label">{isSigningOut ? "Signing out…" : "Sign out"}</span>
-          </button>
-        </div>
+        <UserMenu fullName={fullName} tenantName={tenantName} />
       </aside>
       <main className="mvp-main">{children}</main>
     </div>

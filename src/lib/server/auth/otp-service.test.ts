@@ -88,8 +88,21 @@ describe("requestOtp", () => {
 
     expect(signInWithOtpMock).toHaveBeenCalledWith({
       email: "owner@example.com",
-      options: { shouldCreateUser: true, captchaToken: "token-123" },
+      options: { shouldCreateUser: true },
     });
+  });
+
+  it("never forwards the Turnstile token to Supabase", async () => {
+    // Turnstile tokens are single-use and verifyTurnstileToken() has
+    // already redeemed this one. Forwarding it would spend it twice, and
+    // if Supabase's own CAPTCHA setting were ever enabled that would make
+    // every send fail while this function still reported success — login
+    // broken, and silently. Guards against reintroducing that.
+    await requestOtp(PARAMS);
+
+    const options = signInWithOtpMock.mock.calls[0]?.[0]?.options ?? {};
+    expect(options).not.toHaveProperty("captchaToken");
+    expect(JSON.stringify(signInWithOtpMock.mock.calls)).not.toContain("token-123");
   });
 
   it("does not throw when Supabase itself returns an error", async () => {
