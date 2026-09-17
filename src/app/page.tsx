@@ -75,12 +75,16 @@ export default async function HomePage() {
 
       <footer className={styles.footer}>
         <div className={styles.footerLeft}>
-          <span>AgentzPro CRM</span>
-          <span>Built for better relationships.</span>
+          <span>&copy; {new Date().getFullYear()} AI Digital Tamizha. All rights reserved.</span>
         </div>
-        <Link href="/privacy-policy" className={styles.footerLink}>
-          Privacy Policy
-        </Link>
+        <div className={styles.footerRight}>
+          <Link href="/contact" className={styles.footerLink}>
+            Contact Us
+          </Link>
+          <Link href="/privacy-policy" className={styles.footerLink}>
+            Privacy Policy
+          </Link>
+        </div>
       </footer>
     </div>
   );

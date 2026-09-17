@@ -21,8 +21,9 @@ it("shows one dashboard entry and retains inactivity protection for authorized u
   render(await HomePage());
   expect(mocks.requireCrmAccess).toHaveBeenCalledOnce();
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Your next opportunity\s*starts here\./);
-  expect(screen.getAllByRole("link")).toHaveLength(2);
+  expect(screen.getAllByRole("link")).toHaveLength(3);
   expect(screen.getByRole("link", { name: "Enter CRM Leads" })).toHaveAttribute("href", "/leads");
+  expect(screen.getByRole("link", { name: "Contact Us" })).toHaveAttribute("href", "/contact");
   expect(screen.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
     "href",
     "/privacy-policy"

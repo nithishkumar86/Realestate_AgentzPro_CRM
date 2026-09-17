@@ -39,9 +39,7 @@ function SiteFooter() {
         </span>
         <nav className={styles.footerLinks}>
           <Link href="/">Home</Link>
-          <a href="mailto:aidigitaltamizha@gmail.com">
-            Contact Us
-          </a>
+          <Link href="/contact">Contact Us</Link>
         </nav>
       </div>
     </footer>
