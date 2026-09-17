@@ -53,20 +53,28 @@ function jsonResponse(body: unknown, status = 200): Response {
  * Sending one there is what used to 400 every download, so the stub reproduces that contract
  * rather than accepting anything: put a pagination field back and these tests fail.
  */
-function stubLeadApi() {
-  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>> };
+type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string };
+
+function stubLeadApi(dummyLeads: DummyLead[] = []) {
+  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[] };
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     if (url.startsWith("/api/leads/filters")) return jsonResponse(FILTER_OPTIONS);
     if (url === "/api/leads/query") {
       sent.query.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return jsonResponse({ items: [], total: 0, timezone: "Asia/Kolkata" });
+      const remaining = dummyLeads.filter((lead) => !sent.deletes.includes(lead.id));
+      return jsonResponse({ items: remaining, total: remaining.length, timezone: "Asia/Kolkata" });
     }
     if (url === "/api/leads/export") {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       if ("pageSize" in body || "page" in body) return jsonResponse({ error: { message: "Request data is invalid." } }, 400);
       sent.export.push(body);
       return new Response("Lead Name,Email,Phone\r\nKumar,kumar@example.com,9999999999", { status: 200, headers: { "content-type": "text/csv" } });
+    }
+    const deleteMatch = /^\/api\/leads\/([^/]+)$/.exec(url);
+    if (deleteMatch && init?.method === "DELETE") {
+      sent.deletes.push(deleteMatch[1]);
+      return jsonResponse({ id: deleteMatch[1] });
     }
     throw new Error(`Unexpected request: ${url}`);
   }));
@@ -323,5 +331,94 @@ describe("downloading leads as CSV", () => {
 
     await waitFor(() => expect(sent.export).toHaveLength(1));
     expect(sent.export[0]).toEqual({ quickFilter: "all" });
+  });
+});
+
+const DUMMY_LEADS: DummyLead[] = [
+  { id: "lead-1", leadName: "Dummy One", phone: "9999999991", facebookPage: "Chennai Homes", adName: "karuvi", leadDate: "2026-09-15T02:00:00Z", status: "New Lead", label: "Warm" },
+  { id: "lead-2", leadName: "Dummy Two", phone: "9999999992", facebookPage: "Chennai Homes", adName: "aruvi", leadDate: "2026-09-16T02:00:00Z", status: "New Lead", label: "Hot" },
+];
+
+describe("deleting leads", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("has one checkbox per lead row and no Delete button until something is checked", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    await renderLeadsPage(sent);
+
+    expect(screen.getByRole("checkbox", { name: "Select Dummy One" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Dummy Two" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+  });
+
+  it("warns the deletion is permanent, then deletes the checked lead once confirmed and notifies success", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    const alertSpy = vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    await renderLeadsPage(sent);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("cannot be undone"));
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("never be recovered"));
+
+    await waitFor(() => expect(sent.deletes).toEqual(["lead-1"]));
+    await waitFor(() => expect(screen.queryByText("Dummy One")).not.toBeInTheDocument());
+    expect(screen.getByText("Dummy Two")).toBeInTheDocument();
+    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining("1 lead"));
+    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+  });
+
+  it("deletes every checked lead when several are selected at once", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    await renderLeadsPage(sent);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy Two" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (2)" }));
+
+    await waitFor(() => expect(sent.deletes.sort()).toEqual(["lead-1", "lead-2"]));
+    await waitFor(() => expect(screen.getByText("No leads match these filters.")).toBeInTheDocument());
+  });
+
+  it("deletes nothing when the user cancels the confirmation popup", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    const alertSpy = vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    await renderLeadsPage(sent);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+
+    expect(sent.deletes).toEqual([]);
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(screen.getByText("Dummy One")).toBeInTheDocument();
+  });
+
+  it("shows the server's error and keeps the row when the delete request fails", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    const alertSpy = vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/leads/filters")) return jsonResponse(FILTER_OPTIONS);
+      if (url === "/api/leads/query") { sent.query.push(JSON.parse(String(init?.body)) as Record<string, unknown>); return jsonResponse({ items: DUMMY_LEADS, total: DUMMY_LEADS.length, timezone: "Asia/Kolkata" }); }
+      if (url === "/api/leads/lead-1" && init?.method === "DELETE") return jsonResponse({ error: { message: "This lead cannot be deleted because other records still reference it." } }, 409);
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    await renderLeadsPage(sent);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+
+    await screen.findByText("This lead cannot be deleted because other records still reference it.");
+    expect(screen.getByText("Dummy One")).toBeInTheDocument();
+    expect(alertSpy).not.toHaveBeenCalled();
   });
 });

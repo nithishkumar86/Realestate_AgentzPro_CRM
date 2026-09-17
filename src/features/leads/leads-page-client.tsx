@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CalendarDays, ChevronDown, Download, Filter, LayoutGrid, Megaphone, Search, Tag, X } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronDown, Download, Filter, LayoutGrid, Megaphone, Search, Tag, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 
@@ -105,6 +105,8 @@ export function LeadsPageClient() {
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [draftFrom, setDraftFrom] = useState("");
   const [draftTo, setDraftTo] = useState("");
+  const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -146,7 +148,7 @@ export function LeadsPageClient() {
         const response = await fetch("/api/leads/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...filterBody(), pageSize: 100 }) });
         if (!response.ok) throw new Error(await readError(response, "Leads could not be loaded."));
         const result = await response.json() as { items: Lead[]; timezone: string };
-        if (active) { setLeads(result.items); setTimezone(result.timezone); }
+        if (active) { setLeads(result.items); setTimezone(result.timezone); setSelectedLeadIds([]); }
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Leads could not be loaded."); }
       finally { if (active) setLoading(false); }
     }
@@ -161,6 +163,35 @@ export function LeadsPageClient() {
       const url = URL.createObjectURL(await response.blob()); const link = document.createElement("a");
       link.href = url; link.download = "agentzpro-leads.csv"; link.click(); URL.revokeObjectURL(url);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Leads could not be exported."); }
+  }
+
+  const toggleLeadSelection = (leadId: string) => {
+    setSelectedLeadIds((current) => current.includes(leadId) ? current.filter((id) => id !== leadId) : [...current, leadId]);
+  };
+
+  /**
+   * Deletes every checked lead. Irreversible, so a browser confirm popup names the count and warns
+   * the data can never be recovered before anything is sent; a second popup confirms once the
+   * database rows are actually gone.
+   */
+  async function deleteSelectedLeads(): Promise<void> {
+    if (selectedLeadIds.length === 0) return;
+    const count = selectedLeadIds.length;
+    const warned = globalThis.confirm(`Delete ${count} lead${count === 1 ? "" : "s"}? This cannot be undone and the data can never be recovered.`);
+    if (!warned) return;
+    setIsDeleting(true);
+    try {
+      const responses = await Promise.all(selectedLeadIds.map((id) => fetch(`/api/leads/${id}`, { method: "DELETE" })));
+      const failed = responses.find((response) => !response.ok);
+      if (failed) throw new Error(await readError(failed, "Selected leads could not be deleted."));
+      setLeads((current) => current.filter((lead) => !selectedLeadIds.includes(lead.id)));
+      setSelectedLeadIds([]);
+      globalThis.alert(`${count} lead${count === 1 ? "" : "s"} deleted.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Selected leads could not be deleted.");
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setFrom(""); setTo(""); };
@@ -239,6 +270,9 @@ export function LeadsPageClient() {
           <Filter size={16} />{quick === "All Leads" ? "Today's Leads" : "All Leads"}
         </button>
         <div className="mvp-filter-actions-right">
+          {selectedLeadIds.length > 0 ? <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={isDeleting} onClick={() => void deleteSelectedLeads()}>
+            <Trash2 size={16} />{isDeleting ? "Deleting..." : `Delete (${selectedLeadIds.length})`}
+          </button> : null}
           <button className="mvp-gradient-button mvp-gradient-button--download" type="button" onClick={() => void download()}>
             <Download size={16} />Download
           </button>
@@ -258,10 +292,10 @@ export function LeadsPageClient() {
       {to ? <FilterChip chipLabel="To" value={to} onRemove={() => setTo("")} /> : null}
       <button className="mvp-clear-all" type="button" onClick={reset}>Clear all</button>
     </div> : null}
-    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr>{["Client Name", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
-      {loading ? <tr><td className="mvp-empty" colSpan={7}>Loading leads...</td></tr> : null}
-      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={7}>No leads match these filters.</td></tr> : null}
-      {leads.map((lead) => <tr key={lead.id}><td>{lead.leadName ?? "Unnamed Lead"}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>{lead.status}</td><td>{lead.label}</td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
+    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
+      {loading ? <tr><td className="mvp-empty" colSpan={8}>Loading leads...</td></tr> : null}
+      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={8}>No leads match these filters.</td></tr> : null}
+      {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td>{lead.leadName ?? "Unnamed Lead"}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>{lead.status}</td><td>{lead.label}</td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
     </tbody></table></section>
   </div>;
 }

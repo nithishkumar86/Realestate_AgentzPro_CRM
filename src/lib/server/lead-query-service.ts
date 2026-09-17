@@ -116,6 +116,24 @@ export async function updateLeadTriage(context: TenantRequestContext, leadId: st
   if (!data) throw new AppError("Lead not found for this tenant.", { status: 404, code: "LEAD_NOT_FOUND" });
   return { id: String(data.id), status: data.status as LeadStatus, label: data.label as LeadLabel };
 }
+/**
+ * Permanently deletes one lead. Irreversible — the caller (the [id] DELETE route) must only reach
+ * this after the user has explicitly confirmed, since there is no undo.
+ */
+export async function deleteLead(context: TenantRequestContext, leadId: string): Promise<{ id: string }> {
+  const { data, error } = await getSupabaseAdminClient().from("lead_data")
+    .delete()
+    .eq("tenant_id", context.tenantId)
+    .eq("id", leadId)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (error.code === "23503") throw new AppError("This lead cannot be deleted because other records still reference it.", { status: 409, code: "LEAD_DELETE_BLOCKED" });
+    throw new AppError("The lead could not be deleted.", { status: 500, code: "LEAD_DELETE_FAILED" });
+  }
+  if (!data) throw new AppError("Lead not found for this tenant.", { status: 404, code: "LEAD_NOT_FOUND" });
+  return { id: String(data.id) };
+}
 function asNullableString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value : null; }
 
 async function getTenantTimezone(tenantId: string): Promise<string> {

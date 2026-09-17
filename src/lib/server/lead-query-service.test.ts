@@ -1,19 +1,18 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getLeadFilterOptions, queryLeads } from "@/lib/server/lead-query-service";
+import { deleteLead, getLeadFilterOptions, queryLeads } from "@/lib/server/lead-query-service";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: () => ({ from: mocks.from }) }));
 
-function builder(result: { data: unknown; error: null; count?: number }) {
-  const query: Record<string, any> = {};
-  for (const method of ["select", "eq", "is", "not", "or", "gte", "lt", "order", "range", "limit", "update"]) {
+function builder(result: { data: unknown; error: unknown; count?: number }) {
+  const query: Record<string, ReturnType<typeof vi.fn>> = {};
+  for (const method of ["select", "eq", "is", "not", "or", "gte", "lt", "order", "range", "limit", "update", "delete"]) {
     query[method] = vi.fn(() => query);
   }
-  query.then = (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(result));
   query.single = vi.fn(() => Promise.resolve(result));
   query.maybeSingle = vi.fn(() => Promise.resolve(result));
-  return query;
+  return Object.assign(query, { then: (resolve: (value: unknown) => unknown) => Promise.resolve(resolve(result)) });
 }
 
 const context = { tenantId: "tenant-a", userId: "user-a" };
@@ -61,5 +60,29 @@ describe("tenant-scoped lead query contracts", () => {
     const result = await queryLeads(context, { pageRecordId: "page-a", adId: "ad-1" }, true);
     expect(leads.range).not.toHaveBeenCalled();
     expect(result.items[0]).toMatchObject({ adId: "ad-1", adName: "Campaign", facebookPage: "Page A" });
+  });
+});
+
+describe("deleteLead", () => {
+  it("deletes exactly the tenant-scoped row and returns its id", async () => {
+    const leads = builder({ data: { id: "lead-1" }, error: null });
+    mocks.from.mockReturnValue(leads);
+    const result = await deleteLead(context, "lead-1");
+    expect(leads.delete).toHaveBeenCalled();
+    expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(leads.eq).toHaveBeenCalledWith("id", "lead-1");
+    expect(result).toEqual({ id: "lead-1" });
+  });
+
+  it("throws LEAD_NOT_FOUND when nothing matched (wrong tenant or already deleted)", async () => {
+    const leads = builder({ data: null, error: null });
+    mocks.from.mockReturnValue(leads);
+    await expect(deleteLead(context, "missing-lead")).rejects.toMatchObject({ code: "LEAD_NOT_FOUND", status: 404 });
+  });
+
+  it("reports a blocked delete when a foreign key still references the lead", async () => {
+    const leads = builder({ data: null, error: { code: "23503", message: "violates foreign key constraint" } });
+    mocks.from.mockReturnValue(leads);
+    await expect(deleteLead(context, "lead-1")).rejects.toMatchObject({ code: "LEAD_DELETE_BLOCKED", status: 409 });
   });
 });
