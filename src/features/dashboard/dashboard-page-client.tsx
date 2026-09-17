@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { EmptyState, Notice, PageHeader, SkeletonRows } from "@/components/ui";
-import { type DashboardData } from "@/lib/types";
+import { type ConnectionStatus, type DashboardData } from "@/lib/types";
+import { getConnectionOverview } from "@/services/crm-api-client";
 import { getDashboardData } from "@/services/crm-data-service";
 
 const donutColors = ["#1f6feb", "#16823a", "#b45309", "#7c3aed"];
@@ -12,6 +13,15 @@ export function DashboardPageClient() {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | "not_connected" | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    void getConnectionOverview()
+      .then((overview) => { if (isMounted) setConnectionStatus(overview.connectionStatus); })
+      .catch(() => { /* connection status is best-effort; leave the warning hidden if it can't be loaded */ });
+    return () => { isMounted = false; };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -45,11 +55,13 @@ export function DashboardPageClient() {
     <div className="stack">
       <PageHeader title="Dashboard" description="Track lead volume and this-month Page distribution." />
 
-      <Notice
-        tone="warning"
-        title="Facebook connection requires attention. New leads may not be received."
-        action={<Link className="button button--secondary" href="/connection">Reconnect Facebook</Link>}
-      />
+      {connectionStatus === "disconnected" || connectionStatus === "reauthorization_required" ? (
+        <Notice
+          tone="warning"
+          title="Facebook connection requires attention. New leads may not be received."
+          action={<Link className="button button--secondary" href="/connection">Reconnect Facebook</Link>}
+        />
+      ) : null}
 
       {errorMessage ? <Notice tone="danger" title={errorMessage} /> : null}
       {isLoading ? <SkeletonRows count={4} /> : null}
