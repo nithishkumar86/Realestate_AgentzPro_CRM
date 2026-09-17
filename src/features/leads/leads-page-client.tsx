@@ -250,9 +250,10 @@ export function LeadsPageClient() {
       </div>
       <div className="mvp-filter-row mvp-filter-row--secondary">
         <div className="mvp-date-filter">
-          <button type="button" className={`mvp-field-box__control mvp-date-filter__trigger${from || to ? " mvp-date-filter__trigger--active" : ""}`} aria-haspopup="dialog" aria-expanded={isDateOpen} onClick={openDateFilter}>
+          <button type="button" className={`mvp-field-box__control mvp-date-filter__trigger${from || to ? " mvp-date-filter__trigger--active" : ""}`} aria-haspopup="dialog" aria-expanded={isDateOpen} onClick={() => (isDateOpen ? cancelDateFilter() : openDateFilter())}>
             <span className="mvp-field-box__icon"><CalendarDays size={16} /></span>
             <span className="mvp-field-box__value">Date</span>
+            <ChevronDown size={16} className={`mvp-field-chevron${isDateOpen ? " mvp-field-chevron--open" : ""}`} aria-hidden="true" />
           </button>
           {isDateOpen ? <div className="mvp-date-popover" role="dialog" aria-label="Date range filter">
             <div className="mvp-date-popover__header">

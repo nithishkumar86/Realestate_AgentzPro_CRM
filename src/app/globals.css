@@ -1545,7 +1545,7 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 
 .mvp-filter-row--secondary { align-items: center; }
 
-.mvp-filter-actions-right { display: flex; margin-left: auto; }
+.mvp-filter-actions-right { display: flex; gap: 14px; margin-left: auto; }
 
 /* Search field: icon inline, single row, no boxed label */
 .mvp-search-field {
@@ -1790,8 +1790,8 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 }
 
 .mvp-gradient-button--delete {
-  background: linear-gradient(135deg, #d92d20, #f04438);
-  box-shadow: 0 8px 18px rgba(217, 45, 32, .26);
+  background: linear-gradient(135deg, #2f6feb, #4f8bf7);
+  box-shadow: 0 8px 18px rgba(47, 111, 235, .28);
 }
 .mvp-gradient-button--delete:disabled { cursor: not-allowed; opacity: .7; transform: none; }
 
