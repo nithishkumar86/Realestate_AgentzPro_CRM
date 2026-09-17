@@ -102,7 +102,7 @@ export function LoginPageClient({ turnstileSiteKey }: { turnstileSiteKey: string
       }
 
       resetInactivityAfterLogin();
-      router.replace(body.redirectTo ?? "/leads");
+      router.replace(body.redirectTo ?? "/");
       router.refresh();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : GENERIC_ERROR_MESSAGE);

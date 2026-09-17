@@ -50,7 +50,7 @@ export function OnboardingFormClient() {
         throw new Error(body?.error?.message ?? GENERIC_ERROR_MESSAGE);
       }
 
-      router.replace("/leads");
+      router.replace("/");
       router.refresh();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : GENERIC_ERROR_MESSAGE);

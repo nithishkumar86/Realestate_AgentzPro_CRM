@@ -31,5 +31,5 @@ export default async function OnboardingPage() {
     redirect("/billing");
   }
 
-  redirect(evaluateCrmAccess(state) ? "/leads" : "/billing");
+  redirect(evaluateCrmAccess(state) ? "/" : "/billing");
 }

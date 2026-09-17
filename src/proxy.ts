@@ -78,7 +78,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   if (hasSession && isPath(pathname, LOGIN_PATH)) {
-    return redirectPreservingCookies(request, "/leads", response);
+    return redirectPreservingCookies(request, "/", response);
   }
 
   return response;

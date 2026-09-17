@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * An already-authenticated visit to /login is redirected to /leads by
+ * An already-authenticated visit to /login is redirected to / by
  * src/proxy.ts before this page renders, so no server-side session check
  * is duplicated here.
  */

@@ -30,7 +30,7 @@ export default async function BillingPage() {
   }
 
   if (state.status === "ready" && evaluateCrmAccess(state)) {
-    redirect("/leads");
+    redirect("/");
   }
 
   const isIntegrityError = state.status === "integrity_error";

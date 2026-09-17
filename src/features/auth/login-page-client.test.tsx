@@ -14,7 +14,7 @@ it.each([true, false])("only resets inactivity when OTP verification succeeds: %
   localStorage.setItem(INACTIVITY_STORAGE_KEY, "old inactivity metadata");
   const fetchMock = vi.fn()
     .mockResolvedValueOnce({ ok: true, json: async () => ({ message: "Code sent" }) })
-    .mockResolvedValueOnce({ ok: verified, json: async () => ({ verified, redirectTo: "/leads" }) });
+    .mockResolvedValueOnce({ ok: verified, json: async () => ({ verified, redirectTo: "/" }) });
   vi.stubGlobal("fetch", fetchMock);
   render(<LoginPageClient turnstileSiteKey={null} />);
   fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "agent@example.com" } });
@@ -22,7 +22,7 @@ it.each([true, false])("only resets inactivity when OTP verification succeeds: %
   fireEvent.change(await screen.findByLabelText("Verification code"), { target: { value: "123456" } });
   fireEvent.click(screen.getByRole("button", { name: "Verify and sign in" }));
   if (verified) {
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/leads"));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/"));
     expect(router.refresh).toHaveBeenCalledOnce();
     expect(JSON.parse(localStorage.getItem(INACTIVITY_STORAGE_KEY)!).signedOut).toBe(false);
   } else {

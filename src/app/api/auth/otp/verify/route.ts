@@ -27,7 +27,7 @@ const requestSchema = z.object({
 /**
  * login_system_plan.md section 6.2/6.3: verifies the OTP, then resolves
  * the caller's login state to decide where the client should navigate
- * next — /onboarding for a first-time user, /leads for valid access, or
+ * next — /onboarding for a first-time user, / for valid access, or
  * /billing for an expired/blocked/integrity-error account. A failed or
  * blocked verification never creates or reveals any application row.
  */
@@ -59,12 +59,12 @@ function withNoStore(response: Response): Response {
   return response;
 }
 
-function resolvePostLoginDestination(state: Awaited<ReturnType<typeof resolveLoginState>>): "/onboarding" | "/billing" | "/leads" {
+function resolvePostLoginDestination(state: Awaited<ReturnType<typeof resolveLoginState>>): "/onboarding" | "/billing" | "/" {
   if (state.status === "needs_onboarding") {
     return "/onboarding";
   }
   if (state.status === "integrity_error" || !evaluateCrmAccess(state)) {
     return "/billing";
   }
-  return "/leads";
+  return "/";
 }
