@@ -270,9 +270,9 @@ export function LeadsPageClient() {
           <Filter size={16} />{quick === "All Leads" ? "Today's Leads" : "All Leads"}
         </button>
         <div className="mvp-filter-actions-right">
-          {selectedLeadIds.length > 0 ? <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={isDeleting} onClick={() => void deleteSelectedLeads()}>
-            <Trash2 size={16} />{isDeleting ? "Deleting..." : `Delete (${selectedLeadIds.length})`}
-          </button> : null}
+          <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
+            <Trash2 size={16} />{isDeleting ? "Deleting..." : selectedLeadIds.length > 0 ? `Delete (${selectedLeadIds.length})` : "Delete"}
+          </button>
           <button className="mvp-gradient-button mvp-gradient-button--download" type="button" onClick={() => void download()}>
             <Download size={16} />Download
           </button>

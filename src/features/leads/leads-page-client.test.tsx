@@ -345,13 +345,16 @@ describe("deleting leads", () => {
     vi.restoreAllMocks();
   });
 
-  it("has one checkbox per lead row and no Delete button until something is checked", async () => {
+  it("has one checkbox per lead row and a Delete button that starts disabled", async () => {
     const sent = stubLeadApi(DUMMY_LEADS);
     await renderLeadsPage(sent);
 
     expect(screen.getByRole("checkbox", { name: "Select Dummy One" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Dummy Two" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    expect(screen.getByRole("button", { name: "Delete (1)" })).toBeEnabled();
   });
 
   it("warns the deletion is permanent, then deletes the checked lead once confirmed and notifies success", async () => {
@@ -370,7 +373,7 @@ describe("deleting leads", () => {
     await waitFor(() => expect(screen.queryByText("Dummy One")).not.toBeInTheDocument());
     expect(screen.getByText("Dummy Two")).toBeInTheDocument();
     expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining("1 lead"));
-    expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
   });
 
   it("deletes every checked lead when several are selected at once", async () => {
