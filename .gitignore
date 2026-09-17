@@ -4,10 +4,13 @@ out/
 .vercel/
 *.log
 .env*
-!.env.example
 *.tsbuildinfo
 AGENTS.md
-logo.png
 .claude/
 login_system_plan.md
 .playwright-mcp/
+.remember/
+modified_logo.png
+lead_retrieval.md
+report.md
+scripts/.marketing_api_warmup_state.json
