@@ -109,6 +109,7 @@ describe("requireCrmAccess", () => {
       tenantId: READY_BASE.tenantId,
       tenantName: READY_BASE.tenantName,
       fullName: READY_BASE.fullName,
+      membershipRole: READY_BASE.membershipRole,
     });
   });
 });

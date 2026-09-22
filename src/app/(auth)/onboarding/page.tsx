@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { OnboardingFormClient } from "@/features/auth/onboarding-form-client";
+import { InvitationOnboardingFormClient } from "@/features/auth/invitation-onboarding-form-client";
+import { findPendingInvitationForUser } from "@/lib/server/member-invitation-service";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
@@ -24,6 +26,12 @@ export default async function OnboardingPage() {
   const state = await resolveLoginState(session.userId);
 
   if (state.status === "needs_onboarding") {
+    // An invited member joins the inviting company's existing tenant with the role the owner
+    // chose, so they get the invitation form (personal details only), never the owner form.
+    const invitation = await findPendingInvitationForUser(session.userId);
+    if (invitation) {
+      return <InvitationOnboardingFormClient tenantName={invitation.tenantName} role={invitation.role} />;
+    }
     return <OnboardingFormClient />;
   }
 

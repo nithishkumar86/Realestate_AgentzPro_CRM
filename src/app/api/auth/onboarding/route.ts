@@ -3,6 +3,7 @@ import { AppError } from "@/lib/server/app-error";
 import { verifySession } from "@/lib/server/auth/session";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { completeOwnerOnboarding } from "@/lib/server/auth/onboarding-service";
+import { findPendingInvitationForUser } from "@/lib/server/member-invitation-service";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,15 @@ export async function POST(request: Request): Promise<Response> {
       throw new AppError("Authentication is required to complete onboarding.", {
         status: 401,
         code: "UNAUTHENTICATED",
+      });
+    }
+
+    // An invited person joins the inviting company's tenant through
+    // /api/auth/onboarding/invitation; they must never create a tenant of their own here.
+    if (await findPendingInvitationForUser(session.userId)) {
+      throw new AppError("You have a pending invitation. Complete setup from the invitation form.", {
+        status: 409,
+        code: "INVITATION_PENDING",
       });
     }
 

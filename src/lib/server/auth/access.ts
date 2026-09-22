@@ -9,6 +9,7 @@ export interface CrmAccessGranted {
   tenantId: string;
   tenantName: string;
   fullName: string;
+  membershipRole: string;
 }
 
 /**
@@ -85,5 +86,11 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
     });
   }
 
-  return { userId: session.userId, tenantId: state.tenantId, tenantName: state.tenantName, fullName: state.fullName };
+  return {
+    userId: session.userId,
+    tenantId: state.tenantId,
+    tenantName: state.tenantName,
+    fullName: state.fullName,
+    membershipRole: state.membershipRole,
+  };
 }

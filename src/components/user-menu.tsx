@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { getProfileDetails, type ProfileDetails } from "@/services/profile-api-client";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export interface UserMenuProps {
@@ -34,6 +35,7 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [profileRequestVersion, setProfileRequestVersion] = useState(0);
   const [profileState, setProfileState] = useState<ProfileState>({ status: "loading" });
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -77,6 +79,11 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
 
   const closeProfile = useCallback(() => {
     setIsProfileOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setIsSettingsOpen(false);
     triggerRef.current?.focus();
   }, []);
 
@@ -168,6 +175,11 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
     setIsProfileOpen(true);
   }
 
+  function openSettings(): void {
+    setIsOpen(false);
+    setIsSettingsOpen(true);
+  }
+
   function retryProfile(): void {
     setProfileState({ status: "loading" });
     setProfileRequestVersion((version) => version + 1);
@@ -177,10 +189,10 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
     <div className="mvp-user-menu" ref={containerRef}>
       {isOpen ? (
         <div className="mvp-user-menu__popup" id={popupId} ref={popupRef} aria-label="Account menu">
-          <div className="mvp-user-menu__item mvp-user-menu__item--static">
+          <button type="button" className="mvp-user-menu__item" onClick={openSettings}>
             <Settings size={17} aria-hidden="true" />
             <span>Settings</span>
-          </div>
+          </button>
 
           <button type="button" className="mvp-user-menu__item" onClick={openProfile}>
             <User size={17} aria-hidden="true" />
@@ -235,6 +247,8 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
           onRetry={retryProfile}
         />
       ) : null}
+
+      {isSettingsOpen ? <SettingsDialog fullName={fullName} onClose={closeSettings} /> : null}
     </div>
   );
 }
