@@ -34,8 +34,8 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
   employee: "Employee",
 };
 
-// Only one owner is allowed per tenant, so invitations can grant admin or employee.
-const INVITABLE_ROLES: readonly MembershipRole[] = ["admin", "employee"];
+// Only one owner is allowed per tenant; invitations grant employee only.
+const INVITABLE_ROLES: readonly MembershipRole[] = ["employee"];
 
 type SettingsSection = "members";
 type MembersTab = "team" | "pending";

@@ -129,7 +129,7 @@ describe("UserMenu settings dialog", () => {
 
     const role = within(dialog).getByRole("combobox", { name: "Role" });
     expect(role).toHaveValue("employee");
-    expect(within(role).getAllByRole("option").map((option) => option.textContent)).toEqual(["Admin", "Employee"]);
+    expect(within(role).getAllByRole("option").map((option) => option.textContent)).toEqual(["Employee"]);
 
     expect(within(dialog).getAllByPlaceholderText("jane@example.com")).toHaveLength(1);
     expect(within(dialog).queryByRole("button", { name: "Add more" })).not.toBeInTheDocument();
@@ -216,13 +216,12 @@ describe("UserMenu settings dialog", () => {
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Send" })).toBeEnabled());
 
     fireEvent.change(within(dialog).getByPlaceholderText("jane@example.com"), { target: { value: "ravi@example.com" } });
-    fireEvent.change(within(dialog).getByRole("combobox", { name: "Role" }), { target: { value: "admin" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
 
     const popup = await within(dialog).findByRole("alertdialog", { name: "Invitation sent successfully" });
     expect(within(popup).getByText("ravi@example.com")).toBeInTheDocument();
     expect(within(popup).getByRole("button", { name: "OK" })).toHaveFocus();
-    expect(sendInvitations).toHaveBeenCalledWith([{ email: "ravi@example.com", role: "admin" }]);
+    expect(sendInvitations).toHaveBeenCalledWith([{ email: "ravi@example.com", role: "employee" }]);
     expect(within(dialog).getByPlaceholderText("jane@example.com")).toHaveValue("");
     expect(getTenantMembers).toHaveBeenCalledTimes(2);
 
