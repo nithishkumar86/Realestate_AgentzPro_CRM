@@ -1758,6 +1758,128 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 
 .mvp-members__pending-status { color: var(--warning); font-size: .84rem; font-weight: 700; }
 
+.mvp-members__index {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+.mvp-members__remove {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--danger);
+  font-size: .84rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mvp-members__remove:hover,
+.mvp-members__remove:focus-visible { background: var(--surface-muted); }
+.mvp-members__remove:disabled { opacity: .6; cursor: default; }
+
+/* Pending invitations table: header and rows share one column template so every cell lines up. */
+.mvp-invites__header,
+.mvp-invites__row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 110px 110px 120px;
+  align-items: center;
+  column-gap: 16px;
+  padding: 0 20px;
+}
+
+.mvp-invites__header {
+  min-height: 46px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.mvp-invites__row { min-height: 72px; }
+.mvp-invites__row + .mvp-invites__row { border-top: 1px solid var(--border); }
+.mvp-invites__action { display: flex; justify-content: flex-end; }
+
+.mvp-invites .mvp-members__pending-status {
+  display: inline-flex;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+}
+
+.mvp-invite-popup__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--profile-backdrop);
+  backdrop-filter: blur(3px);
+}
+
+.mvp-invite-popup {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(400px, 100%);
+  padding: 30px 26px 24px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--profile-dialog-shadow);
+  color: var(--text);
+  text-align: center;
+  animation: mvp-profile-dialog-in 190ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.mvp-invite-popup__icon {
+  display: inline-grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.mvp-invite-popup h4 { margin: 6px 0 0; font-size: 1.12rem; }
+.mvp-invite-popup p { margin: 0; color: var(--text-muted); font-size: .9rem; line-height: 1.5; }
+.mvp-invite-popup p strong { color: var(--text); overflow-wrap: anywhere; }
+.mvp-invite-popup__note { padding: 10px 12px; border-radius: 10px; background: var(--warning-bg); }
+.mvp-invite-popup p.mvp-invite-popup__note { color: var(--warning); }
+
+.mvp-invite-popup__ok {
+  min-width: 120px;
+  min-height: 40px;
+  margin-top: 10px;
+  padding: 8px 18px;
+  border: 1px solid var(--text);
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: .9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mvp-invite-popup__ok:hover { opacity: .88; }
+
 @media (max-width: 760px) {
   .mvp-settings-backdrop { padding: 12px; }
   .mvp-settings { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: calc(100vh - 24px); border-radius: 16px; }
@@ -1772,6 +1894,9 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   .mvp-members__search { grid-column: 1 / -1; }
   .mvp-members__row { flex-wrap: wrap; padding-left: 20px; }
   .mvp-members__identity { flex-basis: calc(100% - 56px); }
+  .mvp-invites__header { display: none; }
+  .mvp-invites__row { grid-template-columns: 36px minmax(0, 1fr) auto; row-gap: 8px; padding: 14px 16px; }
+  .mvp-invites__row > :nth-child(n + 3) { grid-column: 2 / -1; justify-content: flex-start; }
 }
 
 @keyframes user-menu-in {

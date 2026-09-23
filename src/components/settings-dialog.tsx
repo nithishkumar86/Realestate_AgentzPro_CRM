@@ -5,17 +5,19 @@ import {
   ArrowDownWideNarrow,
   ChevronDown,
   CircleAlert,
-  CirclePlus,
+  CircleCheck,
   CircleX,
   LoaderCircle,
   Mail,
   MoreHorizontal,
   RotateCcw,
   Search,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
 import {
+  cancelInvitation,
   getTenantMembers,
   sendInvitations,
   type InvitableRole,
@@ -39,9 +41,6 @@ type SettingsSection = "members";
 type MembersTab = "team" | "pending";
 
 type InviteRow = { id: number; email: string; role: MembershipRole };
-
-// Matches MAX_INVITATIONS_PER_REQUEST on the server.
-const MAX_INVITE_ROWS = 10;
 
 // Outcomes after which the row is done: an email went out, or the invitation was recorded for
 // an existing account that will be asked to join on its next sign-in.
@@ -186,6 +185,25 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
   const canInvite = membersState.status === "success" && membersState.overview.canInvite;
   const invitations = membersState.status === "success" ? membersState.overview.invitations : [];
 
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const handleRemoveInvitation = useCallback(
+    async (invitationId: string) => {
+      setRemoveError(null);
+      setRemovingId(invitationId);
+      try {
+        await cancelInvitation(invitationId);
+        refresh();
+      } catch (error) {
+        setRemoveError(error instanceof Error ? error.message : "The invitation could not be removed.");
+      } finally {
+        setRemovingId(null);
+      }
+    },
+    [refresh],
+  );
+
   return (
     <section className="mvp-members" aria-labelledby={`${tabsId}-title`}>
       <header className="mvp-members__header">
@@ -233,21 +251,54 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
               <span>Invitations you send will appear here until they are accepted.</span>
             </div>
           ) : (
-            <div className="mvp-members__list">
-              {invitations.map((invitation) => (
-                <div className="mvp-members__row" key={invitation.invitationId}>
-                  <span className="mvp-members__avatar" aria-hidden="true">
-                    <Mail size={17} />
-                  </span>
-                  <div className="mvp-members__identity">
-                    <strong>{invitation.email}</strong>
-                    <span>Invited {formatDate(invitation.invitedAt)} · expires {formatDate(invitation.expiresAt)}</span>
-                  </div>
-                  <span className="mvp-members__role">{ROLE_LABELS[invitation.role]}</span>
-                  <span className="mvp-members__pending-status">Pending</span>
+            <>
+              {removeError ? (
+                <div className="mvp-members__state mvp-members__state--error" role="alert">
+                  <CircleAlert size={20} aria-hidden="true" />
+                  <span>{removeError}</span>
                 </div>
-              ))}
-            </div>
+              ) : null}
+              <div className="mvp-members__list mvp-invites">
+                <div className="mvp-invites__header">
+                  <span>S.No</span>
+                  <span>Email</span>
+                  <span>Role</span>
+                  <span>Status</span>
+                  <span className="mvp-invites__action">{canInvite ? "Action" : null}</span>
+                </div>
+                {invitations.map((invitation, index) => (
+                  <div className="mvp-invites__row" key={invitation.invitationId}>
+                    <span className="mvp-members__index" aria-hidden="true">{index + 1}</span>
+                    <div className="mvp-members__identity">
+                      <strong>{invitation.email}</strong>
+                      <span>Invited {formatDate(invitation.invitedAt)} · expires {formatDate(invitation.expiresAt)}</span>
+                    </div>
+                    <span className="mvp-members__role">{ROLE_LABELS[invitation.role]}</span>
+                    <span>
+                      <span className="mvp-members__pending-status">Pending</span>
+                    </span>
+                    <span className="mvp-invites__action">
+                      {canInvite ? (
+                        <button
+                          type="button"
+                          className="mvp-members__remove"
+                          aria-label={`Remove invitation for ${invitation.email}`}
+                          disabled={removingId === invitation.invitationId}
+                          onClick={() => void handleRemoveInvitation(invitation.invitationId)}
+                        >
+                          {removingId === invitation.invitationId ? (
+                            <LoaderCircle className="spin" size={15} aria-hidden="true" />
+                          ) : (
+                            <Trash2 size={15} aria-hidden="true" />
+                          )}
+                          Remove
+                        </button>
+                      ) : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -265,6 +316,7 @@ function InviteMembersCard({
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [results, setResults] = useState<InvitationSendResult[]>([]);
+  const [confirmed, setConfirmed] = useState<InvitationSendResult[]>([]);
   const emailLabelId = useId();
   const roleLabelId = useId();
 
@@ -276,11 +328,6 @@ function InviteMembersCard({
     const id = nextRowId.current;
     nextRowId.current += 1;
     return id;
-  }
-
-  function addRow(): void {
-    const id = takeRowId();
-    setRows((current) => [...current, { id, email: "", role: "employee" }]);
   }
 
   async function send(): Promise<void> {
@@ -297,12 +344,13 @@ function InviteMembersCard({
       const sent = await sendInvitations(
         filled.map((row) => ({ email: row.email.trim(), role: row.role as InvitableRole })),
       );
-      setResults(sent);
+      // Successful sends are confirmed in a popup; anything else stays inline for attention.
+      const succeeded = sent.filter((item) => SENT_STATUSES.has(item.status));
+      setResults(sent.filter((item) => !SENT_STATUSES.has(item.status)));
+      setConfirmed(succeeded);
 
       // Keep only the rows that still need attention; clear the ones that went through.
-      const done = new Set(
-        sent.filter((item) => SENT_STATUSES.has(item.status)).map((item) => item.email.toLowerCase()),
-      );
+      const done = new Set(succeeded.map((item) => item.email.toLowerCase()));
       const remaining = filled.filter((row) => !done.has(row.email.trim().toLowerCase()));
       setRows(remaining.length > 0 ? remaining : [{ id: takeRowId(), email: "", role: "employee" }]);
 
@@ -338,11 +386,6 @@ function InviteMembersCard({
           ))}
         </div>
 
-        <button type="button" className="mvp-invite-card__add" onClick={addRow} disabled={rows.length >= MAX_INVITE_ROWS}>
-          <CirclePlus size={17} aria-hidden="true" />
-          Add more
-        </button>
-
         {results.length > 0 ? (
           <ul className="mvp-invite-card__results" aria-label="Invitation results">
             {results.map((item) => (
@@ -366,6 +409,66 @@ function InviteMembersCard({
           {isSending ? "Sending…" : "Send"}
         </button>
       </footer>
+
+      {confirmed.length > 0 ? <InvitationSentPopup results={confirmed} onClose={() => setConfirmed([])} /> : null}
+    </div>
+  );
+}
+
+function EmailList({ emails }: Readonly<{ emails: string[] }>) {
+  return emails.map((email, index) => (
+    <span key={email}>
+      {index > 0 ? ", " : null}
+      <strong>{email}</strong>
+    </span>
+  ));
+}
+
+function InvitationSentPopup({ results, onClose }: Readonly<{ results: InvitationSendResult[]; onClose: () => void }>) {
+  const okButtonRef = useRef<HTMLButtonElement | null>(null);
+  const titleId = useId();
+  // Supabase never emails an address that already has a confirmed account, so those invitations
+  // are only saved. Say so plainly rather than claiming an email went out.
+  const emailed = results.filter((item) => item.status === "sent").map((item) => item.email);
+  const savedOnly = results.filter((item) => item.status === "saved_existing_account").map((item) => item.email);
+  const title = emailed.length > 0 ? "Invitation sent successfully" : "Invitation saved";
+
+  useEffect(() => {
+    okButtonRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className="mvp-invite-popup__backdrop"
+      onKeyDown={(event) => {
+        // Escape dismisses only the popup, not the whole Settings dialog behind it.
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <div className="mvp-invite-popup" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
+        <span className="mvp-invite-popup__icon" aria-hidden="true">
+          <CircleCheck size={34} />
+        </span>
+        <h4 id={titleId}>{title}</h4>
+        {emailed.length > 0 ? (
+          <p>
+            An invitation email has been sent to <EmailList emails={emailed} />. It will appear under Pending Invitations
+            until accepted.
+          </p>
+        ) : null}
+        {savedOnly.length > 0 ? (
+          <p className="mvp-invite-popup__note">
+            <EmailList emails={savedOnly} /> already {savedOnly.length > 1 ? "have accounts" : "has an account"}, so no
+            email was sent. They will be asked to join your organization the next time they sign in.
+          </p>
+        ) : null}
+        <button type="button" className="mvp-invite-popup__ok" ref={okButtonRef} onClick={onClose}>
+          OK
+        </button>
+      </div>
     </div>
   );
 }

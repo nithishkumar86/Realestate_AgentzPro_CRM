@@ -3,7 +3,7 @@ import { AppError } from "@/lib/server/app-error";
 import { verifySession } from "@/lib/server/auth/session";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { completeOwnerOnboarding } from "@/lib/server/auth/onboarding-service";
-import { findPendingInvitationForUser } from "@/lib/server/member-invitation-service";
+import { findPendingInvitationForUser, findWithdrawnInvitationForUser } from "@/lib/server/member-invitation-service";
 
 export const runtime = "nodejs";
 
@@ -32,6 +32,12 @@ export async function POST(request: Request): Promise<Response> {
       throw new AppError("You have a pending invitation. Complete setup from the invitation form.", {
         status: 409,
         code: "INVITATION_PENDING",
+      });
+    }
+    if (await findWithdrawnInvitationForUser(session.userId)) {
+      throw new AppError("This invitation was withdrawn by the organization owner.", {
+        status: 409,
+        code: "INVITATION_WITHDRAWN",
       });
     }
 

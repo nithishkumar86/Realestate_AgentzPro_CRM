@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { OnboardingFormClient } from "@/features/auth/onboarding-form-client";
 import { InvitationOnboardingFormClient } from "@/features/auth/invitation-onboarding-form-client";
-import { findPendingInvitationForUser } from "@/lib/server/member-invitation-service";
+import { InvitationWithdrawnClient } from "@/features/auth/invitation-withdrawn-client";
+import { findPendingInvitationForUser, findWithdrawnInvitationForUser } from "@/lib/server/member-invitation-service";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
@@ -31,6 +32,11 @@ export default async function OnboardingPage() {
     const invitation = await findPendingInvitationForUser(session.userId);
     if (invitation) {
       return <InvitationOnboardingFormClient tenantName={invitation.tenantName} role={invitation.role} />;
+    }
+    // Opened an invite email after the owner withdrew it: explain that, never offer a new company.
+    const withdrawn = await findWithdrawnInvitationForUser(session.userId);
+    if (withdrawn) {
+      return <InvitationWithdrawnClient tenantName={withdrawn.tenantName} />;
     }
     return <OnboardingFormClient />;
   }

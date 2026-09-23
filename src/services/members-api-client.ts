@@ -80,3 +80,16 @@ export async function sendInvitations(
   }
   return results as InvitationSendResult[];
 }
+
+export async function cancelInvitation(invitationId: string): Promise<void> {
+  const response = await fetch(`/api/settings/members/invitations/${encodeURIComponent(invitationId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    headers: { accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
+    throw new Error(payload?.error?.message ?? "The invitation could not be removed.");
+  }
+}

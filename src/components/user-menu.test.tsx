@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getProfileDetails = vi.fn();
 const getTenantMembers = vi.fn();
 const sendInvitations = vi.fn();
+const cancelInvitation = vi.fn();
 const replace = vi.fn();
 const refresh = vi.fn();
 
 vi.mock("@/services/profile-api-client", () => ({ getProfileDetails }));
-vi.mock("@/services/members-api-client", () => ({ getTenantMembers, sendInvitations }));
+vi.mock("@/services/members-api-client", () => ({ getTenantMembers, sendInvitations, cancelInvitation }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, refresh }),
 }));
@@ -123,16 +124,15 @@ describe("UserMenu settings dialog", () => {
     await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
   });
 
-  it("offers only the invitable tenant membership roles and adds invite rows", () => {
+  it("offers only the invitable tenant membership roles and only one invite row", () => {
     const { dialog } = openSettings();
 
     const role = within(dialog).getByRole("combobox", { name: "Role" });
     expect(role).toHaveValue("employee");
     expect(within(role).getAllByRole("option").map((option) => option.textContent)).toEqual(["Admin", "Employee"]);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add more" }));
-    expect(within(dialog).getAllByPlaceholderText("jane@example.com")).toHaveLength(2);
-    expect(within(dialog).getByRole("combobox", { name: "Role 2" })).toHaveValue("employee");
+    expect(within(dialog).getAllByPlaceholderText("jane@example.com")).toHaveLength(1);
+    expect(within(dialog).queryByRole("button", { name: "Add more" })).not.toBeInTheDocument();
   });
 
   it("lists the current user as Owner and filters by text", async () => {
@@ -155,7 +155,7 @@ describe("UserMenu settings dialog", () => {
     expect(within(dialog).getByText("No pending invitations")).toBeInTheDocument();
   });
 
-  it("lists pending invitations with their assigned role", async () => {
+  it("lists pending invitations with a serial number, their assigned role, and a remove action", async () => {
     getTenantMembers.mockResolvedValue({
       ...OVERVIEW,
       invitations: [
@@ -166,12 +166,51 @@ describe("UserMenu settings dialog", () => {
     await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
 
     fireEvent.click(within(dialog).getByRole("tab", { name: "Pending Invitations" }));
+    expect(within(dialog).getByText("1", { selector: ".mvp-members__index" })).toBeInTheDocument();
     expect(within(dialog).getByText("ravi@example.com")).toBeInTheDocument();
     expect(within(dialog).getByText("Admin", { selector: ".mvp-members__role" })).toBeInTheDocument();
     expect(within(dialog).getByText("Pending")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Remove invitation for ravi@example.com" })).toBeInTheDocument();
   });
 
-  it("sends the typed email with the chosen role and shows the result", async () => {
+  it("removes a pending invitation and refreshes the list", async () => {
+    getTenantMembers.mockResolvedValueOnce({
+      ...OVERVIEW,
+      invitations: [
+        { invitationId: "inv-1", email: "ravi@example.com", role: "admin", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
+      ],
+    });
+    getTenantMembers.mockResolvedValueOnce({ ...OVERVIEW, invitations: [] });
+    cancelInvitation.mockResolvedValue(undefined);
+
+    const { dialog } = openSettings();
+    await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Pending Invitations" }));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove invitation for ravi@example.com" }));
+
+    expect(cancelInvitation).toHaveBeenCalledWith("inv-1");
+    await waitFor(() => expect(within(dialog).getByText("No pending invitations")).toBeInTheDocument());
+    expect(getTenantMembers).toHaveBeenCalledTimes(2);
+  });
+
+  it("only owners see the remove action on pending invitations", async () => {
+    getTenantMembers.mockResolvedValue({
+      ...OVERVIEW,
+      canInvite: false,
+      invitations: [
+        { invitationId: "inv-1", email: "ravi@example.com", role: "admin", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
+      ],
+    });
+    const { dialog } = openSettings();
+    await waitFor(() => expect(within(dialog).getByText("Only the owner can invite members.")).toBeInTheDocument());
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Pending Invitations" }));
+
+    expect(within(dialog).getByText("ravi@example.com")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: /Remove invitation/ })).not.toBeInTheDocument();
+  });
+
+  it("sends the typed email with the chosen role and confirms it in a popup", async () => {
     sendInvitations.mockResolvedValue([{ email: "ravi@example.com", status: "sent", message: "Invitation sent." }]);
     const { dialog } = openSettings();
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Send" })).toBeEnabled());
@@ -180,10 +219,43 @@ describe("UserMenu settings dialog", () => {
     fireEvent.change(within(dialog).getByRole("combobox", { name: "Role" }), { target: { value: "admin" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
 
-    await waitFor(() => expect(within(dialog).getByText("Invitation sent.")).toBeInTheDocument());
+    const popup = await within(dialog).findByRole("alertdialog", { name: "Invitation sent successfully" });
+    expect(within(popup).getByText("ravi@example.com")).toBeInTheDocument();
+    expect(within(popup).getByRole("button", { name: "OK" })).toHaveFocus();
     expect(sendInvitations).toHaveBeenCalledWith([{ email: "ravi@example.com", role: "admin" }]);
     expect(within(dialog).getByPlaceholderText("jane@example.com")).toHaveValue("");
     expect(getTenantMembers).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(within(popup).getByRole("button", { name: "OK" }));
+    expect(within(dialog).queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("never claims an email was sent for an existing account", async () => {
+    sendInvitations.mockResolvedValue([
+      { email: "ravi@example.com", status: "saved_existing_account", message: "This person already has an account." },
+    ]);
+    const { dialog } = openSettings();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Send" })).toBeEnabled());
+
+    fireEvent.change(within(dialog).getByPlaceholderText("jane@example.com"), { target: { value: "ravi@example.com" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+
+    const popup = await within(dialog).findByRole("alertdialog", { name: "Invitation saved" });
+    expect(popup).toHaveTextContent("already has an account, so no email was sent");
+    expect(within(dialog).queryByText("Invitation sent successfully")).not.toBeInTheDocument();
+  });
+
+  it("shows non-sent outcomes inline instead of the success popup", async () => {
+    sendInvitations.mockResolvedValue([{ email: "ravi@example.com", status: "already_member", message: "Already a member." }]);
+    const { dialog } = openSettings();
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Send" })).toBeEnabled());
+
+    fireEvent.change(within(dialog).getByPlaceholderText("jane@example.com"), { target: { value: "ravi@example.com" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(within(dialog).getByText("Already a member.")).toBeInTheDocument());
+    expect(within(dialog).queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("disables Send for members who are not the owner", async () => {

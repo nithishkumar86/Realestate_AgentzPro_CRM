@@ -5,12 +5,30 @@ const inviteUserByEmail = vi.fn();
 const tableUpdateEq = vi.fn();
 const tableDeleteEq = vi.fn();
 const authRpc = vi.fn();
+const getUserById = vi.fn();
+// Resolves a `select(...).eq(...)...maybeSingle()` chain from the table name and its eq filters.
+const tableSelect = vi.fn();
+
+function selectChain(table: string) {
+  const filters: Record<string, unknown> = {};
+  const chain = {
+    eq: (column: string, value: unknown) => {
+      filters[column] = value;
+      return chain;
+    },
+    order: () => chain,
+    limit: () => chain,
+    maybeSingle: () => tableSelect(table, filters),
+  };
+  return chain;
+}
 
 vi.mock("@/lib/server/supabase-admin", () => ({
   getSupabaseAdminClient: () => ({
     rpc: adminRpc,
-    auth: { admin: { inviteUserByEmail } },
-    from: () => ({
+    auth: { admin: { inviteUserByEmail, getUserById } },
+    from: (table: string) => ({
+      select: () => selectChain(table),
       update: (values: unknown) => ({ eq: (column: string, value: unknown) => tableUpdateEq(values, column, value) }),
       delete: () => ({ eq: (column: string, value: unknown) => tableDeleteEq(column, value) }),
     }),
@@ -21,7 +39,9 @@ vi.mock("@/lib/server/auth/supabase-auth-client", () => ({
   createAuthClient: async () => ({ rpc: authRpc }),
 }));
 
-const { sendMemberInvitations, acceptMemberInvitation } = await import("@/lib/server/member-invitation-service");
+const { sendMemberInvitations, acceptMemberInvitation, findWithdrawnInvitationForUser, findWithdrawnInvitationById } = await import(
+  "@/lib/server/member-invitation-service"
+);
 
 const OWNER = {
   userId: "owner-1",
@@ -70,7 +90,7 @@ describe("sendMemberInvitations", () => {
       p_email: "ravi@example.com",
       p_membership_role: "admin",
     });
-    expect(inviteUserByEmail).toHaveBeenCalledWith("ravi@example.com", { redirectTo: REDIRECT });
+    expect(inviteUserByEmail).toHaveBeenCalledWith("ravi@example.com", { redirectTo: `${REDIRECT}?invitation=inv-1` });
     expect(tableUpdateEq).toHaveBeenCalledWith({ user_id: "new-user" }, "invitation_id", "inv-1");
     expect(results).toEqual([{ email: "ravi@example.com", status: "sent", message: "Invitation sent." }]);
   });
@@ -145,5 +165,89 @@ describe("acceptMemberInvitation", () => {
   it("rejects an invalid phone number before calling the RPC", async () => {
     await expect(acceptMemberInvitation({ ...VALID, phoneNumber: "abc" })).rejects.toMatchObject({ code: "INVALID_PHONE_NUMBER" });
     expect(authRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("findWithdrawnInvitationById", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns the company name only for a withdrawn invitation", async () => {
+    tableSelect.mockImplementation(async (table: string) =>
+      table === "tenants"
+        ? { data: { tenant_name: "QA Test Co" }, error: null }
+        : { data: { tenant_id: "tenant-1" }, error: null },
+    );
+
+    await expect(findWithdrawnInvitationById("inv-1")).resolves.toEqual({ tenantName: "QA Test Co" });
+    expect(tableSelect).toHaveBeenCalledWith("invitation_member", { invitation_id: "inv-1", status: "revoked" });
+  });
+
+  it("returns null for any invitation that was not withdrawn", async () => {
+    tableSelect.mockResolvedValue({ data: null, error: null });
+    await expect(findWithdrawnInvitationById("inv-1")).resolves.toBeNull();
+    expect(tableSelect).not.toHaveBeenCalledWith("tenants", expect.anything());
+  });
+
+  it("surfaces a lookup failure as a retryable 500", async () => {
+    tableSelect.mockResolvedValue({ data: null, error: { message: "boom" } });
+    await expect(findWithdrawnInvitationById("inv-1")).rejects.toMatchObject({ status: 500, retryable: true });
+  });
+});
+
+describe("findWithdrawnInvitationForUser", () => {
+  const FUTURE = new Date(Date.now() + 86_400_000).toISOString();
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+
+  function invitation(status: string, createdAt: string, expiresAt = FUTURE) {
+    return { tenant_id: "tenant-1", status, expires_at: expiresAt, created_at: createdAt };
+  }
+
+  // byUser / byEmail are the latest invitation_member rows matched by user_id and by email.
+  function mockRows(byUser: unknown, byEmail: unknown) {
+    tableSelect.mockImplementation(async (table: string, filters: Record<string, unknown>) => {
+      if (table === "tenants") {
+        return { data: { tenant_name: "AgentzPro Realty" }, error: null };
+      }
+      return { data: "user_id" in filters ? byUser : byEmail, error: null };
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getUserById.mockResolvedValue({ data: { user: { email: " Ravi@Example.com " } }, error: null });
+  });
+
+  it("returns the company name when the latest invitation was withdrawn and its link is still live", async () => {
+    mockRows(invitation("revoked", "2026-09-23T06:00:00Z"), null);
+
+    await expect(findWithdrawnInvitationForUser("user-1")).resolves.toEqual({ tenantName: "AgentzPro Realty" });
+    expect(tableSelect).toHaveBeenCalledWith("invitation_member", { user_id: "user-1" });
+    expect(tableSelect).toHaveBeenCalledWith("invitation_member", { email: "ravi@example.com" });
+  });
+
+  it("matches a withdrawn invitation by email when user_id was never written back", async () => {
+    mockRows(null, invitation("revoked", "2026-09-23T06:00:00Z"));
+    await expect(findWithdrawnInvitationForUser("user-1")).resolves.toEqual({ tenantName: "AgentzPro Realty" });
+  });
+
+  it("ignores a withdrawn invitation that a newer invitation replaced", async () => {
+    mockRows(invitation("revoked", "2026-09-23T06:00:00Z"), invitation("accepted", "2026-09-23T07:00:00Z"));
+    await expect(findWithdrawnInvitationForUser("user-1")).resolves.toBeNull();
+  });
+
+  it("stops blocking once the withdrawn link would have expired anyway", async () => {
+    mockRows(invitation("revoked", "2026-09-16T06:00:00Z", PAST), null);
+    await expect(findWithdrawnInvitationForUser("user-1")).resolves.toBeNull();
+  });
+
+  it("returns null for someone who was never invited", async () => {
+    mockRows(null, null);
+    await expect(findWithdrawnInvitationForUser("user-1")).resolves.toBeNull();
+    expect(tableSelect).not.toHaveBeenCalledWith("tenants", expect.anything());
+  });
+
+  it("surfaces a lookup failure as a retryable 500", async () => {
+    tableSelect.mockResolvedValue({ data: null, error: { message: "boom" } });
+    await expect(findWithdrawnInvitationForUser("user-1")).rejects.toMatchObject({ status: 500, retryable: true });
   });
 });
