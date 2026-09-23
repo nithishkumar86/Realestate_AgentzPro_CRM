@@ -164,6 +164,18 @@ describe("acceptMemberInvitation", () => {
 
   it("rejects an invalid phone number before calling the RPC", async () => {
     await expect(acceptMemberInvitation({ ...VALID, phoneNumber: "abc" })).rejects.toMatchObject({ code: "INVALID_PHONE_NUMBER" });
+    await expect(acceptMemberInvitation({ ...VALID, phoneNumber: "987654321012345" })).rejects.toMatchObject({
+      code: "INVALID_PHONE_NUMBER",
+    });
+    expect(authRpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects a name with digits before calling the RPC", async () => {
+    await expect(acceptMemberInvitation({ ...VALID, fullName: "12345" })).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_ONBOARDING_INPUT",
+      details: { fieldErrors: { fullName: expect.any(String) } },
+    });
     expect(authRpc).not.toHaveBeenCalled();
   });
 });

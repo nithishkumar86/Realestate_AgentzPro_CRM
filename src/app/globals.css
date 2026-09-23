@@ -2428,6 +2428,62 @@ button.mvp-field-box__control:focus-visible { outline: none; }
   border-color: var(--primary);
 }
 
+.auth-field-group {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* A fixed prefix (the +91 country code) drawn inside the same box as the input. */
+.auth-field__affix {
+  display: flex;
+  align-items: stretch;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color 140ms ease;
+}
+
+.auth-field__affix:focus-within {
+  border-color: var(--primary);
+}
+
+.auth-field__affix[data-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.auth-field__prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-right: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.auth-field .auth-field__affix input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+}
+
+.auth-field__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .auth-turnstile {
   display: flex;
   justify-content: center;

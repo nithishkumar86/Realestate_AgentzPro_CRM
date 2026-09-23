@@ -3,10 +3,11 @@ import "server-only";
 import { z } from "zod";
 import { AppError } from "@/lib/server/app-error";
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
-import { normalizeIndianPhone } from "@/lib/server/lead-query-service";
+import { requireValidAccountDetails } from "@/lib/server/auth/account-details-guard";
 
 /**
- * Validates and normalizes the four onboarding fields, then calls the
+ * Validates and normalizes the four onboarding fields (strict rules in lib/account-details, shared
+ * with the form), then calls the
  * `complete_owner_onboarding` RPC (login_system_plan.md section 6.4),
  * which is the sole writer for the profiles/tenants/tenant_memberships/
  * tenants_subscriptions rows. This module never writes those tables
@@ -50,17 +51,14 @@ export async function completeOwnerOnboarding(rawInput: unknown): Promise<Onboar
   }
 
   const input = parseResult.data;
-  const normalizedPhone = normalizeIndianPhone(input.phoneNumber);
-  if (!normalizedPhone) {
-    throw new AppError("A valid phone number is required.", { status: 400, code: "INVALID_PHONE_NUMBER" });
-  }
+  const details = requireValidAccountDetails(input);
 
   const supabase = await createAuthClient();
   const { data, error } = await supabase.rpc("complete_owner_onboarding", {
-    p_full_name: input.fullName,
-    p_phone_number: normalizedPhone,
-    p_tenant_name: input.companyName,
-    p_professional_role: input.professionalRole,
+    p_full_name: details.fullName,
+    p_phone_number: details.phoneNumber,
+    p_tenant_name: details.companyName,
+    p_professional_role: details.professionalRole,
     p_timezone: input.timezone ?? null,
   });
 

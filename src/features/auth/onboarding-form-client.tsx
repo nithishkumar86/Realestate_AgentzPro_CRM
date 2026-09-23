@@ -2,11 +2,13 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { AccountField, useAccountDetailsForm } from "@/features/auth/account-details-form";
+import { COMPANY_NAME_MAX, FULL_NAME_MAX, PROFESSIONAL_ROLE_MAX } from "@/lib/account-details";
 
-const GENERIC_ERROR_MESSAGE = "Onboarding could not be completed. Please check your details and try again.";
+const GENERIC_ERROR_MESSAGE = "Your account could not be created. Please check your details and try again.";
 
 interface OnboardingErrorBody {
-  error?: { message?: string };
+  error?: { message?: string; details?: { fieldErrors?: unknown } };
 }
 
 /**
@@ -24,29 +26,41 @@ function detectTimezone(): string | undefined {
   }
 }
 
+const FIELDS = ["fullName", "phoneNumber", "companyName", "professionalRole"] as const;
+
 export function OnboardingFormClient() {
   const router = useRouter();
-  const [fullName, setFullName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [professionalRole, setProfessionalRole] = useState("");
+  const form = useAccountDetailsForm(FIELDS);
+  const { values, errors } = form;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setErrorMessage(null);
+    if (!form.validateAll()) {
+      return;
+    }
     setIsSubmitting(true);
 
     try {
       const response = await fetch("/api/auth/onboarding", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fullName, phoneNumber, companyName, professionalRole, timezone: detectTimezone() }),
+        body: JSON.stringify({
+          fullName: values.fullName,
+          phoneNumber: values.phoneNumber,
+          companyName: values.companyName,
+          professionalRole: values.professionalRole,
+          timezone: detectTimezone(),
+        }),
       });
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as OnboardingErrorBody | null;
+        if (form.applyServerErrors(body?.error?.details?.fieldErrors)) {
+          return;
+        }
         throw new Error(body?.error?.message ?? GENERIC_ERROR_MESSAGE);
       }
 
@@ -64,38 +78,62 @@ export function OnboardingFormClient() {
       <h1 className="auth-card__title">Set up your CRM</h1>
       <p className="auth-card__subtitle">Tell us a bit about you and your company to get started.</p>
 
-      <form className="auth-form" onSubmit={(event) => void handleSubmit(event)}>
-        <label className="auth-field">
-          <span>Full name</span>
-          <input type="text" name="fullName" required autoComplete="name" autoFocus value={fullName} onChange={(event) => setFullName(event.target.value)} />
-        </label>
+      <form className="auth-form" noValidate onSubmit={(event) => void handleSubmit(event)}>
+        <AccountField
+          name="fullName"
+          label="Full name"
+          type="text"
+          autoComplete="name"
+          autoFocus
+          maxLength={FULL_NAME_MAX}
+          value={values.fullName}
+          error={errors.fullName}
+          onValueChange={form.change}
+          onFieldBlur={form.blur}
+        />
 
-        <label className="auth-field">
-          <span>Phone number</span>
-          <input type="tel" name="phoneNumber" required autoComplete="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} />
-        </label>
+        <AccountField
+          name="phoneNumber"
+          label="Mobile number"
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          prefix="+91"
+          placeholder="9876543210"
+          value={values.phoneNumber}
+          error={errors.phoneNumber}
+          onValueChange={form.change}
+          onFieldBlur={form.blur}
+        />
 
-        <label className="auth-field">
-          <span>Company name</span>
-          <input type="text" name="companyName" required autoComplete="organization" value={companyName} onChange={(event) => setCompanyName(event.target.value)} />
-        </label>
+        <AccountField
+          name="companyName"
+          label="Company name"
+          type="text"
+          autoComplete="organization"
+          maxLength={COMPANY_NAME_MAX}
+          value={values.companyName}
+          error={errors.companyName}
+          onValueChange={form.change}
+          onFieldBlur={form.blur}
+        />
 
-        <label className="auth-field">
-          <span>Professional role</span>
-          <input
-            type="text"
-            name="professionalRole"
-            required
-            placeholder="e.g. Real Estate Agent"
-            value={professionalRole}
-            onChange={(event) => setProfessionalRole(event.target.value)}
-          />
-        </label>
+        <AccountField
+          name="professionalRole"
+          label="Professional role"
+          type="text"
+          placeholder="e.g. Real Estate Agent"
+          maxLength={PROFESSIONAL_ROLE_MAX}
+          value={values.professionalRole}
+          error={errors.professionalRole}
+          onValueChange={form.change}
+          onFieldBlur={form.blur}
+        />
 
         {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
 
         <button className="button" type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Setting up…" : "Complete setup"}
+          {isSubmitting ? "Creating account…" : "Create account"}
         </button>
       </form>
     </div>

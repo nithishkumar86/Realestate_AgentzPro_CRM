@@ -3,8 +3,8 @@ import "server-only";
 import { z } from "zod";
 import { AppError } from "@/lib/server/app-error";
 import type { CrmAccessGranted } from "@/lib/server/auth/access";
+import { requireValidAccountDetails } from "@/lib/server/auth/account-details-guard";
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
-import { normalizeIndianPhone } from "@/lib/server/lead-query-service";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 /**
@@ -479,16 +479,13 @@ export async function acceptMemberInvitation(rawInput: unknown): Promise<AcceptI
     throw new AppError("Setup details are invalid.", { status: 400, code: "INVALID_ONBOARDING_INPUT" });
   }
 
-  const normalizedPhone = normalizeIndianPhone(parsed.data.phoneNumber);
-  if (!normalizedPhone) {
-    throw new AppError("A valid phone number is required.", { status: 400, code: "INVALID_PHONE_NUMBER" });
-  }
+  const details = requireValidAccountDetails(parsed.data);
 
   const supabase = await createAuthClient();
   const { data, error } = await supabase.rpc("accept_member_invitation", {
-    p_full_name: parsed.data.fullName,
-    p_phone_number: normalizedPhone,
-    p_professional_role: parsed.data.professionalRole,
+    p_full_name: details.fullName,
+    p_phone_number: details.phoneNumber,
+    p_professional_role: details.professionalRole,
   });
 
   if (error) {

@@ -70,11 +70,55 @@ describe("completeOwnerOnboarding", () => {
     expect(rpcMock).not.toHaveBeenCalled();
   });
 
-  it("normalizes the phone number to E.164-style digits before calling the RPC", async () => {
+  it("rejects a 15-digit phone number instead of storing it", async () => {
+    rpcMock.mockClear();
+    await expect(completeOwnerOnboarding({ ...VALID_INPUT, phoneNumber: "987654321012345" })).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_PHONE_NUMBER",
+      details: { fieldErrors: { phoneNumber: "Mobile number must be exactly 10 digits." } },
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a full name with digits or symbols and reports every bad field", async () => {
+    rpcMock.mockClear();
+    await expect(
+      completeOwnerOnboarding({ ...VALID_INPUT, fullName: "Ravi123", professionalRole: "007" }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_ONBOARDING_INPUT",
+      message: "Full name can contain only letters, spaces, dots, apostrophes and hyphens.",
+      details: { fieldErrors: { fullName: expect.any(String), professionalRole: expect.any(String) } },
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("sends trimmed, space-collapsed values to the RPC", async () => {
     rpcMock.mockClear();
     rpcMock.mockResolvedValue({ data: [{ tenant_id: "tenant-1", subscription_status: "trialing" }], error: null });
 
-    await completeOwnerOnboarding({ ...VALID_INPUT, phoneNumber: "09876543210" });
+    await completeOwnerOnboarding({ ...VALID_INPUT, fullName: "  Ravi   Kumar ", companyName: " BRIQ  Aastha ", phoneNumber: "9876543210" });
+
+    expect(rpcMock.mock.calls[0][1]).toMatchObject({
+      p_full_name: "Ravi Kumar",
+      p_tenant_name: "BRIQ Aastha",
+      p_phone_number: "919876543210",
+    });
+  });
+
+  it("rejects a number sent with the country code or a leading 0 — the form sends exactly 10 digits", async () => {
+    rpcMock.mockClear();
+    for (const phoneNumber of ["919876543210", "+919876543210", "09876543210", "98765 43210"]) {
+      await expect(completeOwnerOnboarding({ ...VALID_INPUT, phoneNumber })).rejects.toMatchObject({ code: "INVALID_PHONE_NUMBER" });
+    }
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("stores the 10-digit number under the fixed +91 code", async () => {
+    rpcMock.mockClear();
+    rpcMock.mockResolvedValue({ data: [{ tenant_id: "tenant-1", subscription_status: "trialing" }], error: null });
+
+    await completeOwnerOnboarding({ ...VALID_INPUT, phoneNumber: "9876543210" });
 
     expect(rpcMock).toHaveBeenCalledWith("complete_owner_onboarding", {
       p_full_name: "Ravi Kumar",
