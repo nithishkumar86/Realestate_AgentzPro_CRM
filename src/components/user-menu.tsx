@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Settings,
   User,
+  Users,
   X,
 } from "lucide-react";
 import { getProfileDetails, type ProfileDetails } from "@/services/profile-api-client";
@@ -180,6 +181,11 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
     setIsSettingsOpen(true);
   }
 
+  function switchCompany(): void {
+    setIsOpen(false);
+    router.push("/workspaces");
+  }
+
   function retryProfile(): void {
     setProfileState({ status: "loading" });
     setProfileRequestVersion((version) => version + 1);
@@ -197,6 +203,11 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
           <button type="button" className="mvp-user-menu__item" onClick={openProfile}>
             <User size={17} aria-hidden="true" />
             <span>Profile</span>
+          </button>
+
+          <button type="button" className="mvp-user-menu__item" onClick={switchCompany}>
+            <Users size={17} aria-hidden="true" />
+            <span>Switch company</span>
           </button>
 
           <div className="mvp-user-menu__theme">

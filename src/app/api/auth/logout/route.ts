@@ -1,6 +1,7 @@
 import { createSuccessResponse, createErrorResponse } from "@/app/api/meta/_lib/route-utils";
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
+import { clearActiveTenant } from "@/lib/server/auth/active-tenant";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,10 @@ export async function POST(request: Request): Promise<Response> {
       throw error;
     }
 
-    return withNoStore(createSuccessResponse({ signedOut: true }));
+    const response = createSuccessResponse({ signedOut: true });
+    // The next person to sign in on this browser starts without someone else's company hint.
+    clearActiveTenant(response);
+    return withNoStore(response);
   } catch (error) {
     return withNoStore(createErrorResponse(error));
   }

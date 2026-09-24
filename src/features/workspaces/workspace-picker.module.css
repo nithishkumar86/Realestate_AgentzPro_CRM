@@ -1,0 +1,111 @@
+.card {
+  max-width: 520px;
+}
+
+.section {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.rowButton {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowButton:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.rowButton:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.rowButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--nav-active-bg);
+  color: var(--primary-strong);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions > * {
+    flex: 1;
+  }
+}

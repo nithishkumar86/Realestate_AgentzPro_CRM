@@ -5,6 +5,8 @@ import { getRequestSourceIp } from "@/lib/server/auth/request-ip";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
+import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
+import { listPendingInvitationsForUser } from "@/lib/server/member-invitation-service";
 
 export const runtime = "nodejs";
 
@@ -27,7 +29,8 @@ const requestSchema = z.object({
 /**
  * login_system_plan.md section 6.2/6.3: verifies the OTP, then resolves
  * the caller's login state to decide where the client should navigate
- * next — /onboarding for a first-time user, / for valid access, or
+ * next — /onboarding for a first-time user, / for valid access,
+ * /workspaces to choose a company or answer an invitation, or
  * /billing for an expired/blocked/integrity-error account. A failed or
  * blocked verification never creates or reveals any application row.
  */
@@ -43,8 +46,8 @@ export async function POST(request: Request): Promise<Response> {
       return withNoStore(createSuccessResponse({ verified: false, blocked: result.blocked ?? false }, 401));
     }
 
-    const state = await resolveLoginState(result.userId);
-    const redirectTo = resolvePostLoginDestination(state);
+    const state = await resolveLoginState(result.userId, await readActiveTenantHint());
+    const redirectTo = await resolvePostLoginDestination(result.userId, state);
 
     return withNoStore(createSuccessResponse({ verified: true, redirectTo }));
   } catch (error) {
@@ -59,11 +62,28 @@ function withNoStore(response: Response): Response {
   return response;
 }
 
-function resolvePostLoginDestination(state: Awaited<ReturnType<typeof resolveLoginState>>): "/onboarding" | "/billing" | "/" {
+/**
+ * A person who already has an account and a new invitation from another company sees it on
+ * /workspaces first (Accept / Decline); a first-time invitee gets the setup form via /onboarding.
+ * Only checked at sign-in, so an unanswered invitation never blocks the CRM on every request.
+ */
+async function resolvePostLoginDestination(
+  userId: string,
+  state: Awaited<ReturnType<typeof resolveLoginState>>,
+): Promise<"/onboarding" | "/billing" | "/workspaces" | "/"> {
   if (state.status === "needs_onboarding") {
     return "/onboarding";
   }
-  if (state.status === "integrity_error" || !evaluateCrmAccess(state)) {
+  if (state.status === "integrity_error") {
+    return "/billing";
+  }
+  if (state.status === "needs_workspace_selection") {
+    return "/workspaces";
+  }
+  if ((await listPendingInvitationsForUser(userId)).length > 0) {
+    return "/workspaces";
+  }
+  if (!evaluateCrmAccess(state)) {
     return "/billing";
   }
   return "/";

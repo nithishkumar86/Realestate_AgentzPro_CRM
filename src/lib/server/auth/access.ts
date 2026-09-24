@@ -1,6 +1,7 @@
 import "server-only";
 
 import { AppError } from "@/lib/server/app-error";
+import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState, type LoginState } from "@/lib/server/auth/login-state";
 
@@ -63,12 +64,21 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
     throw new AppError("Authentication is required.", { status: 401, code: "UNAUTHENTICATED" });
   }
 
-  const state = await resolveLoginState(session.userId);
+  // The active-tenant cookie only picks among this user's own memberships; resolveLoginState
+  // re-verifies it against tenant_memberships on every call.
+  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
 
   if (state.status === "needs_onboarding") {
     throw new AppError("Onboarding must be completed before accessing the CRM.", {
       status: 403,
       code: "ONBOARDING_REQUIRED",
+    });
+  }
+
+  if (state.status === "needs_workspace_selection") {
+    throw new AppError("Choose a company to continue.", {
+      status: 403,
+      code: "WORKSPACE_SELECTION_REQUIRED",
     });
   }
 

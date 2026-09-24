@@ -20,6 +20,7 @@ interface OnboardingErrorBody {
 }
 
 export interface InvitationOnboardingFormClientProps {
+  invitationId: string;
   tenantName: string;
   role: string;
 }
@@ -28,7 +29,7 @@ export interface InvitationOnboardingFormClientProps {
  * Setup for a person invited into an existing company. They join that company's tenant with the
  * role the owner assigned, so the company and role are shown read-only and never submitted.
  */
-export function InvitationOnboardingFormClient({ tenantName, role }: Readonly<InvitationOnboardingFormClientProps>) {
+export function InvitationOnboardingFormClient({ invitationId, tenantName, role }: Readonly<InvitationOnboardingFormClientProps>) {
   const router = useRouter();
   const form = useAccountDetailsForm(FIELDS);
   const { values, errors } = form;
@@ -48,6 +49,8 @@ export function InvitationOnboardingFormClient({ tenantName, role }: Readonly<In
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          // A person can hold invitations from several companies; this names the one on screen.
+          invitationId,
           fullName: values.fullName,
           phoneNumber: values.phoneNumber,
           professionalRole: values.professionalRole,

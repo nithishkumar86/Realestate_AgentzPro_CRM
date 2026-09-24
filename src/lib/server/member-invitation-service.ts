@@ -50,8 +50,8 @@ export interface InvitationSendResult {
 
 const RESULT_MESSAGES: Record<InvitationSendStatus, string> = {
   sent: "Invitation sent.",
-  saved_existing_account: "This person already has an account. They will be asked to join when they next sign in.",
-  already_member: "This person already belongs to an organization.",
+  saved_existing_account: "This person already has an account. They will see your invitation when they next sign in.",
+  already_member: "This person is already a member of your organization.",
   already_invited: "This person already has a pending invitation.",
   invalid_email: "Enter a valid email address.",
   failed: "The invitation email could not be sent. Please try again.",
@@ -486,6 +486,7 @@ export async function findWithdrawnInvitationForUser(userId: string): Promise<Wi
 }
 
 const acceptInputSchema = z.object({
+  invitationId: z.string().uuid(),
   fullName: z.string().trim().min(1).max(200),
   phoneNumber: z.string().trim().min(1).max(20),
   professionalRole: z.string().trim().min(1).max(120),
@@ -510,6 +511,7 @@ export async function acceptMemberInvitation(rawInput: unknown): Promise<AcceptI
 
   const supabase = await createAuthClient();
   const { data, error } = await supabase.rpc("accept_member_invitation", {
+    p_invitation_id: parsed.data.invitationId,
     p_full_name: details.fullName,
     p_phone_number: details.phoneNumber,
     p_professional_role: details.professionalRole,
@@ -533,3 +535,120 @@ export async function acceptMemberInvitation(rawInput: unknown): Promise<AcceptI
   return { tenantId: row.tenant_id, role: row.membership_role };
 }
 
+// ---------------------------------------------------------------------------
+// Invitations for someone who already has an account (multi-membership)
+// ---------------------------------------------------------------------------
+
+export interface PendingInvitationForUser {
+  invitationId: string;
+  tenantId: string;
+  tenantName: string;
+  role: InvitableRole;
+}
+
+/**
+ * Every open invitation addressed to this user, from any company: by user_id, and by their verified
+ * sign-in email for rows whose user_id was never written back. The company name is read from
+ * tenants — the invitee never supplies it.
+ */
+export async function listPendingInvitationsForUser(userId: string): Promise<PendingInvitationForUser[]> {
+  const db = getSupabaseAdminClient();
+  const nowIso = new Date().toISOString();
+  const columns = "invitation_id,tenant_id,membership_role,created_at";
+  type Row = { invitation_id: string; tenant_id: string; membership_role: InvitableRole; created_at: string };
+
+  const { data: userData, error: userError } = await db.auth.admin.getUserById(userId);
+  if (userError) {
+    throw new AppError("Invitations could not be checked.", { status: 500, code: "INVITATION_LOOKUP_FAILED", retryable: true });
+  }
+  const email = userData.user?.email?.trim().toLowerCase();
+
+  const [byUser, byEmail] = await Promise.all([
+    db.from("invitation_member").select(columns).eq("user_id", userId).eq("status", "pending").gt("expires_at", nowIso),
+    email
+      ? db.from("invitation_member").select(columns).eq("email", email).is("user_id", null).eq("status", "pending").gt("expires_at", nowIso)
+      : Promise.resolve({ data: [] as Row[], error: null }),
+  ]);
+
+  if (byUser.error || byEmail.error) {
+    throw new AppError("Invitations could not be checked.", { status: 500, code: "INVITATION_LOOKUP_FAILED", retryable: true });
+  }
+
+  const rows = new Map<string, Row>();
+  for (const row of [...((byUser.data ?? []) as Row[]), ...((byEmail.data ?? []) as Row[])]) {
+    rows.set(row.invitation_id, row);
+  }
+  if (rows.size === 0) {
+    return [];
+  }
+
+  const tenantIds = [...new Set([...rows.values()].map((row) => row.tenant_id))];
+  const { data: tenants, error: tenantError } = await db.from("tenants").select("tenant_id,tenant_name").in("tenant_id", tenantIds);
+  if (tenantError) {
+    throw new AppError("Invitations could not be checked.", { status: 500, code: "INVITATION_LOOKUP_FAILED", retryable: true });
+  }
+  const names = new Map(((tenants ?? []) as { tenant_id: string; tenant_name: string }[]).map((t) => [t.tenant_id, t.tenant_name]));
+
+  return [...rows.values()]
+    .filter((row) => names.has(row.tenant_id))
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .map((row) => ({
+      invitationId: row.invitation_id,
+      tenantId: row.tenant_id,
+      tenantName: names.get(row.tenant_id) as string,
+      role: row.membership_role,
+    }));
+}
+
+const invitationIdSchema = z.string().uuid();
+
+/**
+ * One-click accept for a person who already has a profile: their name, phone, and job title are
+ * reused, and the company and role come from the invitation. The RPC derives the user from
+ * auth.uid() and only matches an invitation addressed to that user.
+ */
+export async function joinInvitedWorkspace(invitationId: string): Promise<AcceptInvitationResult> {
+  if (!invitationIdSchema.safeParse(invitationId).success) {
+    throw new AppError("This invitation is no longer valid.", { status: 404, code: "INVITATION_NOT_FOUND" });
+  }
+
+  const supabase = await createAuthClient();
+  const { data, error } = await supabase.rpc("join_invited_workspace", { p_invitation_id: invitationId });
+
+  if (error) {
+    if (error.code === "P0002") {
+      throw new AppError("This invitation is no longer valid. Ask the organization owner to invite you again.", {
+        status: 404,
+        code: "INVITATION_NOT_FOUND",
+      });
+    }
+    if (error.code === "P0001") {
+      throw new AppError("Complete your account setup first.", { status: 409, code: "ONBOARDING_REQUIRED" });
+    }
+    throw new AppError("The invitation could not be accepted.", { status: 500, code: "INVITATION_ACCEPT_FAILED", retryable: true });
+  }
+
+  const row: { tenant_id: string; membership_role: string } | undefined = Array.isArray(data) ? data[0] : data;
+  if (!row?.tenant_id) {
+    throw new AppError("The invitation could not be accepted.", { status: 500, code: "INVITATION_ACCEPT_FAILED", retryable: true });
+  }
+
+  return { tenantId: row.tenant_id, role: row.membership_role };
+}
+
+/** The invitee turns down one of their own pending invitations. */
+export async function declineInvitation(invitationId: string): Promise<void> {
+  if (!invitationIdSchema.safeParse(invitationId).success) {
+    throw new AppError("This invitation is no longer pending.", { status: 404, code: "INVITATION_NOT_FOUND" });
+  }
+
+  const supabase = await createAuthClient();
+  const { data, error } = await supabase.rpc("decline_member_invitation", { p_invitation_id: invitationId });
+
+  if (error) {
+    throw new AppError("The invitation could not be declined.", { status: 500, code: "INVITATION_DECLINE_FAILED", retryable: true });
+  }
+  if (data !== true) {
+    throw new AppError("This invitation is no longer pending.", { status: 404, code: "INVITATION_NOT_FOUND" });
+  }
+}

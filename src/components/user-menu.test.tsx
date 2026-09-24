@@ -8,6 +8,7 @@ const cancelInvitation = vi.fn();
 const removeTenantMember = vi.fn();
 const replace = vi.fn();
 const refresh = vi.fn();
+const push = vi.fn();
 
 vi.mock("@/services/profile-api-client", () => ({ getProfileDetails }));
 vi.mock("@/services/members-api-client", () => ({
@@ -17,7 +18,7 @@ vi.mock("@/services/members-api-client", () => ({
   removeTenantMember,
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace, refresh }),
+  useRouter: () => ({ replace, refresh, push }),
 }));
 
 const { UserMenu } = await import("@/components/user-menu");
@@ -47,11 +48,18 @@ describe("UserMenu profile dialog", () => {
     renderMenu();
     const menu = screen.getByLabelText("Account menu");
 
-    expect(menu).toHaveTextContent("SettingsProfileDarkUpgrade planLogout");
+    expect(menu).toHaveTextContent("SettingsProfileSwitch companyDarkUpgrade planLogout");
     expect(within(menu).getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeEnabled();
     expect(within(menu).getByRole("button", { name: "Profile" })).toBeEnabled();
     expect(within(menu).getByRole("button", { name: "Settings" })).toBeEnabled();
     expect(within(menu).queryByRole("button", { name: "Upgrade plan" })).not.toBeInTheDocument();
+  });
+
+  it("opens the company switcher from Switch company", () => {
+    renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Switch company" }));
+    expect(push).toHaveBeenCalledWith("/workspaces");
+    expect(screen.queryByLabelText("Account menu")).not.toBeInTheDocument();
   });
 
   it("loads and displays exactly the five approved profile fields", async () => {

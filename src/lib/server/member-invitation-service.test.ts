@@ -45,6 +45,8 @@ const {
   findWithdrawnInvitationForUser,
   findWithdrawnInvitationById,
   removeTenantMember,
+  joinInvitedWorkspace,
+  declineInvitation,
 } = await import("@/lib/server/member-invitation-service");
 
 const OWNER = {
@@ -184,9 +186,10 @@ describe("removeTenantMember", () => {
 describe("acceptMemberInvitation", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  const VALID = { fullName: "Ravi", phoneNumber: "9876543210", professionalRole: "Sales" };
+  const INVITATION_ID = "20000000-0000-4000-8000-000000000001";
+  const VALID = { invitationId: INVITATION_ID, fullName: "Ravi", phoneNumber: "9876543210", professionalRole: "Sales" };
 
-  it("sends only personal details — never a tenant or role — to the accept RPC", async () => {
+  it("sends the invitation id and personal details — never a tenant or role — to the accept RPC", async () => {
     authRpc.mockResolvedValue({ data: [{ tenant_id: "tenant-1", membership_role: "admin" }], error: null });
 
     await expect(acceptMemberInvitation({ ...VALID, tenantId: "evil", role: "owner" })).resolves.toEqual({
@@ -194,6 +197,7 @@ describe("acceptMemberInvitation", () => {
       role: "admin",
     });
     expect(authRpc).toHaveBeenCalledWith("accept_member_invitation", {
+      p_invitation_id: INVITATION_ID,
       p_full_name: "Ravi",
       p_phone_number: expect.any(String),
       p_professional_role: "Sales",
@@ -203,6 +207,11 @@ describe("acceptMemberInvitation", () => {
   it("maps a missing or expired invitation to a 404", async () => {
     authRpc.mockResolvedValue({ data: null, error: { code: "P0002" } });
     await expect(acceptMemberInvitation(VALID)).rejects.toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
+  });
+
+  it("requires a well-formed invitation id", async () => {
+    await expect(acceptMemberInvitation({ ...VALID, invitationId: "not-a-uuid" })).rejects.toMatchObject({ status: 400 });
+    expect(authRpc).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid phone number before calling the RPC", async () => {
@@ -220,6 +229,49 @@ describe("acceptMemberInvitation", () => {
       details: { fieldErrors: { fullName: expect.any(String) } },
     });
     expect(authRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("joinInvitedWorkspace", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const INVITATION_ID = "20000000-0000-4000-8000-000000000002";
+
+  it("sends only the invitation id; the tenant and role come back from the invitation", async () => {
+    authRpc.mockResolvedValue({ data: [{ tenant_id: "tenant-b", membership_role: "employee" }], error: null });
+
+    await expect(joinInvitedWorkspace(INVITATION_ID)).resolves.toEqual({ tenantId: "tenant-b", role: "employee" });
+    expect(authRpc).toHaveBeenCalledWith("join_invited_workspace", { p_invitation_id: INVITATION_ID });
+  });
+
+  it("maps a missing, expired, or someone else's invitation to a 404", async () => {
+    authRpc.mockResolvedValue({ data: null, error: { code: "P0002" } });
+    await expect(joinInvitedWorkspace(INVITATION_ID)).rejects.toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
+  });
+
+  it("sends a person without a profile back to setup", async () => {
+    authRpc.mockResolvedValue({ data: null, error: { code: "P0001" } });
+    await expect(joinInvitedWorkspace(INVITATION_ID)).rejects.toMatchObject({ status: 409, code: "ONBOARDING_REQUIRED" });
+  });
+
+  it("rejects a malformed id without calling the database", async () => {
+    await expect(joinInvitedWorkspace("inv-1")).rejects.toMatchObject({ status: 404 });
+    expect(authRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("declineInvitation", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const INVITATION_ID = "20000000-0000-4000-8000-000000000003";
+
+  it("declines the caller's own pending invitation", async () => {
+    authRpc.mockResolvedValue({ data: true, error: null });
+    await expect(declineInvitation(INVITATION_ID)).resolves.toBeUndefined();
+    expect(authRpc).toHaveBeenCalledWith("decline_member_invitation", { p_invitation_id: INVITATION_ID });
+  });
+
+  it("reports 404 when nothing was declined", async () => {
+    authRpc.mockResolvedValue({ data: false, error: null });
+    await expect(declineInvitation(INVITATION_ID)).rejects.toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
   });
 });
 

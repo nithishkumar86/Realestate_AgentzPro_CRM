@@ -14,4 +14,5 @@ it("retains the origin check and actual Supabase sign-out with its existing scop
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ signedOut: true });
   expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(response.headers.get("set-cookie")).toMatch(/agentz_active_tenant=;.*Max-Age=0/i);
 });

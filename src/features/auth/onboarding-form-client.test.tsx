@@ -137,12 +137,13 @@ describe("OnboardingFormClient", () => {
 });
 
 describe("InvitationOnboardingFormClient", () => {
+  const INVITATION_ID = "20000000-0000-4000-8000-000000000001";
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => vi.unstubAllGlobals());
 
-  it("validates the same way and never sends the company", async () => {
+  it("validates the same way, names the invitation, and never sends the company", async () => {
     const fetchMock = stubFetch(201, { tenantId: "t", role: "employee" });
-    render(<InvitationOnboardingFormClient tenantName="QA Test Co" role="employee" />);
+    render(<InvitationOnboardingFormClient invitationId={INVITATION_ID} tenantName="QA Test Co" role="employee" />);
 
     fill({ "Full name": "Ravi Kumar", "Mobile number": "12345", "Professional role": "Sales" });
     submit();
@@ -154,6 +155,7 @@ describe("InvitationOnboardingFormClient", () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      invitationId: INVITATION_ID,
       fullName: "Ravi Kumar",
       phoneNumber: "9876543210",
       professionalRole: "Sales",

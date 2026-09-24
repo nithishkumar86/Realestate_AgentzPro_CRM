@@ -6,6 +6,7 @@ import { InvitationWithdrawnClient } from "@/features/auth/invitation-withdrawn-
 import { findPendingInvitationForUser, findWithdrawnInvitationForUser } from "@/lib/server/member-invitation-service";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
+import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
 
 export const metadata: Metadata = {
@@ -24,14 +25,20 @@ export default async function OnboardingPage() {
     redirect("/login");
   }
 
-  const state = await resolveLoginState(session.userId);
+  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
 
   if (state.status === "needs_onboarding") {
     // An invited member joins the inviting company's existing tenant with the role the owner
     // chose, so they get the invitation form (personal details only), never the owner form.
     const invitation = await findPendingInvitationForUser(session.userId);
     if (invitation) {
-      return <InvitationOnboardingFormClient tenantName={invitation.tenantName} role={invitation.role} />;
+      return (
+        <InvitationOnboardingFormClient
+          invitationId={invitation.invitationId}
+          tenantName={invitation.tenantName}
+          role={invitation.role}
+        />
+      );
     }
     // Opened an invite email after the owner withdrew it: explain that, never offer a new company.
     const withdrawn = await findWithdrawnInvitationForUser(session.userId);
@@ -39,6 +46,11 @@ export default async function OnboardingPage() {
       return <InvitationWithdrawnClient tenantName={withdrawn.tenantName} />;
     }
     return <OnboardingFormClient />;
+  }
+
+  // Already has a profile: further companies are joined or created from /workspaces, never here.
+  if (state.status === "needs_workspace_selection") {
+    redirect("/workspaces");
   }
 
   if (state.status === "integrity_error") {

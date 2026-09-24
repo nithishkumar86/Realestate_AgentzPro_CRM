@@ -10,6 +10,9 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
  */
 export type LoginState =
   | { status: "needs_onboarding" }
+  // The person has a profile but no company is chosen: they belong to none (e.g. removed from
+  // their only one), or to several and no valid active-tenant hint picks one.
+  | { status: "needs_workspace_selection" }
   | {
       status: "ready";
       tenantId: string;
@@ -33,15 +36,19 @@ function logIntegrityError(userId: string, reason: string): void {
  * profile / membership / tenant / subscription chain with the trusted
  * service-role client (bypassing RLS, since this check itself determines
  * what the user is authorized to see).
+ *
+ * A person may belong to several tenants. `preferredTenantId` is the
+ * active-tenant cookie hint (src/lib/server/auth/active-tenant.ts); it is only
+ * used when it matches one of this user's own membership rows, so a tampered
+ * or stale value can never reach another company's data.
  */
-export async function resolveLoginState(userId: string): Promise<LoginState> {
+export async function resolveLoginState(userId: string, preferredTenantId: string | null = null): Promise<LoginState> {
   const db = getSupabaseAdminClient();
 
-  const { data: membership, error: membershipError } = await db
+  const { data: memberships, error: membershipError } = await db
     .from("tenant_memberships")
     .select("tenant_id, membership_role, membership_status")
-    .eq("user_id", userId)
-    .maybeSingle();
+    .eq("user_id", userId);
 
   if (membershipError) {
     logIntegrityError(userId, "MEMBERSHIP_QUERY_FAILED");
@@ -59,17 +66,27 @@ export async function resolveLoginState(userId: string): Promise<LoginState> {
     return { status: "integrity_error", reason: "PROFILE_QUERY_FAILED" };
   }
 
-  if (!membership && !profile) {
+  const membershipRows = memberships ?? [];
+
+  if (membershipRows.length === 0 && !profile) {
     return { status: "needs_onboarding" };
   }
 
-  if (!membership || !profile) {
-    // One of the two application rows exists without the other. This can
-    // only happen from a failure mode outside the onboarding RPC's own
-    // transaction (which never commits one without the other) — never
-    // silently create a second tenant to paper over it.
+  if (!profile) {
+    // A membership without a profile can only come from a failure outside
+    // the onboarding/accept RPCs' own transactions — never paper over it.
     logIntegrityError(userId, "PARTIAL_ONBOARDING_STATE");
     return { status: "integrity_error", reason: "PARTIAL_ONBOARDING_STATE" };
+  }
+
+  // A profile with no membership is a valid state now: the person was removed
+  // from their only company, and can accept another invitation or create one.
+  const membership =
+    membershipRows.find((row) => preferredTenantId !== null && row.tenant_id === preferredTenantId) ??
+    (membershipRows.length === 1 ? membershipRows[0] : undefined);
+
+  if (!membership) {
+    return { status: "needs_workspace_selection" };
   }
 
   const { data: tenant, error: tenantError } = await db

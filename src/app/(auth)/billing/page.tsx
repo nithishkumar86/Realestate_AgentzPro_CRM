@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
+import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
 
 export const metadata: Metadata = {
@@ -23,10 +25,14 @@ export default async function BillingPage() {
     redirect("/login");
   }
 
-  const state = await resolveLoginState(session.userId);
+  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
 
   if (state.status === "needs_onboarding") {
     redirect("/onboarding");
+  }
+
+  if (state.status === "needs_workspace_selection") {
+    redirect("/workspaces");
   }
 
   if (state.status === "ready" && evaluateCrmAccess(state)) {
@@ -63,6 +69,14 @@ export default async function BillingPage() {
             </div>
           ) : null}
         </dl>
+      ) : null}
+
+      {!isIntegrityError ? (
+        // Access is decided per company: one company's expired trial must not lock a person out of
+        // the other companies they belong to.
+        <p className="auth-card__subtitle">
+          <Link href="/workspaces">Switch company</Link>
+        </p>
       ) : null}
     </div>
   );
