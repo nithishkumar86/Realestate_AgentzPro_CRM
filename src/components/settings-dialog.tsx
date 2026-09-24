@@ -6,10 +6,8 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
-  CircleX,
   LoaderCircle,
   Mail,
-  MoreHorizontal,
   RotateCcw,
   Search,
   Trash2,
@@ -19,6 +17,7 @@ import {
 import {
   cancelInvitation,
   getTenantMembers,
+  removeTenantMember,
   sendInvitations,
   type InvitableRole,
   type InvitationSendResult,
@@ -183,6 +182,10 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
   const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
 
   const canInvite = membersState.status === "success" && membersState.overview.canInvite;
+  const membershipRole =
+    membersState.status === "success"
+      ? membersState.overview.members.find((member) => member.userId === membersState.overview.currentUserId)?.role ?? null
+      : null;
   const invitations = membersState.status === "success" ? membersState.overview.invitations : [];
 
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -211,7 +214,12 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
         <p>Manage team members and invitations</p>
       </header>
 
-      <InviteMembersCard canInvite={canInvite} isLoading={membersState.status === "loading"} onSent={refresh} />
+      <InviteMembersCard
+        canInvite={canInvite}
+        isLoading={membersState.status === "loading"}
+        membershipRole={membershipRole}
+        onSent={refresh}
+      />
 
       <div className="mvp-members__tabs" role="tablist" aria-label="Members views">
         <button
@@ -240,7 +248,13 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
 
       {activeTab === "team" ? (
         <div role="tabpanel" id={`${tabsId}-team-panel`} aria-labelledby={`${tabsId}-team-tab`}>
-          <TeamMembersPanel fullName={fullName} state={membersState} onRetry={retry} />
+          <TeamMembersPanel
+            fullName={fullName}
+            membershipRole={membershipRole}
+            state={membersState}
+            onMemberRemoved={refresh}
+            onRetry={retry}
+          />
         </div>
       ) : (
         <div role="tabpanel" id={`${tabsId}-pending-panel`} aria-labelledby={`${tabsId}-pending-tab`}>
@@ -309,8 +323,14 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
 function InviteMembersCard({
   canInvite,
   isLoading,
+  membershipRole,
   onSent,
-}: Readonly<{ canInvite: boolean; isLoading: boolean; onSent: () => void }>) {
+}: Readonly<{
+  canInvite: boolean;
+  isLoading: boolean;
+  membershipRole: MembershipRole | null;
+  onSent: () => void;
+}>) {
   const nextRowId = useRef(1);
   const [rows, setRows] = useState<InviteRow[]>([{ id: 0, email: "", role: "employee" }]);
   const [isSending, setIsSending] = useState(false);
@@ -402,10 +422,15 @@ function InviteMembersCard({
         {sendError ? (
           <span className="mvp-invite-card__footer-note mvp-invite-card__footer-note--error" role="alert">{sendError}</span>
         ) : null}
-        {!sendError && !isLoading && !canInvite ? (
-          <span className="mvp-invite-card__footer-note">Only the owner can invite members.</span>
+        {!sendError && !isLoading && membershipRole === "employee" ? (
+          <span className="mvp-invite-card__footer-note">Only the Owner can invite members</span>
         ) : null}
-        <button type="button" className="mvp-invite-card__send" disabled={!canInvite || isSending} onClick={() => void send()}>
+        <button
+          type="button"
+          className="mvp-invite-card__send"
+          disabled={membershipRole === "employee" || !canInvite || isSending}
+          onClick={() => void send()}
+        >
           {isSending ? "Sending…" : "Send"}
         </button>
       </footer>
@@ -525,14 +550,24 @@ function InviteRowFields({
 
 function TeamMembersPanel({
   fullName,
+  membershipRole,
   state,
+  onMemberRemoved,
   onRetry,
-}: Readonly<{ fullName: string; state: MembersState; onRetry: () => void }>) {
+}: Readonly<{
+  fullName: string;
+  membershipRole: MembershipRole | null;
+  state: MembersState;
+  onMemberRemoved: () => void;
+  onRetry: () => void;
+}>) {
   const filterRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<MembershipRole | "all">("all");
   const [twoFactorFilter, setTwoFactorFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
 
   // "/" jumps to the filter box, matching the keyboard hint shown inside it.
   useEffect(() => {
@@ -575,6 +610,26 @@ function TeamMembersPanel({
       const difference = new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
       return sortOrder === "newest" ? -difference : difference;
     });
+
+  async function handleRemoveMember(memberUserId: string): Promise<void> {
+    const confirmed = window.confirm(
+      "Are you sure you want to remove this member? They will need to be invited again to rejoin.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setRemoveMemberError(null);
+    setRemovingMemberId(memberUserId);
+    try {
+      await removeTenantMember(memberUserId);
+      onMemberRemoved();
+    } catch (error) {
+      setRemoveMemberError(error instanceof Error ? error.message : "The member could not be removed.");
+    } finally {
+      setRemovingMemberId(null);
+    }
+  }
 
   return (
     <>
@@ -625,16 +680,52 @@ function TeamMembersPanel({
         </div>
       </div>
 
-      <div className="mvp-members__list">
-        <div className="mvp-members__list-header">
-          <label className="mvp-members__select-all">
-            <input type="checkbox" disabled />
-            <span>Select all ({visibleMembers.length})</span>
-          </label>
-          <button type="button" className="mvp-members__more" aria-label="Bulk actions">
-            <MoreHorizontal size={18} aria-hidden="true" />
-          </button>
+      {removeMemberError ? (
+        <div className="mvp-members__state mvp-members__state--error" role="alert">
+          <CircleAlert size={20} aria-hidden="true" />
+          <span>{removeMemberError}</span>
         </div>
+      ) : null}
+
+      <div className="mvp-members__list mvp-members__table-wrap">
+        <table className="mvp-members__table">
+          <thead>
+            <tr>
+              <th scope="col">S.No</th>
+              <th scope="col">Name</th>
+              <th scope="col">Email</th>
+              <th scope="col">Role</th>
+              <th scope="col">Remove</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleMembers.map((member, index) => (
+              <tr key={member.key}>
+                <td className="mvp-members__index">{index + 1}</td>
+                <td>
+                  <div className="mvp-members__name">
+                    <span className="mvp-members__avatar" aria-hidden="true">{getInitials(member.name)}</span>
+                    <strong>{member.name}</strong>
+                  </div>
+                </td>
+                <td className="mvp-members__email">{member.email}</td>
+                <td className="mvp-members__role">{ROLE_LABELS[member.role]}</td>
+                <td className="mvp-members__remove-cell">
+                  {membershipRole === "owner" && member.role === "employee" ? (
+                    <button
+                      type="button"
+                      className="mvp-members__remove"
+                      disabled={removingMemberId === member.key}
+                      onClick={() => void handleRemoveMember(member.key)}
+                    >
+                      {removingMemberId === member.key ? "Removing…" : "Remove"}
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
         {state.status === "loading" ? (
           <div className="mvp-members__state" role="status" aria-live="polite">
@@ -659,24 +750,6 @@ function TeamMembersPanel({
             <span>No members match these filters.</span>
           </div>
         ) : null}
-
-        {visibleMembers.map((member) => (
-          <div className="mvp-members__row" key={member.key}>
-            <span className="mvp-members__avatar" aria-hidden="true">{getInitials(member.name)}</span>
-            <div className="mvp-members__identity">
-              <strong>{member.name}</strong>
-              <span>{member.email}</span>
-            </div>
-            <span className="mvp-members__role">{ROLE_LABELS[member.role]}</span>
-            <span className="mvp-members__2fa">
-              <CircleX size={16} aria-hidden="true" />
-              2FA
-            </span>
-            <button type="button" className="mvp-members__more" aria-label={`Actions for ${member.name}`}>
-              <MoreHorizontal size={18} aria-hidden="true" />
-            </button>
-          </div>
-        ))}
       </div>
     </>
   );

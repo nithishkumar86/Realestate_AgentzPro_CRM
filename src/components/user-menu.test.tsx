@@ -5,11 +5,17 @@ const getProfileDetails = vi.fn();
 const getTenantMembers = vi.fn();
 const sendInvitations = vi.fn();
 const cancelInvitation = vi.fn();
+const removeTenantMember = vi.fn();
 const replace = vi.fn();
 const refresh = vi.fn();
 
 vi.mock("@/services/profile-api-client", () => ({ getProfileDetails }));
-vi.mock("@/services/members-api-client", () => ({ getTenantMembers, sendInvitations, cancelInvitation }));
+vi.mock("@/services/members-api-client", () => ({
+  getTenantMembers,
+  sendInvitations,
+  cancelInvitation,
+  removeTenantMember,
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, refresh }),
 }));
@@ -98,6 +104,15 @@ const OVERVIEW = {
   invitations: [] as unknown[],
 };
 
+const EMPLOYEE = {
+  userId: "22222222-2222-4222-8222-222222222222",
+  fullName: "Ravi Kumar",
+  email: "ravi@example.com",
+  role: "employee",
+  status: "active",
+  joinedAt: "2026-09-02T00:00:00Z",
+};
+
 describe("UserMenu settings dialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,12 +150,19 @@ describe("UserMenu settings dialog", () => {
     expect(within(dialog).queryByRole("button", { name: "Add more" })).not.toBeInTheDocument();
   });
 
-  it("lists the current user as Owner and filters by text", async () => {
+  it("shows the requested member columns in order and filters by text", async () => {
     const { dialog } = openSettings();
     await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
 
-    expect(within(dialog).getByText("Select all (1)")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "S.No",
+      "Name",
+      "Email",
+      "Role",
+      "Remove",
+    ]);
     expect(within(dialog).getByText("Owner", { selector: ".mvp-members__role" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByRole("searchbox", { name: "Filter members" }), { target: { value: "nobody" } });
     expect(within(dialog).queryByText("nithish@example.com")).not.toBeInTheDocument();
@@ -198,12 +220,23 @@ describe("UserMenu settings dialog", () => {
     getTenantMembers.mockResolvedValue({
       ...OVERVIEW,
       canInvite: false,
+      currentUserId: "user-employee",
+      members: [
+        {
+          userId: "user-employee",
+          fullName: "Nithish Kumar",
+          email: "nithish@example.com",
+          role: "employee",
+          status: "active",
+          joinedAt: "2026-09-01T00:00:00Z",
+        },
+      ],
       invitations: [
         { invitationId: "inv-1", email: "ravi@example.com", role: "admin", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
       ],
     });
     const { dialog } = openSettings();
-    await waitFor(() => expect(within(dialog).getByText("Only the owner can invite members.")).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByText("Only the Owner can invite members")).toBeInTheDocument());
     fireEvent.click(within(dialog).getByRole("tab", { name: "Pending Invitations" }));
 
     expect(within(dialog).getByText("ravi@example.com")).toBeInTheDocument();
@@ -257,12 +290,67 @@ describe("UserMenu settings dialog", () => {
     expect(within(dialog).queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("disables Send for members who are not the owner", async () => {
-    getTenantMembers.mockResolvedValue({ ...OVERVIEW, canInvite: false });
+  it("disables Send and hides member removal for employees", async () => {
+    getTenantMembers.mockResolvedValue({
+      ...OVERVIEW,
+      canInvite: false,
+      currentUserId: "user-employee",
+      members: [
+        {
+          userId: "user-employee",
+          fullName: "Nithish Kumar",
+          email: "nithish@example.com",
+          role: "employee",
+          status: "active",
+          joinedAt: "2026-09-01T00:00:00Z",
+        },
+      ],
+    });
     const { dialog } = openSettings();
 
-    await waitFor(() => expect(within(dialog).getByText("Only the owner can invite members.")).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByText("Only the Owner can invite members")).toBeInTheDocument());
     expect(within(dialog).getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(within(dialog).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+  });
+
+  it("shows Remove for an employee but not for the owner, with no three-dots actions", async () => {
+    getTenantMembers.mockResolvedValue({ ...OVERVIEW, members: [...OVERVIEW.members, EMPLOYEE] });
+    const { dialog } = openSettings();
+
+    await waitFor(() => expect(within(dialog).getByText("ravi@example.com")).toBeInTheDocument());
+    expect(within(dialog).getAllByRole("button", { name: "Remove" })).toHaveLength(1);
+    expect(within(dialog).queryByRole("button", { name: /Actions for|Bulk actions/ })).not.toBeInTheDocument();
+  });
+
+  it("does nothing when the owner cancels member removal", async () => {
+    getTenantMembers.mockResolvedValue({ ...OVERVIEW, members: [...OVERVIEW.members, EMPLOYEE] });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { dialog } = openSettings();
+
+    const removeButton = await within(dialog).findByRole("button", { name: "Remove" });
+    fireEvent.click(removeButton);
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Are you sure you want to remove this member? They will need to be invited again to rejoin.",
+    );
+    expect(removeTenantMember).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("removes the employee after owner confirmation and refreshes the list", async () => {
+    getTenantMembers
+      .mockResolvedValueOnce({ ...OVERVIEW, members: [...OVERVIEW.members, EMPLOYEE] })
+      .mockResolvedValueOnce(OVERVIEW);
+    removeTenantMember.mockResolvedValue(undefined);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { dialog } = openSettings();
+
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Remove" }));
+
+    expect(removeTenantMember).toHaveBeenCalledWith(EMPLOYEE.userId);
+    await waitFor(() => expect(within(dialog).queryByText("ravi@example.com")).not.toBeInTheDocument());
+    expect(getTenantMembers).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
   });
 
   it("closes with Escape and restores focus to the menu trigger", async () => {

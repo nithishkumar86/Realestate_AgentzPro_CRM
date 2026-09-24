@@ -39,9 +39,13 @@ vi.mock("@/lib/server/auth/supabase-auth-client", () => ({
   createAuthClient: async () => ({ rpc: authRpc }),
 }));
 
-const { sendMemberInvitations, acceptMemberInvitation, findWithdrawnInvitationForUser, findWithdrawnInvitationById } = await import(
-  "@/lib/server/member-invitation-service"
-);
+const {
+  sendMemberInvitations,
+  acceptMemberInvitation,
+  findWithdrawnInvitationForUser,
+  findWithdrawnInvitationById,
+  removeTenantMember,
+} = await import("@/lib/server/member-invitation-service");
 
 const OWNER = {
   userId: "owner-1",
@@ -135,6 +139,45 @@ describe("sendMemberInvitations", () => {
     const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "not-an-email", role: "employee" }] }, REDIRECT);
     expect(results[0].status).toBe("invalid_email");
     expect(adminRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("removeTenantMember", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("refuses non-owners before touching the database", async () => {
+    await expect(removeTenantMember({ ...OWNER, membershipRole: "employee" }, "member-1")).rejects.toMatchObject({
+      status: 403,
+      code: "MEMBER_REMOVE_NOT_ALLOWED",
+    });
+    expect(adminRpc).not.toHaveBeenCalled();
+  });
+
+  it("passes only session-derived tenant and owner ids with the selected member id", async () => {
+    adminRpc.mockResolvedValue({ data: true, error: null });
+
+    await expect(removeTenantMember(OWNER, "member-1")).resolves.toBeUndefined();
+    expect(adminRpc).toHaveBeenCalledWith("remove_tenant_member", {
+      p_tenant_id: "tenant-1",
+      p_owner_user_id: "owner-1",
+      p_member_user_id: "member-1",
+    });
+  });
+
+  it("does not report success when no employee membership was removed", async () => {
+    adminRpc.mockResolvedValue({ data: false, error: null });
+    await expect(removeTenantMember(OWNER, "member-1")).rejects.toMatchObject({
+      status: 404,
+      code: "MEMBER_NOT_FOUND",
+    });
+  });
+
+  it("maps a database authorization failure to forbidden", async () => {
+    adminRpc.mockResolvedValue({ data: null, error: { code: "42501" } });
+    await expect(removeTenantMember(OWNER, "member-1")).rejects.toMatchObject({
+      status: 403,
+      code: "MEMBER_REMOVE_NOT_ALLOWED",
+    });
   });
 });
 

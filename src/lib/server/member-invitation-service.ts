@@ -214,6 +214,33 @@ export async function cancelMemberInvitation(access: CrmAccessGranted, invitatio
   }
 }
 
+/** Owner-only: removes one employee from the caller's tenant. */
+export async function removeTenantMember(access: CrmAccessGranted, memberUserId: string): Promise<void> {
+  if (access.membershipRole !== "owner") {
+    throw new AppError("Only the owner can remove members.", { status: 403, code: "MEMBER_REMOVE_NOT_ALLOWED" });
+  }
+
+  const { data, error } = await getSupabaseAdminClient().rpc("remove_tenant_member", {
+    p_tenant_id: access.tenantId,
+    p_owner_user_id: access.userId,
+    p_member_user_id: memberUserId,
+  });
+
+  if (error) {
+    if (error.code === "42501") {
+      throw new AppError("Only the owner can remove members.", { status: 403, code: "MEMBER_REMOVE_NOT_ALLOWED" });
+    }
+    throw new AppError("The member could not be removed.", {
+      status: 500,
+      code: "MEMBER_REMOVE_FAILED",
+      retryable: true,
+    });
+  }
+  if (data !== true) {
+    throw new AppError("This employee is no longer a member.", { status: 404, code: "MEMBER_NOT_FOUND" });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Members list
 // ---------------------------------------------------------------------------
@@ -505,3 +532,4 @@ export async function acceptMemberInvitation(rawInput: unknown): Promise<AcceptI
 
   return { tenantId: row.tenant_id, role: row.membership_role };
 }
+

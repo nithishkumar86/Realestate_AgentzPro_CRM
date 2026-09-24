@@ -1675,20 +1675,20 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 
 .mvp-members__list { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }
 
-.mvp-members__list-header,
-.mvp-members__row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 20px;
-}
-
-.mvp-members__list-header { justify-content: space-between; min-height: 64px; border-bottom: 1px solid var(--border); }
-.mvp-members__select-all { display: inline-flex; align-items: center; gap: 18px; color: var(--text-muted); font-size: .86rem; opacity: .75; }
-.mvp-members__select-all input { width: 18px; height: 18px; margin: 0; }
-
-.mvp-members__row { min-height: 86px; padding-left: 60px; }
-.mvp-members__row + .mvp-members__row { border-top: 1px solid var(--border); }
+.mvp-members__table-wrap { overflow-x: auto; }
+.mvp-members__table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.mvp-members__table th,
+.mvp-members__table td { padding: 12px 16px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+.mvp-members__table th { color: var(--text-muted); font-size: .82rem; font-weight: 800; }
+.mvp-members__table tbody tr:last-child td { border-bottom: 0; }
+.mvp-members__table th:nth-child(1),
+.mvp-members__table td:nth-child(1) { width: 72px; }
+.mvp-members__table th:nth-child(2),
+.mvp-members__table td:nth-child(2) { width: 27%; }
+.mvp-members__table th:nth-child(4),
+.mvp-members__table td:nth-child(4) { width: 110px; }
+.mvp-members__table th:nth-child(5),
+.mvp-members__table td:nth-child(5) { width: 110px; }
 
 .mvp-members__avatar {
   display: inline-grid;
@@ -1703,28 +1703,15 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   font-weight: 900;
 }
 
+.mvp-members__name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.mvp-members__name strong,
+.mvp-members__email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mvp-members__identity { display: grid; flex: 1; gap: 3px; min-width: 0; }
 .mvp-members__identity strong { overflow: hidden; font-size: .92rem; text-overflow: ellipsis; white-space: nowrap; }
 .mvp-members__identity span { overflow: hidden; color: var(--text-muted); font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
 
 .mvp-members__role { color: var(--text-muted); font-size: .88rem; }
-.mvp-members__2fa { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: .88rem; }
-
-.mvp-members__more {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.mvp-members__more:hover,
-.mvp-members__more:focus-visible { background: var(--surface-muted); }
+.mvp-members__table .mvp-members__remove-cell { text-align: right; }
 
 .mvp-members__state { display: flex; align-items: center; gap: 10px; padding: 26px 20px; color: var(--text-muted); font-size: .88rem; }
 .mvp-members__state--error { color: var(--danger); }
@@ -1769,6 +1756,15 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   color: var(--text-muted);
   font-size: .82rem;
   font-weight: 700;
+}
+
+.mvp-members__table .mvp-members__index {
+  display: table-cell;
+  width: 72px;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
 }
 
 .mvp-members__remove {
@@ -1892,8 +1888,7 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   .mvp-invite-card__footer { flex-wrap: wrap; }
   .mvp-members__toolbar { grid-template-columns: 1fr 1fr; }
   .mvp-members__search { grid-column: 1 / -1; }
-  .mvp-members__row { flex-wrap: wrap; padding-left: 20px; }
-  .mvp-members__identity { flex-basis: calc(100% - 56px); }
+  .mvp-members__table { min-width: 720px; }
   .mvp-invites__header { display: none; }
   .mvp-invites__row { grid-template-columns: 36px minmax(0, 1fr) auto; row-gap: 8px; padding: 14px 16px; }
   .mvp-invites__row > :nth-child(n + 3) { grid-column: 2 / -1; justify-content: flex-start; }
