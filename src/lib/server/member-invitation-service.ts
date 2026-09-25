@@ -6,6 +6,7 @@ import type { CrmAccessGranted } from "@/lib/server/auth/access";
 import { requireValidAccountDetails } from "@/lib/server/auth/account-details-guard";
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
+import { sendExistingAccountInvitationEmail } from "@/lib/server/workspace-invitation-email";
 
 /**
  * Member invitation pipeline (supabase/migrations/20260922120000_invitation_member.sql).
@@ -140,7 +141,7 @@ export async function sendMemberInvitations(
       continue;
     }
 
-    results.push(await deliverInvitation(row.invitation_id, email, row.user_id, redirectTo));
+    results.push(await deliverInvitation(row.invitation_id, email, row.user_id, redirectTo, access.tenantName));
   }
 
   return results;
@@ -151,6 +152,7 @@ async function deliverInvitation(
   email: string,
   existingUserId: string | null,
   redirectTo: string,
+  companyName: string,
 ): Promise<InvitationSendResult> {
   const db = getSupabaseAdminClient();
   // The invitation id rides on the link so /auth/confirm can say "withdrawn" even after Supabase's
@@ -173,9 +175,18 @@ async function deliverInvitation(
   }
 
   if (existingUserId && error?.code === "email_exists") {
-    // A confirmed account that never finished setup. The invitation stays pending and is offered
-    // on their next sign-in; Supabase will not send an invite email to a confirmed address.
-    return result(email, "saved_existing_account");
+    // Already has a login (usually a member of another company). Supabase will not send an invite
+    // email to a confirmed address, so the app sends its own notice; they accept on /workspaces
+    // after signing in. The invitation stays pending either way, so a failed send loses nothing.
+    const emailed = await sendExistingAccountInvitationEmail({
+      email,
+      companyName,
+      loginUrl: new URL("/login", redirectTo).toString(),
+    });
+    if (!emailed) {
+      logInvitationEvent("EXISTING_ACCOUNT_EMAIL_NOT_SENT");
+    }
+    return result(email, emailed ? "sent" : "saved_existing_account");
   }
 
   logInvitationEvent("INVITE_EMAIL_FAILED", { providerStatus: error?.status, providerCode: error?.code });

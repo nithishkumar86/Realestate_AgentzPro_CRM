@@ -35,6 +35,9 @@ vi.mock("@/lib/server/supabase-admin", () => ({
   }),
 }));
 
+const sendExistingAccountInvitationEmail = vi.fn();
+vi.mock("@/lib/server/workspace-invitation-email", () => ({ sendExistingAccountInvitationEmail }));
+
 vi.mock("@/lib/server/auth/supabase-auth-client", () => ({
   createAuthClient: async () => ({ rpc: authRpc }),
 }));
@@ -127,9 +130,26 @@ describe("sendMemberInvitations", () => {
     expect(tableDeleteEq).toHaveBeenCalledWith("invitation_id", "inv-1");
   });
 
-  it("keeps the invitation for a confirmed account that never finished setup", async () => {
+  it("emails an existing account itself, naming the inviting company and linking to sign-in", async () => {
     adminRpc.mockResolvedValue(created("existing-user"));
     inviteUserByEmail.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "email_exists" } });
+    sendExistingAccountInvitationEmail.mockResolvedValue(true);
+
+    const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "a@b.co", role: "employee" }] }, REDIRECT);
+
+    expect(sendExistingAccountInvitationEmail).toHaveBeenCalledWith({
+      email: "a@b.co",
+      companyName: OWNER.tenantName,
+      loginUrl: new URL("/login", REDIRECT).toString(),
+    });
+    expect(results[0].status).toBe("sent");
+    expect(tableDeleteEq).not.toHaveBeenCalled();
+  });
+
+  it("keeps the invitation for an existing account when its email cannot be sent", async () => {
+    adminRpc.mockResolvedValue(created("existing-user"));
+    inviteUserByEmail.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "email_exists" } });
+    sendExistingAccountInvitationEmail.mockResolvedValue(false);
 
     const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "a@b.co", role: "employee" }] }, REDIRECT);
 
