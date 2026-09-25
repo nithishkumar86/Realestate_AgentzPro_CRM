@@ -2319,6 +2319,8 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-table td:first-child input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 .mvp-table td small { display: block; margin-top: 2px; color: var(--text-muted); }
 .mvp-label-cell { display: flex; align-items: center; gap: 6px; }
+.mvp-label-select { min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: .78rem; font-weight: 700; cursor: pointer; }
+.mvp-label-select:hover { border-color: var(--primary); }
 .mvp-label-source { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: .68rem; font-weight: 800; white-space: nowrap; }
 .mvp-label-source--ai { color: #175cd3; background: #dbeafe; }
 .mvp-label-source--telecaller { color: #067647; background: #dcfae6; }

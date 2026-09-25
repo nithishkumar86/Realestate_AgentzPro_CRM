@@ -21,10 +21,11 @@ export interface LeadSearchRequest {
   sortField?: LeadSortField;
   sortDirection?: "asc" | "desc";
 }
+export type LeadLabelSource = "default" | "ai" | "telecaller";
 export interface LeadRow {
   id: string; leadName: string | null; email: string | null; phone: string | null;
   adId: string | null; facebookPage: string; adName: string; leadDate: string;
-  status: LeadStatus; label: LeadLabel;
+  status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource;
 }
 export interface PaginatedLeadRows { items: LeadRow[]; total: number; page: number; pageSize: number; totalPages: number; timezone: string; }
 
@@ -35,7 +36,7 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const sortField = request.sortField ?? "leadDate";
   const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
+    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.pageRecordId) query = query.eq("facebook_page_record_id", request.pageRecordId);
   if (request.adId === "unattributed") query = query.is("ad_id", null);
@@ -64,7 +65,7 @@ function toLeadRow(lead: Record<string, unknown>): LeadRow {
   const page = lead.facebook_pages as { facebook_page_name?: string } | null;
   const adId = typeof lead.ad_id === "string" ? lead.ad_id : null;
   const adName = asNullableString(lead.ad_name);
-  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel };
+  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default" };
 }
 
 export type LeadFilterOptions = {
@@ -104,17 +105,17 @@ export async function getLeadFilterOptions(context: TenantRequestContext, pageRe
  * these columns — it must never be reachable from the leads-list filter UI,
  * which only ever reads status/label to narrow the query above.
  */
-export async function updateLeadTriage(context: TenantRequestContext, leadId: string, update: { status: LeadStatus } | { label: LeadLabel }): Promise<{ id: string; status: LeadStatus; label: LeadLabel }> {
+export async function updateLeadTriage(context: TenantRequestContext, leadId: string, update: { status: LeadStatus } | { label: LeadLabel }): Promise<{ id: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource }> {
   const patch = "status" in update ? { status: update.status } : { label: update.label };
   const { data, error } = await getSupabaseAdminClient().from("lead_data")
     .update(patch)
     .eq("tenant_id", context.tenantId)
     .eq("id", leadId)
-    .select("id,status,label")
+    .select("id,status,label,label_source")
     .maybeSingle();
   if (error) throw new AppError("The lead could not be updated.", { status: 500, code: "LEAD_UPDATE_FAILED" });
   if (!data) throw new AppError("Lead not found for this tenant.", { status: 404, code: "LEAD_NOT_FOUND" });
-  return { id: String(data.id), status: data.status as LeadStatus, label: data.label as LeadLabel };
+  return { id: String(data.id), status: data.status as LeadStatus, label: data.label as LeadLabel, labelSource: (data.label_source as LeadLabelSource) ?? "telecaller" };
 }
 /**
  * Permanently deletes one lead. Irreversible — the caller (the [id] DELETE route) must only reach

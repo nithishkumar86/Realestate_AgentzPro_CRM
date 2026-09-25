@@ -5,7 +5,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 
 type Quick = "All Leads" | "Today Leads" | "This Month Leads";
-type Lead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel };
+type LeadLabelSource = "default" | "ai" | "telecaller";
+type Lead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource };
 type Options = { pages: Array<{ id: string; name: string }>; ads: Array<{ id: string; name: string | null }>; defaultAdId: string | null };
 type ApiError = { error?: { message?: string } };
 type DropdownOption = { value: string; label: string };
@@ -194,6 +195,28 @@ export function LeadsPageClient() {
     }
   }
 
+  /**
+   * A label change is the same "you're about to finalize something" shape as the bulk delete
+   * above: a browser confirm popup names exactly what will change before anything is sent, and a
+   * telecaller's choice here is final — it is the only thing that ever overrides the AI's label
+   * (label_source flips to "telecaller" automatically in the database and is never touched again).
+   * The <select> stays bound to lead.label, so declining the popup needs no separate revert: React
+   * simply re-renders it back to the unchanged state.
+   */
+  async function updateLabel(leadId: string, currentLabel: LeadLabel, nextLabel: LeadLabel): Promise<void> {
+    if (nextLabel === currentLabel) return;
+    const warned = globalThis.confirm(`Change label from ${currentLabel} to ${nextLabel}? This will be saved as the final label.`);
+    if (!warned) return;
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: nextLabel }) });
+      if (!response.ok) throw new Error(await readError(response, "The label could not be updated."));
+      const updated = await response.json() as { label: LeadLabel; labelSource: LeadLabelSource };
+      setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, label: updated.label, labelSource: updated.labelSource } : existing));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The label could not be updated.");
+    }
+  }
+
   const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setFrom(""); setTo(""); };
   const openDateFilter = () => { setDraftFrom(from); setDraftTo(to); setIsDateOpen(true); };
   const cancelDateFilter = () => setIsDateOpen(false);
@@ -296,7 +319,13 @@ export function LeadsPageClient() {
     <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
       {loading ? <tr><td className="mvp-empty" colSpan={8}>Loading leads...</td></tr> : null}
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={8}>No leads match these filters.</td></tr> : null}
-      {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td>{lead.leadName ?? "Unnamed Lead"}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>{lead.status}</td><td>{lead.label}</td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
+      {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td>{lead.leadName ?? "Unnamed Lead"}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>{lead.status}</td><td className="mvp-label-cell">
+        <select className="mvp-label-select" aria-label={`Change label for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.label} onChange={(event) => void updateLabel(lead.id, lead.label, event.target.value as LeadLabel)}>
+          {LEAD_LABELS.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+        {lead.labelSource === "ai" ? <span className="mvp-label-source mvp-label-source--ai" title="Set by AI">AI</span> : null}
+        {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
+      </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
     </tbody></table></section>
   </div>;
 }

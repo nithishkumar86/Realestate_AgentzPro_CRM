@@ -66,6 +66,11 @@ grant usage on schema public, auth to anon, authenticated, service_role;
     if ($workerA.ExitCode -ne 0 -or $workerB.ExitCode -ne 0) { throw 'Concurrent PostgreSQL worker failed.' }
     Invoke-PostgresTool 'psql' @('-X', '-h', '127.0.0.1', '-p', "$port", '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-f', (Join-Path $repositoryRoot 'scripts/sql/meta-ad-concurrency-assertions.sql'))
     Invoke-PostgresTool 'psql' @('-X', '-h', '127.0.0.1', '-p', "$port", '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-f', (Join-Path $repositoryRoot 'scripts/sql/meta-lead-processing-regression.sql'))
+    # Applied here, after the concurrency fixtures above have committed their own lead_data
+    # rows, so Trigger A does not backfill stray pending classification jobs for leads that
+    # predate this migration and would otherwise be claimed ahead of this file's own fixture.
+    Invoke-PostgresTool 'psql' @('-X', '-h', '127.0.0.1', '-p', "$port", '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-f', (Join-Path $repositoryRoot 'supabase/migrations/20260922060000_lead_label_classification.sql'))
+    Invoke-PostgresTool 'psql' @('-X', '-h', '127.0.0.1', '-p', "$port", '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-f', (Join-Path $repositoryRoot 'scripts/sql/lead-label-classification-regression.sql'))
     Write-Output 'Meta migration regression tests passed in the disposable PostgreSQL cluster.'
 } finally {
     if ($started) { Invoke-PostgresTool 'pg_ctl' @('-D', $dataDirectory, '-m', 'fast', '-w', 'stop') }

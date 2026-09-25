@@ -53,16 +53,16 @@ function jsonResponse(body: unknown, status = 200): Response {
  * Sending one there is what used to 400 every download, so the stub reproduces that contract
  * rather than accepting anything: put a pagination field back and these tests fail.
  */
-type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string };
+type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string };
 
-function stubLeadApi(dummyLeads: DummyLead[] = []) {
-  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[] };
+function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolean } = {}) {
+  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[], patches: [] as Array<{ id: string; body: Record<string, unknown> }> };
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     if (url.startsWith("/api/leads/filters")) return jsonResponse(FILTER_OPTIONS);
     if (url === "/api/leads/query") {
       sent.query.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      const remaining = dummyLeads.filter((lead) => !sent.deletes.includes(lead.id));
+      const remaining = dummyLeads.filter((lead) => !sent.deletes.includes(lead.id)).map((lead) => sent.patches.filter((patch) => patch.id === lead.id).reduce((current, patch) => ({ ...current, ...patch.body, labelSource: "telecaller" }), lead));
       return jsonResponse({ items: remaining, total: remaining.length, timezone: "Asia/Kolkata" });
     }
     if (url === "/api/leads/export") {
@@ -70,6 +70,13 @@ function stubLeadApi(dummyLeads: DummyLead[] = []) {
       if ("pageSize" in body || "page" in body) return jsonResponse({ error: { message: "Request data is invalid." } }, 400);
       sent.export.push(body);
       return new Response("Lead Name,Email,Phone\r\nKumar,kumar@example.com,9999999999", { status: 200, headers: { "content-type": "text/csv" } });
+    }
+    const patchMatch = /^\/api\/leads\/([^/]+)$/.exec(url);
+    if (patchMatch && init?.method === "PATCH") {
+      if (patchOptions.fail) return jsonResponse({ error: { message: "The label could not be updated." } }, 500);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      sent.patches.push({ id: patchMatch[1], body });
+      return jsonResponse({ id: patchMatch[1], status: "New Lead", label: body.label, labelSource: "telecaller" });
     }
     const deleteMatch = /^\/api\/leads\/([^/]+)$/.exec(url);
     if (deleteMatch && init?.method === "DELETE") {
@@ -423,5 +430,58 @@ describe("deleting leads", () => {
     await screen.findByText("This lead cannot be deleted because other records still reference it.");
     expect(screen.getByText("Dummy One")).toBeInTheDocument();
     expect(alertSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("editing a lead's label", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("warns before saving, and does not send a request when the warning is declined", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    await renderLeadsPage(sent);
+
+    const select = screen.getByRole("combobox", { name: "Change label for Dummy One" }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "Hot" } });
+
+    expect(confirmSpy).toHaveBeenCalledWith("Change label from Warm to Hot? This will be saved as the final label.");
+    expect(sent.patches).toEqual([]);
+    expect(select.value).toBe("Warm");
+  });
+
+  it("saves the new label and shows the Telecaller source once the warning is confirmed", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderLeadsPage(sent);
+
+    const select = screen.getByRole("combobox", { name: "Change label for Dummy One" }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "Hot" } });
+
+    await waitFor(() => expect(sent.patches).toEqual([{ id: "lead-1", body: { label: "Hot" } }]));
+    await waitFor(() => expect(select.value).toBe("Hot"));
+    expect(screen.getByText("Telecaller")).toBeInTheDocument();
+  });
+
+  it("does not send a request when the same label is re-selected", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderLeadsPage(sent);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Change label for Dummy One" }), { target: { value: "Warm" } });
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(sent.patches).toEqual([]);
+  });
+
+  it("shows the server's error and leaves the label unchanged when the save fails", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS, { fail: true });
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderLeadsPage(sent);
+
+    const select = screen.getByRole("combobox", { name: "Change label for Dummy One" }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "Hot" } });
+
+    await screen.findByText("The label could not be updated.");
+    expect(select.value).toBe("Warm");
   });
 });
