@@ -41,6 +41,8 @@ export type InvitationSendStatus =
   | "already_member"
   | "already_invited"
   | "invalid_email"
+  | "plan_required"
+  | "seat_limit_reached"
   | "failed";
 
 export interface InvitationSendResult {
@@ -55,10 +57,20 @@ const RESULT_MESSAGES: Record<InvitationSendStatus, string> = {
   already_member: "This person is already a member of your organization.",
   already_invited: "This person already has a pending invitation.",
   invalid_email: "Enter a valid email address.",
+  plan_required: "Inviting members needs a paid plan. Subscribe on the Billing page first.",
+  seat_limit_reached: "All paid seats are in use. Each member and pending invitation uses one seat.",
   failed: "The invitation email could not be sent. Please try again.",
 };
 
-type CreateInvitationOutcome = "CREATED" | "INVALID_EMAIL" | "INVALID_ROLE" | "NOT_OWNER" | "ALREADY_MEMBER" | "ALREADY_INVITED";
+type CreateInvitationOutcome =
+  | "CREATED"
+  | "INVALID_EMAIL"
+  | "INVALID_ROLE"
+  | "NOT_OWNER"
+  | "ALREADY_MEMBER"
+  | "ALREADY_INVITED"
+  | "PLAN_REQUIRED"
+  | "SEAT_LIMIT_REACHED";
 
 interface CreateInvitationRow {
   outcome: CreateInvitationOutcome;
@@ -134,6 +146,14 @@ export async function sendMemberInvitations(
     }
     if (row.outcome === "ALREADY_INVITED") {
       results.push(result(email, "already_invited"));
+      continue;
+    }
+    if (row.outcome === "PLAN_REQUIRED") {
+      results.push(result(email, "plan_required"));
+      continue;
+    }
+    if (row.outcome === "SEAT_LIMIT_REACHED") {
+      results.push(result(email, "seat_limit_reached"));
       continue;
     }
     if (row.outcome !== "CREATED" || !row.invitation_id) {
@@ -273,9 +293,17 @@ export interface PendingInvitation {
   expiresAt: string;
 }
 
+/** Paid seats vs. seats in use. A pending invitation holds a seat; the owner uses one too. */
+export interface TenantSeatSummary {
+  isPaid: boolean;
+  paidSeats: number | null;
+  usedSeats: number;
+}
+
 export interface TenantMembersOverview {
   currentUserId: string;
   canInvite: boolean;
+  seats: TenantSeatSummary;
   members: TenantMember[];
   invitations: PendingInvitation[];
 }
@@ -289,6 +317,13 @@ interface MemberRow {
   joined_at: string;
 }
 
+interface SeatUsageRow {
+  is_paid: boolean;
+  paid_seats: number | null;
+  active_members: number;
+  pending_invitations: number;
+}
+
 interface InvitationRow {
   invitation_id: string;
   email: string;
@@ -300,7 +335,7 @@ interface InvitationRow {
 export async function listTenantMembers(access: CrmAccessGranted): Promise<TenantMembersOverview> {
   const db = getSupabaseAdminClient();
 
-  const [membersResult, invitationsResult] = await Promise.all([
+  const [membersResult, invitationsResult, seatResult] = await Promise.all([
     db.rpc("list_tenant_members", { p_tenant_id: access.tenantId }),
     db
       .from("invitation_member")
@@ -309,9 +344,10 @@ export async function listTenantMembers(access: CrmAccessGranted): Promise<Tenan
       .eq("status", "pending")
       .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false }),
+    db.rpc("tenant_seat_usage", { p_tenant_id: access.tenantId }),
   ]);
 
-  if (membersResult.error || invitationsResult.error) {
+  if (membersResult.error || invitationsResult.error || seatResult.error) {
     throw new AppError("Members could not be loaded.", { status: 500, code: "MEMBERS_LOAD_FAILED", retryable: true });
   }
 
@@ -332,7 +368,17 @@ export async function listTenantMembers(access: CrmAccessGranted): Promise<Tenan
     expiresAt: row.expires_at,
   }));
 
-  return { currentUserId: access.userId, canInvite: access.membershipRole === "owner", members, invitations };
+  const seatRow = (Array.isArray(seatResult.data) ? seatResult.data[0] : seatResult.data) as SeatUsageRow | null | undefined;
+  const seats: TenantSeatSummary = {
+    isPaid: seatRow?.is_paid === true,
+    paidSeats: seatRow?.paid_seats ?? null,
+    usedSeats: (seatRow?.active_members ?? 0) + (seatRow?.pending_invitations ?? 0),
+  };
+  // Invites are a paid feature (trial companies cannot invite) and each one holds a seat.
+  const canInvite =
+    access.membershipRole === "owner" && seats.isPaid && seats.paidSeats !== null && seats.usedSeats < seats.paidSeats;
+
+  return { currentUserId: access.userId, canInvite, seats, members, invitations };
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +549,26 @@ const acceptInputSchema = z.object({
   professionalRole: z.string().trim().min(1).max(120),
 });
 
+/**
+ * Join-time seat check raised by private.assert_seat_available (supabase/migrations/
+ * 20260926120000_billing_razorpay.sql): BL001 = the company has no running paid plan, BL002 = every
+ * paid seat is taken.
+ */
+function throwIfSeatUnavailable(code: string | undefined): void {
+  if (code === "BL001") {
+    throw new AppError("This company's plan is not active, so new members cannot join yet. Ask the owner to subscribe.", {
+      status: 409,
+      code: "COMPANY_PLAN_REQUIRED",
+    });
+  }
+  if (code === "BL002") {
+    throw new AppError("This company has no free seats. Ask the owner to add seats before you join.", {
+      status: 409,
+      code: "COMPANY_SEAT_LIMIT_REACHED",
+    });
+  }
+}
+
 export interface AcceptInvitationResult {
   tenantId: string;
   role: string;
@@ -535,6 +601,7 @@ export async function acceptMemberInvitation(rawInput: unknown): Promise<AcceptI
         code: "INVITATION_NOT_FOUND",
       });
     }
+    throwIfSeatUnavailable(error.code);
     throw new AppError("Setup could not be completed.", { status: 500, code: "ONBOARDING_FAILED" });
   }
 
@@ -633,6 +700,7 @@ export async function joinInvitedWorkspace(invitationId: string): Promise<Accept
         code: "INVITATION_NOT_FOUND",
       });
     }
+    throwIfSeatUnavailable(error.code);
     if (error.code === "P0001") {
       throw new AppError("Complete your account setup first.", { status: 409, code: "ONBOARDING_REQUIRED" });
     }

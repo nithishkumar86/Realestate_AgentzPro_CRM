@@ -26,7 +26,7 @@ vi.mock("@/lib/server/auth/active-tenant", () => ({
   readActiveTenantHint: vi.fn(async () => null),
 }));
 
-const { evaluateCrmAccess, requireCrmAccess } = await import("@/lib/server/auth/access");
+const { evaluateCrmAccess, requireCrmAccess, requireBillingMember, requireBillingOwner } = await import("@/lib/server/auth/access");
 const { verifySession } = await import("@/lib/server/auth/session");
 const { resolveLoginState } = await import("@/lib/server/auth/login-state");
 const { readActiveTenantHint } = await import("@/lib/server/auth/active-tenant");
@@ -136,5 +136,60 @@ describe("requireCrmAccess", () => {
       fullName: READY_BASE.fullName,
       membershipRole: READY_BASE.membershipRole,
     });
+  });
+});
+
+describe("billing access", () => {
+  it("lets the owner of a BLOCKED company reach billing, because that is who needs to pay", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "owner-a" });
+    vi.mocked(resolveLoginState).mockResolvedValue({ ...READY_BASE, subscriptionStatus: "blocked", trialEndsAt: past(ONE_HOUR_MS) });
+
+    await expect(requireBillingOwner()).resolves.toMatchObject({
+      tenantId: READY_BASE.tenantId,
+      membershipRole: "owner",
+      hasCrmAccess: false,
+    });
+  });
+
+  it("refuses an employee from changing billing but still lets them read status", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "employee-a" });
+    vi.mocked(resolveLoginState).mockResolvedValue({
+      ...READY_BASE,
+      membershipRole: "employee",
+      subscriptionStatus: "trialing",
+      trialEndsAt: future(ONE_HOUR_MS),
+    });
+
+    await expect(requireBillingOwner()).rejects.toMatchObject({ status: 403, code: "BILLING_OWNER_REQUIRED" });
+    await expect(requireBillingMember()).resolves.toMatchObject({ membershipRole: "employee", hasCrmAccess: true });
+  });
+
+  it("resolves the tenant only from the verified active-tenant hint", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "owner-a" });
+    vi.mocked(readActiveTenantHint).mockResolvedValueOnce("10000000-0000-0000-0000-000000000002");
+    vi.mocked(resolveLoginState).mockResolvedValue({ ...READY_BASE, subscriptionStatus: "trialing", trialEndsAt: future(ONE_HOUR_MS) });
+
+    await requireBillingOwner();
+    expect(resolveLoginState).toHaveBeenLastCalledWith("owner-a", "10000000-0000-0000-0000-000000000002");
+  });
+
+  it("refuses when no company is chosen or the session is missing", async () => {
+    vi.mocked(verifySession).mockResolvedValue(null);
+    await expect(requireBillingMember()).rejects.toMatchObject({ status: 401 });
+
+    vi.mocked(verifySession).mockResolvedValue({ userId: "multi" });
+    vi.mocked(resolveLoginState).mockResolvedValue({ status: "needs_workspace_selection" });
+    await expect(requireBillingMember()).rejects.toMatchObject({ code: "WORKSPACE_SELECTION_REQUIRED" });
+  });
+
+  it("refuses a suspended tenant", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "owner-a" });
+    vi.mocked(resolveLoginState).mockResolvedValue({
+      ...READY_BASE,
+      tenantStatus: "suspended",
+      subscriptionStatus: "blocked",
+      trialEndsAt: null,
+    });
+    await expect(requireBillingOwner()).rejects.toMatchObject({ code: "BILLING_NOT_ALLOWED" });
   });
 });

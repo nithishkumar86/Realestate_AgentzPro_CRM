@@ -1,23 +1,25 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { verifySession } from "@/lib/server/auth/session";
-import { resolveLoginState } from "@/lib/server/auth/login-state";
+import { BillingPageClient } from "@/features/billing/billing-page-client";
+import { isAppError } from "@/lib/server/app-error";
+import { requireBillingMember } from "@/lib/server/auth/access";
 import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
-import { evaluateCrmAccess } from "@/lib/server/auth/access";
+import { resolveLoginState } from "@/lib/server/auth/login-state";
+import { verifySession } from "@/lib/server/auth/session";
+import { getBillingOverview } from "@/lib/server/billing-service";
 
 export const metadata: Metadata = {
-  title: "Account",
+  title: "Billing",
 };
 
 /**
- * login_system_plan.md section 8.3: an expired/blocked account can read
- * only the minimum tenant and subscription information needed to
- * understand and resolve its own state — never CRM data. This page also
- * independently resolves the login state (rather than trusting the (crm)
- * layout's routing decision) so it can distinguish a genuine
- * integrity_error from an ordinary expired/blocked access denial in its
- * own messaging, without exposing which specific field caused the denial.
+ * Billing for the active company. Deliberately outside the (crm) access gate: a company whose trial or
+ * paid period has ended lands here (the (crm) layout redirects CRM_ACCESS_DENIED to /billing) and must
+ * be able to pay. Companies that still have access can open it too, to see their plan and receipts.
+ *
+ * It shows only this company's plan, seats and receipts — never CRM data. An integrity_error keeps its
+ * own message, without revealing which record caused it.
  */
 export default async function BillingPage() {
   const session = await verifySession();
@@ -35,49 +37,44 @@ export default async function BillingPage() {
     redirect("/workspaces");
   }
 
-  if (state.status === "ready" && evaluateCrmAccess(state)) {
-    redirect("/");
+  if (state.status === "integrity_error") {
+    return (
+      <div className="auth-card">
+        <h1 className="auth-card__title">We need to verify your account</h1>
+        <p className="auth-card__subtitle">
+          Something doesn&apos;t look right with your account records. Our team has been notified — please contact support to continue.
+        </p>
+      </div>
+    );
   }
 
-  const isIntegrityError = state.status === "integrity_error";
+  const overview = await loadOverview();
 
-  return (
-    <div className="auth-card">
-      <h1 className="auth-card__title">{isIntegrityError ? "We need to verify your account" : "CRM access is not currently available"}</h1>
-      <p className="auth-card__subtitle">
-        {isIntegrityError
-          ? "Something doesn't look right with your account records. Our team has been notified — please contact support to continue."
-          : "This may be due to your subscription, membership, or account status. Contact support if you believe this is a mistake."}
-      </p>
-
-      {!isIntegrityError && state.status === "ready" ? (
-        <dl className="auth-billing-summary">
-          <div>
-            <dt>Subscription status</dt>
-            <dd>{state.subscriptionStatus}</dd>
-          </div>
-          {state.trialEndsAt ? (
-            <div>
-              <dt>Trial ended</dt>
-              <dd>{new Date(state.trialEndsAt).toLocaleDateString()}</dd>
-            </div>
-          ) : null}
-          {state.currentPeriodEndsAt ? (
-            <div>
-              <dt>Billing period ended</dt>
-              <dd>{new Date(state.currentPeriodEndsAt).toLocaleDateString()}</dd>
-            </div>
-          ) : null}
-        </dl>
-      ) : null}
-
-      {!isIntegrityError ? (
-        // Access is decided per company: one company's expired trial must not lock a person out of
-        // the other companies they belong to.
+  // A suspended company or a blocked membership cannot buy its way back in; support resolves those.
+  if (!overview) {
+    return (
+      <div className="auth-card">
+        <h1 className="auth-card__title">CRM access is not currently available</h1>
+        <p className="auth-card__subtitle">
+          This may be due to your membership or account status. Contact support if you believe this is a mistake.
+        </p>
         <p className="auth-card__subtitle">
           <Link href="/workspaces">Switch company</Link>
         </p>
-      ) : null}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  return <BillingPageClient overview={overview} />;
+}
+
+async function loadOverview() {
+  try {
+    return await getBillingOverview(await requireBillingMember());
+  } catch (error) {
+    if (isAppError(error) && error.code === "BILLING_NOT_ALLOWED") {
+      return null;
+    }
+    throw error;
+  }
 }

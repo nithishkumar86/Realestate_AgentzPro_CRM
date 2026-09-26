@@ -104,3 +104,65 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
     membershipRole: state.membershipRole,
   };
 }
+
+export interface BillingAccess {
+  userId: string;
+  tenantId: string;
+  tenantName: string;
+  membershipRole: string;
+  subscriptionStatus: string;
+  trialEndsAt: string | null;
+  currentPeriodEndsAt: string | null;
+  hasCrmAccess: boolean;
+}
+
+/**
+ * Billing sits OUTSIDE the CRM-access gate on purpose: a company whose trial or paid period has
+ * ended is exactly the company that needs to pay. So this does not call evaluateCrmAccess(); it only
+ * requires a verified session and an active membership in an active tenant.
+ *
+ * The tenant is the active tenant resolved by resolveLoginState (the cookie hint re-verified against
+ * this user's own memberships), never anything from the request. With many memberships per user,
+ * that is what keeps "pay for company A" from ever touching company B.
+ */
+export async function requireBillingMember(): Promise<BillingAccess> {
+  const session = await verifySession();
+  if (!session) {
+    throw new AppError("Authentication is required.", { status: 401, code: "UNAUTHENTICATED" });
+  }
+
+  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
+
+  if (state.status === "needs_onboarding") {
+    throw new AppError("Onboarding must be completed first.", { status: 403, code: "ONBOARDING_REQUIRED" });
+  }
+  if (state.status === "needs_workspace_selection") {
+    throw new AppError("Choose a company to continue.", { status: 403, code: "WORKSPACE_SELECTION_REQUIRED" });
+  }
+  if (state.status === "integrity_error") {
+    throw new AppError("Account access could not be verified.", { status: 403, code: "ACCOUNT_INTEGRITY_ERROR" });
+  }
+  if (state.tenantStatus !== "active" || state.membershipStatus !== "active") {
+    throw new AppError("Billing is not available for this account.", { status: 403, code: "BILLING_NOT_ALLOWED" });
+  }
+
+  return {
+    userId: session.userId,
+    tenantId: state.tenantId,
+    tenantName: state.tenantName,
+    membershipRole: state.membershipRole,
+    subscriptionStatus: state.subscriptionStatus,
+    trialEndsAt: state.trialEndsAt,
+    currentPeriodEndsAt: state.currentPeriodEndsAt,
+    hasCrmAccess: evaluateCrmAccess(state),
+  };
+}
+
+/** Buying and cancelling are owner-only. Employees can see status, never change it. */
+export async function requireBillingOwner(): Promise<BillingAccess> {
+  const access = await requireBillingMember();
+  if (access.membershipRole !== "owner") {
+    throw new AppError("Only the company owner can manage billing.", { status: 403, code: "BILLING_OWNER_REQUIRED" });
+  }
+  return access;
+}

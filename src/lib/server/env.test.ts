@@ -84,3 +84,38 @@ describe("getAuthEnv", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("getRazorpayEnv", () => {
+  const originalEnv = { ...process.env };
+  const RAZORPAY_ENV = {
+    RAZORPAY_KEY_ID: "rzp_test_AbC123",
+    RAZORPAY_KEY_SECRET: "test-key-secret",
+    RAZORPAY_WEBHOOK_SECRET: "test-webhook-secret",
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = { ...originalEnv, ...RAZORPAY_ENV };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("returns the Razorpay keys when all three are set", async () => {
+    const { getRazorpayEnv } = await import("@/lib/server/env");
+    expect(getRazorpayEnv()).toEqual(RAZORPAY_ENV);
+  });
+
+  it("fails closed when the webhook secret is missing", async () => {
+    delete process.env.RAZORPAY_WEBHOOK_SECRET;
+    const { getRazorpayEnv } = await import("@/lib/server/env");
+    expect(() => getRazorpayEnv()).toThrow(expect.objectContaining({ code: "RAZORPAY_CONFIGURATION_ERROR" }));
+  });
+
+  it("rejects a key id that is not a Razorpay test or live key", async () => {
+    process.env.RAZORPAY_KEY_ID = "pk_live_123";
+    const { getRazorpayEnv } = await import("@/lib/server/env");
+    expect(() => getRazorpayEnv()).toThrow(expect.objectContaining({ code: "RAZORPAY_CONFIGURATION_ERROR" }));
+  });
+});

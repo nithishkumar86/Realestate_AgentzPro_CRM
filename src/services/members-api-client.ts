@@ -18,9 +18,16 @@ export interface PendingInvitation {
   expiresAt: string;
 }
 
+export interface TenantSeatSummary {
+  isPaid: boolean;
+  paidSeats: number | null;
+  usedSeats: number;
+}
+
 export interface TenantMembersOverview {
   currentUserId: string;
   canInvite: boolean;
+  seats: TenantSeatSummary;
   members: TenantMember[];
   invitations: PendingInvitation[];
 }
@@ -31,6 +38,8 @@ export type InvitationSendStatus =
   | "already_member"
   | "already_invited"
   | "invalid_email"
+  | "plan_required"
+  | "seat_limit_reached"
   | "failed";
 
 export interface InvitationSendResult {

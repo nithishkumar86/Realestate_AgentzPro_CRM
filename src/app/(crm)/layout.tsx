@@ -47,7 +47,7 @@ export default async function CrmLayout({ children }: Readonly<{ children: React
   }
 
   return (
-    <CrmShell fullName={access.fullName} tenantName={access.tenantName}>
+    <CrmShell fullName={access.fullName} tenantName={access.tenantName} membershipRole={access.membershipRole}>
       <InactivityLogout />
       {children}
     </CrmShell>

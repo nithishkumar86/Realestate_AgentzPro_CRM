@@ -247,3 +247,36 @@ export function getQstashEnv(): QstashEnvironment {
   cachedQstashEnvironment = result.data;
   return cachedQstashEnvironment;
 }
+
+// ---------------------------------------------------------------------------
+// Razorpay (subscription billing)
+//
+// Test-mode keys start rzp_test_, live keys rzp_live_. The webhook secret is the one typed into the
+// Razorpay Dashboard webhook form; it is unrelated to the API key secret.
+// ---------------------------------------------------------------------------
+const razorpayEnvironmentSchema = z.object({
+  RAZORPAY_KEY_ID: z.string().regex(/^rzp_(test|live)_[A-Za-z0-9]+$/),
+  RAZORPAY_KEY_SECRET: z.string().min(1),
+  RAZORPAY_WEBHOOK_SECRET: z.string().min(1),
+});
+
+export type RazorpayEnvironment = z.infer<typeof razorpayEnvironmentSchema>;
+
+let cachedRazorpayEnvironment: RazorpayEnvironment | undefined;
+
+export function getRazorpayEnv(): RazorpayEnvironment {
+  if (cachedRazorpayEnvironment) {
+    return cachedRazorpayEnvironment;
+  }
+
+  const result = razorpayEnvironmentSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new AppError("Razorpay server configuration is incomplete.", {
+      status: 503,
+      code: "RAZORPAY_CONFIGURATION_ERROR",
+    });
+  }
+
+  cachedRazorpayEnvironment = result.data;
+  return cachedRazorpayEnvironment;
+}

@@ -378,3 +378,46 @@ describe("findWithdrawnInvitationForUser", () => {
     await expect(findWithdrawnInvitationForUser("user-1")).rejects.toMatchObject({ status: 500, retryable: true });
   });
 });
+
+describe("seat and plan limits", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tableUpdateEq.mockResolvedValue({ error: null });
+    tableDeleteEq.mockResolvedValue({ error: null });
+  });
+
+  it("reports a trial company's invite as needing a paid plan, without sending an email", async () => {
+    adminRpc.mockResolvedValue({ data: [{ outcome: "PLAN_REQUIRED", invitation_id: null, user_id: null }], error: null });
+
+    const [only] = await sendMemberInvitations(OWNER, { invitations: [{ email: "new@b.co", role: "employee" }] }, REDIRECT);
+
+    expect(only).toMatchObject({ email: "new@b.co", status: "plan_required" });
+    expect(inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("reports a full company's invite as out of seats, without sending an email", async () => {
+    adminRpc.mockResolvedValue({ data: [{ outcome: "SEAT_LIMIT_REACHED", invitation_id: null, user_id: null }], error: null });
+
+    const [only] = await sendMemberInvitations(OWNER, { invitations: [{ email: "new@b.co", role: "employee" }] }, REDIRECT);
+
+    expect(only).toMatchObject({ status: "seat_limit_reached" });
+    expect(inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("maps the join-time plan and seat checks on both accept paths", async () => {
+    const VALID = {
+      invitationId: "20000000-0000-4000-8000-000000000003",
+      fullName: "Ravi",
+      phoneNumber: "9876543210",
+      professionalRole: "Sales",
+    };
+
+    authRpc.mockResolvedValue({ data: null, error: { code: "BL001" } });
+    await expect(acceptMemberInvitation(VALID)).rejects.toMatchObject({ status: 409, code: "COMPANY_PLAN_REQUIRED" });
+    await expect(joinInvitedWorkspace(VALID.invitationId)).rejects.toMatchObject({ status: 409, code: "COMPANY_PLAN_REQUIRED" });
+
+    authRpc.mockResolvedValue({ data: null, error: { code: "BL002" } });
+    await expect(acceptMemberInvitation(VALID)).rejects.toMatchObject({ status: 409, code: "COMPANY_SEAT_LIMIT_REACHED" });
+    await expect(joinInvitedWorkspace(VALID.invitationId)).rejects.toMatchObject({ status: 409, code: "COMPANY_SEAT_LIMIT_REACHED" });
+  });
+});

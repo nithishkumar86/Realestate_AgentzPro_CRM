@@ -6,14 +6,17 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
+  ExternalLink,
   LoaderCircle,
   Mail,
   RotateCcw,
   Search,
+  ReceiptText,
   Trash2,
   Users,
   X,
 } from "lucide-react";
+import { getInvoices, type BillingInvoice } from "@/services/billing-api-client";
 import {
   cancelInvitation,
   getTenantMembers,
@@ -22,6 +25,7 @@ import {
   type InvitableRole,
   type InvitationSendResult,
   type TenantMembersOverview,
+  type TenantSeatSummary,
 } from "@/services/members-api-client";
 
 // Mirrors the tenant_memberships.membership_role check constraint.
@@ -36,7 +40,12 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
 // Only one owner is allowed per tenant; invitations grant employee only.
 const INVITABLE_ROLES: readonly MembershipRole[] = ["employee"];
 
-type SettingsSection = "members";
+type SettingsSection = "members" | "invoices";
+
+const SECTION_LABELS: Record<SettingsSection, string> = {
+  members: "Members",
+  invoices: "Invoices",
+};
 type MembersTab = "team" | "pending";
 
 type InviteRow = { id: number; email: string; role: MembershipRole };
@@ -123,13 +132,22 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
               <Users size={17} aria-hidden="true" />
               <span>Members</span>
             </button>
+            <button
+              type="button"
+              className="mvp-settings__nav-item"
+              aria-current={section === "invoices" ? "page" : undefined}
+              onClick={() => setSection("invoices")}
+            >
+              <ReceiptText size={17} aria-hidden="true" />
+              <span>Invoices</span>
+            </button>
           </nav>
         </aside>
 
         <div className="mvp-settings__main">
           <header className="mvp-settings__topbar">
             <nav className="mvp-settings__breadcrumb" aria-label="Breadcrumb">
-              <strong aria-current="page">Members</strong>
+              <strong aria-current="page">{SECTION_LABELS[section]}</strong>
             </nav>
             <button
               type="button"
@@ -144,6 +162,7 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
 
           <div className="mvp-settings__content">
             {section === "members" ? <MembersSection fullName={fullName} /> : null}
+            {section === "invoices" ? <InvoicesSection /> : null}
           </div>
         </div>
       </div>
@@ -182,6 +201,7 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
   const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
 
   const canInvite = membersState.status === "success" && membersState.overview.canInvite;
+  const seats = membersState.status === "success" ? membersState.overview.seats : null;
   const membershipRole =
     membersState.status === "success"
       ? membersState.overview.members.find((member) => member.userId === membersState.overview.currentUserId)?.role ?? null
@@ -216,6 +236,7 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
 
       <InviteMembersCard
         canInvite={canInvite}
+        seats={seats}
         isLoading={membersState.status === "loading"}
         membershipRole={membershipRole}
         onSent={refresh}
@@ -322,11 +343,13 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
 
 function InviteMembersCard({
   canInvite,
+  seats,
   isLoading,
   membershipRole,
   onSent,
 }: Readonly<{
   canInvite: boolean;
+  seats: TenantSeatSummary | null;
   isLoading: boolean;
   membershipRole: MembershipRole | null;
   onSent: () => void;
@@ -425,6 +448,17 @@ function InviteMembersCard({
         {!sendError && !isLoading && membershipRole === "employee" ? (
           <span className="mvp-invite-card__footer-note">Only the Owner can invite members</span>
         ) : null}
+        {!sendError && !isLoading && membershipRole === "owner" && seats ? (
+          <span className="mvp-invite-card__footer-note">
+            {seats.isPaid && seats.paidSeats !== null ? (
+              `${seats.usedSeats} of ${seats.paidSeats} seats used`
+            ) : (
+              <>
+                Inviting members needs a paid plan. <a href="/billing">Go to Billing</a>
+              </>
+            )}
+          </span>
+        ) : null}
         <button
           type="button"
           className="mvp-invite-card__send"
@@ -502,7 +536,9 @@ function resultClassName(status: InvitationSendResult["status"]): string {
   if (SENT_STATUSES.has(status)) {
     return "mvp-invite-card__result--ok";
   }
-  return status === "failed" || status === "invalid_email" ? "mvp-invite-card__result--error" : "";
+  return status === "failed" || status === "invalid_email" || status === "plan_required" || status === "seat_limit_reached"
+    ? "mvp-invite-card__result--error"
+    : "";
 }
 
 function InviteRowFields({
@@ -769,4 +805,114 @@ function getInitials(fullName: string): string {
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
+}
+
+type InvoicesState =
+  | { status: "loading" }
+  | { status: "success"; invoices: BillingInvoice[] }
+  | { status: "error"; message: string };
+
+function formatRupees(paise: number): string {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(paise / 100);
+}
+
+/**
+ * Every invoice of the active company, newest first, in one scrollable list. One row = one captured
+ * Razorpay payment; "View invoice" opens the Razorpay-hosted invoice for it. Owner only — an employee
+ * gets the server's "only the owner" message.
+ */
+function InvoicesSection() {
+  const [state, setState] = useState<InvoicesState>({ status: "loading" });
+  const [requestVersion, setRequestVersion] = useState(0);
+  const titleId = useId();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getInvoices(controller.signal)
+      .then((invoices) => setState({ status: "success", invoices }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setState({ status: "error", message: error instanceof Error ? error.message : "Invoices could not be loaded." });
+        }
+      });
+    return () => controller.abort();
+  }, [requestVersion]);
+
+  return (
+    <section className="mvp-members" aria-labelledby={titleId}>
+      <header className="mvp-members__header">
+        <h2 id={titleId}>Invoices</h2>
+        <p>Every payment for this company, newest first</p>
+      </header>
+
+      {state.status === "loading" ? (
+        <div className="mvp-members__state" role="status">
+          <LoaderCircle className="spin" size={20} aria-hidden="true" />
+          <span>Loading invoices…</span>
+        </div>
+      ) : null}
+
+      {state.status === "error" ? (
+        <div className="mvp-members__state mvp-members__state--error" role="alert">
+          <CircleAlert size={20} aria-hidden="true" />
+          <span>{state.message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setState({ status: "loading" });
+              setRequestVersion((version) => version + 1);
+            }}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {state.status === "success" && state.invoices.length === 0 ? (
+        <div className="mvp-members__empty">
+          <ReceiptText size={22} aria-hidden="true" />
+          <strong>No invoices yet</strong>
+          <span>Invoices appear here after your first payment.</span>
+        </div>
+      ) : null}
+
+      {state.status === "success" && state.invoices.length > 0 ? (
+        <div className="mvp-members__list mvp-invoices">
+          <div className="mvp-invoices__header">
+            <span>S.No</span>
+            <span>Paid on</span>
+            <span>Period</span>
+            <span>Amount</span>
+            <span className="mvp-invoices__action">Invoice</span>
+          </div>
+          <div className="mvp-invoices__rows" tabIndex={0} aria-label={`${state.invoices.length} invoices, newest first`}>
+            {state.invoices.map((invoice, index) => (
+              <div className="mvp-invoices__row" key={invoice.paymentId}>
+                <span className="mvp-members__index" aria-hidden="true">{index + 1}</span>
+                <span>{formatDate(invoice.paidAt)}</span>
+                <span className="mvp-invoices__period">
+                  {formatDate(invoice.periodStart)} – {formatDate(invoice.periodEnd)}
+                </span>
+                <span className="mvp-invoices__amount">
+                  <strong>{formatRupees(invoice.amountPaise)}</strong>
+                  {invoice.paymentMethod ? <span>{invoice.paymentMethod.toUpperCase()}</span> : null}
+                </span>
+                <span className="mvp-invoices__action">
+                  {invoice.invoiceUrl ? (
+                    <a href={invoice.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                      View invoice
+                      <ExternalLink size={13} aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <span className="mvp-invoices__missing">—</span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
 }
