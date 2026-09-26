@@ -16,7 +16,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { getInvoices, type BillingInvoice } from "@/services/billing-api-client";
+import { BillingOwnerOnlyError, getInvoices, type BillingInvoice } from "@/services/billing-api-client";
 import {
   cancelInvitation,
   getTenantMembers,
@@ -810,6 +810,7 @@ function getInitials(fullName: string): string {
 type InvoicesState =
   | { status: "loading" }
   | { status: "success"; invoices: BillingInvoice[] }
+  | { status: "ownerOnly"; message: string }
   | { status: "error"; message: string };
 
 function formatRupees(paise: number): string {
@@ -819,7 +820,7 @@ function formatRupees(paise: number): string {
 /**
  * Every invoice of the active company, newest first, in one scrollable list. One row = one captured
  * Razorpay payment; "View invoice" opens the Razorpay-hosted invoice for it. Owner only — an employee
- * gets the server's "only the owner" message.
+ * sees just the "only the owner" message, with no Retry (a 403 can never succeed on retry).
  */
 function InvoicesSection() {
   const [state, setState] = useState<InvoicesState>({ status: "loading" });
@@ -831,7 +832,12 @@ function InvoicesSection() {
     void getInvoices(controller.signal)
       .then((invoices) => setState({ status: "success", invoices }))
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (error instanceof BillingOwnerOnlyError) {
+          setState({ status: "ownerOnly", message: error.message });
+        } else {
           setState({ status: "error", message: error instanceof Error ? error.message : "Invoices could not be loaded." });
         }
       });
@@ -842,13 +848,20 @@ function InvoicesSection() {
     <section className="mvp-members" aria-labelledby={titleId}>
       <header className="mvp-members__header">
         <h2 id={titleId}>Invoices</h2>
-        <p>Every payment for this company, newest first</p>
+        {state.status === "ownerOnly" ? null : <p>Every payment for this company, newest first</p>}
       </header>
 
       {state.status === "loading" ? (
         <div className="mvp-members__state" role="status">
           <LoaderCircle className="spin" size={20} aria-hidden="true" />
           <span>Loading invoices…</span>
+        </div>
+      ) : null}
+
+      {state.status === "ownerOnly" ? (
+        <div className="mvp-members__state" role="status">
+          <CircleAlert size={20} aria-hidden="true" />
+          <span>{state.message}</span>
         </div>
       ) : null}
 

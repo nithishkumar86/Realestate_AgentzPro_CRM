@@ -67,6 +67,14 @@ export interface BillingInvoice {
   invoiceUrl: string | null;
 }
 
+/** Thrown when the viewer is not the company owner (HTTP 403) — retrying can never succeed. */
+export class BillingOwnerOnlyError extends Error {
+  constructor() {
+    super("Only the company owner can manage and view billing.");
+    this.name = "BillingOwnerOnlyError";
+  }
+}
+
 export async function getInvoices(signal?: AbortSignal): Promise<BillingInvoice[]> {
   const response = await fetch("/api/billing/invoices", {
     method: "GET",
@@ -75,6 +83,9 @@ export async function getInvoices(signal?: AbortSignal): Promise<BillingInvoice[
     headers: { accept: "application/json" },
     signal,
   });
+  if (response.status === 403) {
+    throw new BillingOwnerOnlyError();
+  }
   const payload = await readJson<{ invoices?: unknown }>(response, "Invoices could not be loaded.");
   if (!Array.isArray(payload.invoices)) {
     throw new Error("The invoices response was invalid.");
