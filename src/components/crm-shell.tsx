@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, ClipboardList, Link2 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { CompanySwitcher } from "@/components/company-switcher";
 import { SidebarCollapseButton, SidebarExpandButton } from "@/components/sidebar-toggle";
 import { UserMenu } from "@/components/user-menu";
 
@@ -30,6 +31,7 @@ export function CrmShell({ children, fullName, tenantName }: Readonly<CrmShellPr
         <Link className="mvp-sidebar__brand" href="/leads" aria-label="Go to Leads">
           <BrandLogo />
         </Link>
+        <CompanySwitcher tenantName={tenantName} />
         <nav className="mvp-sidebar__nav">
           {navigation.map(({ href, label, icon: Icon }) => (
             <Link

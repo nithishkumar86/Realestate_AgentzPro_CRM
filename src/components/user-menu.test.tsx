@@ -48,18 +48,16 @@ describe("UserMenu profile dialog", () => {
     renderMenu();
     const menu = screen.getByLabelText("Account menu");
 
-    expect(menu).toHaveTextContent("SettingsProfileSwitch companyDarkUpgrade planLogout");
+    expect(menu).toHaveTextContent("SettingsProfileDarkUpgrade planLogout");
     expect(within(menu).getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeEnabled();
     expect(within(menu).getByRole("button", { name: "Profile" })).toBeEnabled();
     expect(within(menu).getByRole("button", { name: "Settings" })).toBeEnabled();
     expect(within(menu).queryByRole("button", { name: "Upgrade plan" })).not.toBeInTheDocument();
   });
 
-  it("opens the company switcher from Switch company", () => {
+  it("no longer lists Switch company (it lives at the top of the sidebar)", () => {
     renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: "Switch company" }));
-    expect(push).toHaveBeenCalledWith("/workspaces");
-    expect(screen.queryByLabelText("Account menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Switch company" })).not.toBeInTheDocument();
   });
 
   it("loads and displays exactly the five approved profile fields", async () => {
