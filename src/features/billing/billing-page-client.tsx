@@ -1,5 +1,6 @@
 "use client";
 
+import { Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -45,8 +46,36 @@ type Phase =
   | { kind: "activation_delayed" }
   | { kind: "error"; message: string };
 
-function formatRupees(paise: number): string {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(paise / 100);
+function formatRupees(paise: number, maximumFractionDigits = 2): string {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits }).format(paise / 100);
+}
+
+/** "Pro Monthly" → "Pro": the period is shown by the Monthly / Yearly switch instead. */
+function tierName(planName: string): string {
+  return planName.replace(/\s*(monthly|yearly)\s*$/i, "") || planName;
+}
+
+const PLAN_FEATURES = [
+  "Unlimited AI label classification",
+  "Unlimited ad connections",
+  "Custom seats — pay only for your team",
+  "Multi-membership — one login across many companies",
+];
+
+function PlanFeatures({ heading }: Readonly<{ heading: string }>) {
+  return (
+    <div className="billing-offer__features">
+      <p>{heading}</p>
+      <ul>
+        {PLAN_FEATURES.map((feature) => (
+          <li key={feature}>
+            <Check size={16} aria-hidden="true" />
+            {feature}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function formatDate(iso: string | null): string {
@@ -73,8 +102,20 @@ const STATUS_LABELS: Record<string, string> = {
   blocked: "Inactive",
 };
 
-export function BillingPageClient({ overview }: Readonly<{ overview: BillingOverview }>) {
+export interface BillingPageClientProps {
+  overview: BillingOverview;
+  /**
+   * Rendered inside Settings → Billing instead of the standalone /billing page: no card, title or
+   * page links, and no payment history (Settings has its own Invoices section).
+   */
+  embedded?: boolean;
+  /** Embedded only: reload the overview after a change (the page reloads itself with router.refresh). */
+  onChanged?: () => void;
+}
+
+export function BillingPageClient({ overview, embedded = false, onChanged }: Readonly<BillingPageClientProps>) {
   const router = useRouter();
+  const reload = () => (onChanged ? onChanged() : router.refresh());
   const minimumSeats = Math.max(1, overview.seats.activeMembers);
   const [planCode, setPlanCode] = useState<string | null>(overview.plans[0]?.planCode ?? null);
   const [seats, setSeats] = useState(minimumSeats);
@@ -87,6 +128,12 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
 
   const selectedPlan = useMemo(() => overview.plans.find((plan) => plan.planCode === planCode) ?? null, [overview.plans, planCode]);
   const totalPaise = selectedPlan ? selectedPlan.pricePerSeatPaise * seats : 0;
+  const isYearly = selectedPlan?.billingPeriod === "yearly";
+  // Monthly first, then yearly: the order of the switch.
+  const periodPlans = useMemo(
+    () => [...overview.plans].sort((a, b) => (a.billingPeriod === b.billingPeriod ? 0 : a.billingPeriod === "monthly" ? -1 : 1)),
+    [overview.plans],
+  );
 
   async function waitForActivation(): Promise<void> {
     setPhase({ kind: "activating" });
@@ -100,8 +147,14 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
         const status = await getBillingStatus(controller.signal);
         // Activated = the webhook has written a paid period that differs from what we started with.
         if (status.subscriptionStatus === "active" && status.hasCrmAccess && status.currentPeriodEndsAt !== overview.currentPeriodEndsAt) {
-          router.replace("/leads");
-          router.refresh();
+          if (embedded) {
+            // Already inside the CRM: just show the new plan.
+            setPhase({ kind: "idle" });
+            reload();
+          } else {
+            router.replace("/leads");
+            router.refresh();
+          }
           return;
         }
       } catch {
@@ -147,7 +200,7 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
       await cancelSubscriptionAtPeriodEnd();
       setConfirmingCancel(false);
       setCancelState({ busy: false, error: null });
-      router.refresh();
+      reload();
     } catch (error) {
       setCancelState({ busy: false, error: error instanceof Error ? error.message : "The subscription could not be cancelled." });
     }
@@ -155,7 +208,7 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
 
   if (phase.kind === "activating" || phase.kind === "activation_delayed") {
     return (
-      <div className="auth-card billing-card" aria-live="polite">
+      <div className={embedded ? "billing-panel" : "auth-card billing-card"} aria-live="polite">
         <h1 className="auth-card__title">{phase.kind === "activating" ? "Activating your plan…" : "Payment received"}</h1>
         <p className="auth-card__subtitle">
           {phase.kind === "activating"
@@ -163,7 +216,7 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
             : "Your plan is being activated and will be ready in a few minutes. You can refresh this page; there is no need to pay again."}
         </p>
         {phase.kind === "activation_delayed" ? (
-          <button className="button" type="button" onClick={() => router.refresh()}>
+          <button className="button" type="button" onClick={reload}>
             Refresh
           </button>
         ) : null}
@@ -175,9 +228,13 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
   const periodLabel = currentPlan?.cancelAtPeriodEnd ? "Access ends on" : "Renews on";
 
   return (
-    <div className="auth-card billing-card">
-      <h1 className="auth-card__title">Billing</h1>
-      <p className="auth-card__subtitle">{overview.companyName}</p>
+    <div className={embedded ? "billing-panel" : "auth-card billing-card"}>
+      {embedded ? null : (
+        <>
+          <h1 className="auth-card__title">Billing</h1>
+          <p className="auth-card__subtitle">{overview.companyName}</p>
+        </>
+      )}
 
       {!overview.hasCrmAccess ? (
         <p className="auth-error" role="status">
@@ -198,10 +255,6 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
         ) : null}
         {currentPlan ? (
           <>
-            <div>
-              <dt>Plan</dt>
-              <dd>{currentPlan.planName}</dd>
-            </div>
             <div>
               <dt>Seats</dt>
               <dd>
@@ -245,82 +298,121 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
         </div>
       ) : null}
 
+      {currentPlan ? (
+        <section className="billing-offer billing-offer--current" aria-labelledby="billing-current-title">
+          <div className="billing-offer__top">
+            <div className="billing-offer__head">
+              <h2 id="billing-current-title" className="billing-offer__name">
+                {tierName(currentPlan.planName)}
+              </h2>
+              <span className="billing-offer__badge">{currentPlan.cancelAtPeriodEnd ? "Ending" : "Your plan"}</span>
+            </div>
+            <p className="billing-offer__unit">
+              {formatRupees(currentPlan.pricePerSeatPaise)} / seat / {currentPlan.billingPeriod === "yearly" ? "year" : "month"} ·{" "}
+              {currentPlan.seatQuantity} {currentPlan.seatQuantity === 1 ? "seat" : "seats"}
+            </p>
+          </div>
+          <PlanFeatures heading={`Included in ${tierName(currentPlan.planName)}:`} />
+        </section>
+      ) : null}
+
       {overview.canSubscribe ? (
-        overview.plans.length === 0 ? (
+        !selectedPlan ? (
           <p className="auth-error" role="status">
             Plans are not available right now. Please contact support.
           </p>
         ) : (
-          <section className="billing-checkout" aria-labelledby="billing-checkout-title">
-            <h2 id="billing-checkout-title" className="billing-checkout__title">
-              Choose a plan
-            </h2>
-            <div className="billing-plans" role="radiogroup" aria-label="Billing period">
-              {overview.plans.map((plan) => (
-                <label key={plan.planCode} className={plan.planCode === planCode ? "billing-plan billing-plan--selected" : "billing-plan"}>
-                  <input
-                    type="radio"
-                    name="billing-plan"
-                    value={plan.planCode}
-                    checked={plan.planCode === planCode}
-                    onChange={() => setPlanCode(plan.planCode)}
-                  />
-                  <span className="billing-plan__name">{plan.planName}</span>
-                  <span className="billing-plan__price">
-                    {formatRupees(plan.pricePerSeatPaise)} / seat / {plan.billingPeriod === "yearly" ? "year" : "month"}
-                  </span>
-                </label>
-              ))}
-            </div>
-
-            <div className="billing-seats">
-              <label htmlFor="billing-seat-count">Seats</label>
-              <div className="billing-seats__stepper">
-                <button type="button" aria-label="Remove a seat" onClick={() => setSeats((value) => Math.max(minimumSeats, value - 1))} disabled={seats <= minimumSeats}>
-                  −
-                </button>
-                <input
-                  id="billing-seat-count"
-                  type="number"
-                  inputMode="numeric"
-                  min={minimumSeats}
-                  max={MAX_SEATS}
-                  value={seats}
-                  onChange={(event) => {
-                    const next = Number.parseInt(event.target.value, 10);
-                    setSeats(Number.isFinite(next) ? Math.min(MAX_SEATS, Math.max(minimumSeats, next)) : minimumSeats);
-                  }}
-                />
-                <button type="button" aria-label="Add a seat" onClick={() => setSeats((value) => Math.min(MAX_SEATS, value + 1))} disabled={seats >= MAX_SEATS}>
-                  +
-                </button>
+          <section className="billing-offer" aria-labelledby="billing-offer-title">
+            <div className="billing-offer__top">
+              <div className="billing-offer__head">
+                <h2 id="billing-offer-title" className="billing-offer__name">
+                  {tierName(selectedPlan.planName)}
+                </h2>
+                {periodPlans.length > 1 ? (
+                  <div className="billing-period-toggle" role="radiogroup" aria-label="Billing period">
+                    {periodPlans.map((plan) => (
+                      <label
+                        key={plan.planCode}
+                        className={plan.planCode === planCode ? "billing-period-toggle__option billing-period-toggle__option--on" : "billing-period-toggle__option"}
+                      >
+                        <input
+                          type="radio"
+                          name="billing-plan"
+                          value={plan.planCode}
+                          checked={plan.planCode === planCode}
+                          onChange={() => setPlanCode(plan.planCode)}
+                        />
+                        {plan.billingPeriod === "yearly" ? "Yearly" : "Monthly"}
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-              <p className="billing-seats__hint">
-                One seat per person, including you. Your company has {overview.seats.activeMembers}{" "}
-                {overview.seats.activeMembers === 1 ? "member" : "members"}.
-              </p>
+              <p className="billing-offer__tagline">Capture, qualify and follow up every Meta lead</p>
+
+              {/* key= replays the fade-in whenever the period (and so the price) changes. */}
+              <div className="billing-offer__price" key={selectedPlan.planCode}>
+                <span className="billing-offer__amount">
+                  {formatRupees(isYearly ? selectedPlan.pricePerSeatPaise / 12 : selectedPlan.pricePerSeatPaise, 0)}
+                </span>
+                <span className="billing-offer__unit">
+                  INR / seat / month{isYearly ? ` · ${formatRupees(selectedPlan.pricePerSeatPaise)} per seat billed yearly` : ""}
+                </span>
+              </div>
+
+              <div className="billing-seats">
+                <label htmlFor="billing-seat-count">Seats</label>
+                <div className="billing-seats__row">
+                  <div className="billing-seats__stepper">
+                    <button type="button" aria-label="Remove a seat" onClick={() => setSeats((value) => Math.max(minimumSeats, value - 1))} disabled={seats <= minimumSeats}>
+                      −
+                    </button>
+                    <input
+                      id="billing-seat-count"
+                      type="number"
+                      inputMode="numeric"
+                      min={minimumSeats}
+                      max={MAX_SEATS}
+                      value={seats}
+                      onChange={(event) => {
+                        const next = Number.parseInt(event.target.value, 10);
+                        setSeats(Number.isFinite(next) ? Math.min(MAX_SEATS, Math.max(minimumSeats, next)) : minimumSeats);
+                      }}
+                    />
+                    <button type="button" aria-label="Add a seat" onClick={() => setSeats((value) => Math.min(MAX_SEATS, value + 1))} disabled={seats >= MAX_SEATS}>
+                      +
+                    </button>
+                  </div>
+                  {/* aria-live: screen readers hear the new total as seats or the period change. */}
+                  <p className="billing-total" aria-live="polite">
+                    Total <strong>{formatRupees(totalPaise)}</strong> / {isYearly ? "year" : "month"}
+                  </p>
+                </div>
+                <p className="billing-seats__hint">
+                  One seat per person, including you. Your company has {overview.seats.activeMembers}{" "}
+                  {overview.seats.activeMembers === 1 ? "member" : "members"}.
+                </p>
+              </div>
+
+              {phase.kind === "error" ? (
+                <p className="auth-error" role="alert">
+                  {phase.message}
+                </p>
+              ) : null}
+
+              <button className="button billing-offer__cta" type="button" onClick={() => void handlePay()} disabled={phase.kind === "starting"}>
+                {phase.kind === "starting" ? "Opening checkout…" : `Get ${tierName(selectedPlan.planName)} plan · Pay ${formatRupees(totalPaise)}`}
+              </button>
+              <p className="billing-offer__fineprint">Renews automatically. Cancel anytime from Billing.</p>
             </div>
-
-            <p className="billing-total">
-              Total <strong>{formatRupees(totalPaise)}</strong> per {selectedPlan?.billingPeriod === "yearly" ? "year" : "month"}, renews automatically
-            </p>
-
-            {phase.kind === "error" ? (
-              <p className="auth-error" role="alert">
-                {phase.message}
-              </p>
-            ) : null}
-
-            <button className="button" type="button" onClick={() => void handlePay()} disabled={!selectedPlan || phase.kind === "starting"}>
-              {phase.kind === "starting" ? "Opening checkout…" : `Pay ${formatRupees(totalPaise)}`}
-            </button>
+            <PlanFeatures heading={`Everything in ${tierName(selectedPlan.planName)}:`} />
           </section>
         )
       ) : null}
 
       {!overview.isOwner ? <p className="auth-card__subtitle">Only the company owner can manage billing.</p> : null}
 
-      {overview.isOwner && overview.payments.length > 0 ? (
+      {!embedded && overview.isOwner && overview.payments.length > 0 ? (
         <section className="billing-history" aria-labelledby="billing-history-title">
           <h2 id="billing-history-title" className="billing-checkout__title">
             Payment history ({overview.payments.length})
@@ -347,11 +439,13 @@ export function BillingPageClient({ overview }: Readonly<{ overview: BillingOver
         </section>
       ) : null}
 
-      <p className="auth-card__subtitle billing-links">
-        {overview.hasCrmAccess ? <Link href="/leads">Back to CRM</Link> : null}
-        {/* Access is decided per company: one company's billing never locks the others. */}
-        <Link href="/workspaces">Switch company</Link>
-      </p>
+      {embedded ? null : (
+        <p className="auth-card__subtitle billing-links">
+          {overview.hasCrmAccess ? <Link href="/leads">Back to CRM</Link> : null}
+          {/* Access is decided per company: one company's billing never locks the others. */}
+          <Link href="/workspaces">Switch company</Link>
+        </p>
+      )}
     </div>
   );
 }

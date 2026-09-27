@@ -1,3 +1,5 @@
+import type { BillingOverview } from "@/lib/server/billing-service";
+
 export interface CheckoutSession {
   subscriptionId: string;
   keyId: string;
@@ -45,6 +47,21 @@ export async function getBillingStatus(signal?: AbortSignal): Promise<BillingSta
     signal,
   });
   return readJson<BillingStatus>(response, "Billing status could not be loaded.");
+}
+
+export async function getBillingOverview(signal?: AbortSignal): Promise<BillingOverview> {
+  const response = await fetch("/api/billing/overview", {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+    signal,
+  });
+  const payload = await readJson<{ overview?: BillingOverview }>(response, "Billing details could not be loaded.");
+  if (!payload.overview || typeof payload.overview !== "object") {
+    throw new Error("The billing response was invalid.");
+  }
+  return payload.overview;
 }
 
 export async function cancelSubscriptionAtPeriodEnd(): Promise<{ periodEndsAt: string | null }> {

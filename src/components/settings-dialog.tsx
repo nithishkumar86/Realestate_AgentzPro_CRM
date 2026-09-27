@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleAlert,
   CircleCheck,
+  CreditCard,
   ExternalLink,
   LoaderCircle,
   Mail,
@@ -16,7 +17,9 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { BillingOwnerOnlyError, getInvoices, type BillingInvoice } from "@/services/billing-api-client";
+import { BillingPageClient } from "@/features/billing/billing-page-client";
+import type { BillingOverview } from "@/lib/server/billing-service";
+import { BillingOwnerOnlyError, getBillingOverview, getInvoices, type BillingInvoice } from "@/services/billing-api-client";
 import {
   cancelInvitation,
   getTenantMembers,
@@ -40,10 +43,11 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
 // Only one owner is allowed per tenant; invitations grant employee only.
 const INVITABLE_ROLES: readonly MembershipRole[] = ["employee"];
 
-type SettingsSection = "members" | "invoices";
+type SettingsSection = "members" | "billing" | "invoices";
 
 const SECTION_LABELS: Record<SettingsSection, string> = {
   members: "Members",
+  billing: "Billing",
   invoices: "Invoices",
 };
 type MembersTab = "team" | "pending";
@@ -135,6 +139,15 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
             <button
               type="button"
               className="mvp-settings__nav-item"
+              aria-current={section === "billing" ? "page" : undefined}
+              onClick={() => setSection("billing")}
+            >
+              <CreditCard size={17} aria-hidden="true" />
+              <span>Billing</span>
+            </button>
+            <button
+              type="button"
+              className="mvp-settings__nav-item"
               aria-current={section === "invoices" ? "page" : undefined}
               onClick={() => setSection("invoices")}
             >
@@ -161,7 +174,8 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
           </header>
 
           <div className="mvp-settings__content">
-            {section === "members" ? <MembersSection fullName={fullName} /> : null}
+            {section === "members" ? <MembersSection fullName={fullName} onOpenBilling={() => setSection("billing")} /> : null}
+            {section === "billing" ? <BillingSection /> : null}
             {section === "invoices" ? <InvoicesSection /> : null}
           </div>
         </div>
@@ -170,7 +184,7 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
   );
 }
 
-function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
+function MembersSection({ fullName, onOpenBilling }: Readonly<{ fullName: string; onOpenBilling: () => void }>) {
   const [membersState, setMembersState] = useState<MembersState>({ status: "loading" });
   const [requestVersion, setRequestVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<MembersTab>("team");
@@ -240,6 +254,7 @@ function MembersSection({ fullName }: Readonly<{ fullName: string }>) {
         isLoading={membersState.status === "loading"}
         membershipRole={membershipRole}
         onSent={refresh}
+        onOpenBilling={onOpenBilling}
       />
 
       <div className="mvp-members__tabs" role="tablist" aria-label="Members views">
@@ -347,12 +362,14 @@ function InviteMembersCard({
   isLoading,
   membershipRole,
   onSent,
+  onOpenBilling,
 }: Readonly<{
   canInvite: boolean;
   seats: TenantSeatSummary | null;
   isLoading: boolean;
   membershipRole: MembershipRole | null;
   onSent: () => void;
+  onOpenBilling: () => void;
 }>) {
   const nextRowId = useRef(1);
   const [rows, setRows] = useState<InviteRow[]>([{ id: 0, email: "", role: "employee" }]);
@@ -454,7 +471,10 @@ function InviteMembersCard({
               `${seats.usedSeats} of ${seats.paidSeats} seats used`
             ) : (
               <>
-                Inviting members needs a paid plan. <a href="/billing">Go to Billing</a>
+                Inviting members needs a paid plan.{" "}
+                <button type="button" className="mvp-invite-card__link" onClick={onOpenBilling}>
+                  Go to Billing
+                </button>
               </>
             )}
           </span>
@@ -805,6 +825,80 @@ function getInitials(fullName: string): string {
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
+}
+
+type BillingState =
+  | { status: "loading" }
+  | { status: "success"; overview: BillingOverview }
+  | { status: "ownerOnly" }
+  | { status: "error"; message: string };
+
+/**
+ * The active company's plan, seats, checkout and cancel — the same component as the /billing page, in
+ * its embedded form. Owner only: an employee sees just the "only the owner" message, like Invoices.
+ * (The /billing page stays: a company whose access has ended is sent there and cannot open Settings.)
+ */
+function BillingSection() {
+  const [state, setState] = useState<BillingState>({ status: "loading" });
+  const [requestVersion, setRequestVersion] = useState(0);
+  const titleId = useId();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getBillingOverview(controller.signal)
+      .then((overview) => setState(overview.isOwner ? { status: "success", overview } : { status: "ownerOnly" }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setState({ status: "error", message: error instanceof Error ? error.message : "Billing details could not be loaded." });
+        }
+      });
+    return () => controller.abort();
+  }, [requestVersion]);
+
+  // Reload quietly after a payment or cancellation, keeping the current view on screen.
+  const refresh = useCallback(() => setRequestVersion((version) => version + 1), []);
+
+  return (
+    <section className="mvp-members" aria-labelledby={titleId}>
+      <header className="mvp-members__header">
+        <h2 id={titleId}>Billing</h2>
+        {state.status === "ownerOnly" ? null : <p>Your company&apos;s plan, seats and renewal</p>}
+      </header>
+
+      {state.status === "loading" ? (
+        <div className="mvp-members__state" role="status">
+          <LoaderCircle className="spin" size={20} aria-hidden="true" />
+          <span>Loading billing…</span>
+        </div>
+      ) : null}
+
+      {state.status === "ownerOnly" ? (
+        <div className="mvp-members__state" role="status">
+          <CircleAlert size={20} aria-hidden="true" />
+          <span>Only the company owner can manage and view billing.</span>
+        </div>
+      ) : null}
+
+      {state.status === "error" ? (
+        <div className="mvp-members__state mvp-members__state--error" role="alert">
+          <CircleAlert size={20} aria-hidden="true" />
+          <span>{state.message}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setState({ status: "loading" });
+              setRequestVersion((version) => version + 1);
+            }}
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+            Retry
+          </button>
+        </div>
+      ) : null}
+
+      {state.status === "success" ? <BillingPageClient overview={state.overview} embedded onChanged={refresh} /> : null}
+    </section>
+  );
 }
 
 type InvoicesState =
