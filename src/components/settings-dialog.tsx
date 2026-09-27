@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   ArrowDownWideNarrow,
+  BriefcaseBusiness,
+  Building2,
+  Check,
   ChevronDown,
   CircleAlert,
   CircleCheck,
@@ -10,10 +13,13 @@ import {
   ExternalLink,
   LoaderCircle,
   Mail,
+  Pencil,
+  Phone,
   RotateCcw,
   Search,
   ReceiptText,
   Trash2,
+  User,
   Users,
   X,
 } from "lucide-react";
@@ -30,6 +36,14 @@ import {
   type TenantMembersOverview,
   type TenantSeatSummary,
 } from "@/services/members-api-client";
+import { useRouter } from "next/navigation";
+import { sanitizePhoneInput, validateAccountField } from "@/lib/account-details";
+import {
+  getProfileDetails,
+  updateProfileDetails,
+  type EditableProfileField,
+  type ProfileDetails,
+} from "@/services/profile-api-client";
 
 // Mirrors the tenant_memberships.membership_role check constraint.
 type MembershipRole = "owner" | "admin" | "employee";
@@ -40,12 +54,14 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
   employee: "Employee",
 };
 
-// Only one owner is allowed per tenant; invitations grant employee only.
-const INVITABLE_ROLES: readonly MembershipRole[] = ["employee"];
+// Only one owner is allowed per tenant; invitations grant employee only (see InviteRowFields).
+// The Members role filter offers only the roles a company actually uses: one owner and employees.
+const FILTERABLE_ROLES: readonly MembershipRole[] = ["owner", "employee"];
 
-type SettingsSection = "members" | "billing" | "invoices";
+type SettingsSection ="profile" | "members" | "billing" | "invoices";
 
 const SECTION_LABELS: Record<SettingsSection, string> = {
+  profile: "Profile",
   members: "Members",
   billing: "Billing",
   invoices: "Invoices",
@@ -71,7 +87,7 @@ export interface SettingsDialogProps {
 export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogProps>) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [section, setSection] = useState<SettingsSection>("members");
+  const [section, setSection] = useState<SettingsSection>("profile");
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -127,6 +143,19 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
         <aside className="mvp-settings__sidebar">
           <span className="mvp-settings__sidebar-title">Settings</span>
           <nav aria-label="Settings sections">
+            {/* Your account: personal, the same in every company. Company: the active company only. */}
+            <span className="mvp-settings__nav-group">Your account</span>
+            <button
+              type="button"
+              className="mvp-settings__nav-item"
+              aria-current={section === "profile" ? "page" : undefined}
+              onClick={() => setSection("profile")}
+            >
+              <User size={17} aria-hidden="true" />
+              <span>Profile</span>
+            </button>
+
+            <span className="mvp-settings__nav-group">Company</span>
             <button
               type="button"
               className="mvp-settings__nav-item"
@@ -174,6 +203,7 @@ export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogPro
           </header>
 
           <div className="mvp-settings__content">
+            {section === "profile" ? <ProfileSection /> : null}
             {section === "members" ? <MembersSection fullName={fullName} onOpenBilling={() => setSection("billing")} /> : null}
             {section === "billing" ? <BillingSection /> : null}
             {section === "invoices" ? <InvoicesSection /> : null}
@@ -587,19 +617,15 @@ function InviteRowFields({
         value={row.email}
         onChange={(event) => onChange({ email: event.target.value })}
       />
-      <div className="mvp-settings-select">
-        <select
-          aria-labelledby={index === 0 ? roleLabelId : undefined}
-          aria-label={index === 0 ? undefined : `Role${suffix}`}
-          value={row.role}
-          onChange={(event) => onChange({ role: event.target.value as MembershipRole })}
-        >
-          {INVITABLE_ROLES.map((role) => (
-            <option key={role} value={role}>{ROLE_LABELS[role]}</option>
-          ))}
-        </select>
-        <ChevronDown size={17} aria-hidden="true" />
-      </div>
+      {/* Invitations grant Employee only, so the role is shown as fixed text rather than a one-option dropdown. */}
+      <span
+        className="mvp-settings-input mvp-invite-card__role"
+        role="note"
+        aria-labelledby={index === 0 ? roleLabelId : undefined}
+        aria-label={index === 0 ? undefined : `Role${suffix}`}
+      >
+        {ROLE_LABELS[row.role]}
+      </span>
     </>
   );
 }
@@ -620,7 +646,6 @@ function TeamMembersPanel({
   const filterRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<MembershipRole | "all">("all");
-  const [twoFactorFilter, setTwoFactorFilter] = useState<"all" | "enabled" | "disabled">("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
@@ -649,7 +674,6 @@ function TeamMembersPanel({
           email: member.email,
           role: member.role,
           joinedAt: member.joinedAt,
-          twoFactorEnabled: false,
         }))
       : [];
   const normalizedQuery = query.trim().toLowerCase();
@@ -659,8 +683,7 @@ function TeamMembersPanel({
         (!normalizedQuery ||
           member.name.toLowerCase().includes(normalizedQuery) ||
           member.email.toLowerCase().includes(normalizedQuery)) &&
-        (roleFilter === "all" || member.role === roleFilter) &&
-        (twoFactorFilter === "all" || member.twoFactorEnabled === (twoFactorFilter === "enabled")),
+        (roleFilter === "all" || member.role === roleFilter),
     )
     .sort((a, b) => {
       const difference = new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime();
@@ -706,22 +729,9 @@ function TeamMembersPanel({
         <div className="mvp-settings-select mvp-settings-select--strong">
           <select aria-label="Filter by role" value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as MembershipRole | "all")}>
             <option value="all">All roles</option>
-            {(Object.keys(ROLE_LABELS) as MembershipRole[]).map((role) => (
+            {FILTERABLE_ROLES.map((role) => (
               <option key={role} value={role}>{ROLE_LABELS[role]}</option>
             ))}
-          </select>
-          <ChevronDown size={17} aria-hidden="true" />
-        </div>
-
-        <div className="mvp-settings-select mvp-settings-select--strong">
-          <select
-            aria-label="Filter by 2FA status"
-            value={twoFactorFilter}
-            onChange={(event) => setTwoFactorFilter(event.target.value as "all" | "enabled" | "disabled")}
-          >
-            <option value="all">2FA Status</option>
-            <option value="enabled">2FA Enabled</option>
-            <option value="disabled">2FA Disabled</option>
           </select>
           <ChevronDown size={17} aria-hidden="true" />
         </div>
@@ -825,6 +835,261 @@ function getInitials(fullName: string): string {
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join("");
+}
+
+type ProfileState =
+  | { status: "loading" }
+  | { status: "success"; profile: ProfileDetails }
+  | { status: "error"; message: string };
+
+/** The signed-in person's details. Name and phone are editable inline; the rest is read-only. */
+function ProfileSection() {
+  const [state, setState] = useState<ProfileState>({ status: "loading" });
+  const [requestVersion, setRequestVersion] = useState(0);
+  const titleId = useId();
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getProfileDetails(controller.signal)
+      .then((profile) => setState({ status: "success", profile }))
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setState({ status: "error", message: error instanceof Error ? error.message : "Your profile could not be loaded." });
+        }
+      });
+    return () => controller.abort();
+  }, [requestVersion]);
+
+  function retry(): void {
+    setState({ status: "loading" });
+    setRequestVersion((version) => version + 1);
+  }
+
+  return (
+    <section className="mvp-members" aria-labelledby={titleId}>
+      <header className="mvp-members__header">
+        <h2 id={titleId}>Profile</h2>
+        <p>Your personal and company information</p>
+      </header>
+
+      {state.status === "loading" ? (
+        <div className="mvp-profile-loading" role="status" aria-live="polite">
+          <LoaderCircle className="spin" size={26} aria-hidden="true" />
+          <div>
+            <strong>Loading your profile</strong>
+            <span>Please wait a moment.</span>
+          </div>
+        </div>
+      ) : null}
+
+      {state.status === "error" ? (
+        <div className="mvp-profile-error" role="alert">
+          <span className="mvp-profile-error__icon"><CircleAlert size={24} aria-hidden="true" /></span>
+          <div>
+            <strong>Profile unavailable</strong>
+            <p>{state.message}</p>
+            <button type="button" onClick={retry}>
+              <RotateCcw size={15} aria-hidden="true" />
+              Try again
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {state.status === "success" ? (
+        <ProfileContent profile={state.profile} onSaved={(profile) => setState({ status: "success", profile })} />
+      ) : null}
+    </section>
+  );
+}
+
+function ProfileContent({
+  profile,
+  onSaved,
+}: Readonly<{ profile: ProfileDetails; onSaved: (profile: ProfileDetails) => void }>) {
+  const router = useRouter();
+  const [editing, setEditing] = useState<EditableProfileField | null>(null);
+
+  async function save(field: EditableProfileField, value: string): Promise<void> {
+    const updated = await updateProfileDetails({ [field]: value });
+    onSaved(updated);
+    setEditing(null);
+    // Re-render the server-rendered shell so the sidebar name matches the saved profile.
+    router.refresh();
+  }
+
+  const readOnlyFields = [
+    { label: "Email", value: profile.emailAddress, icon: Mail },
+    { label: "Company", value: profile.companyName, icon: Building2 },
+    { label: "Professional Role", value: profile.professionalRole, icon: BriefcaseBusiness },
+  ] as const;
+
+  return (
+    <div className="mvp-settings-profile">
+      <div className="mvp-profile-summary">
+        <span className="mvp-profile-summary__avatar" aria-hidden="true">{getInitials(profile.fullName)}</span>
+        <div>
+          <strong>{profile.fullName}</strong>
+          <span>{profile.professionalRole}</span>
+        </div>
+      </div>
+
+      <dl className="mvp-profile-fields">
+        <EditableProfileRow
+          field="fullName"
+          label="Name"
+          icon={User}
+          value={profile.fullName}
+          editValue={profile.fullName}
+          isEditing={editing === "fullName"}
+          onEdit={() => setEditing("fullName")}
+          onCancel={() => setEditing(null)}
+          onSave={(value) => save("fullName", value)}
+        />
+        <EditableProfileRow
+          field="phoneNumber"
+          label="Phone"
+          icon={Phone}
+          value={profile.phoneNumber}
+          editValue={toLocalMobile(profile.phoneNumber)}
+          isEditing={editing === "phoneNumber"}
+          onEdit={() => setEditing("phoneNumber")}
+          onCancel={() => setEditing(null)}
+          onSave={(value) => save("phoneNumber", value)}
+        />
+        {readOnlyFields.map(({ label, value, icon: Icon }) => (
+          <div className="mvp-profile-field" key={label}>
+            <span className="mvp-profile-field__icon"><Icon size={18} aria-hidden="true" /></span>
+            <div>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/** Stored phones are "91" + 10 digits; the edit box takes just the 10 digits, as at sign-up. */
+function toLocalMobile(stored: string): string {
+  return stored.length === 12 && stored.startsWith("91") ? stored.slice(2) : stored;
+}
+
+function EditableProfileRow({
+  field,
+  label,
+  icon: Icon,
+  value,
+  editValue,
+  isEditing,
+  onEdit,
+  onCancel,
+  onSave,
+}: Readonly<{
+  field: EditableProfileField;
+  label: string;
+  icon: typeof User;
+  value: string;
+  editValue: string;
+  isEditing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onSave: (value: string) => Promise<void>;
+}>) {
+  const inputId = useId();
+  const errorId = useId();
+  const [draft, setDraft] = useState(editValue);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const isPhone = field === "phoneNumber";
+
+  function startEditing(): void {
+    setDraft(editValue);
+    setError(null);
+    onEdit();
+  }
+
+  async function submit(): Promise<void> {
+    const message = validateAccountField(field, draft);
+    if (message) {
+      setError(message);
+      return;
+    }
+    if (draft.trim() === editValue) {
+      onCancel();
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onSave(draft);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Your profile could not be saved.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className={`mvp-profile-field${isEditing ? " mvp-profile-field--editing" : ""}`}>
+      <span className="mvp-profile-field__icon"><Icon size={18} aria-hidden="true" /></span>
+      <div>
+        <dt>{isEditing ? <label htmlFor={inputId}>{label}</label> : label}</dt>
+        {isEditing ? (
+          <dd>
+            <form
+              className="mvp-profile-edit"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submit();
+              }}
+            >
+              <div className="mvp-profile-edit__control">
+                {isPhone ? <span className="mvp-profile-edit__prefix" aria-hidden="true">+91</span> : null}
+                <input
+                  id={inputId}
+                  autoFocus
+                  value={draft}
+                  inputMode={isPhone ? "numeric" : "text"}
+                  autoComplete={isPhone ? "tel-national" : "name"}
+                  maxLength={isPhone ? 10 : 60}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? errorId : undefined}
+                  disabled={isSaving}
+                  onChange={(event) => {
+                    setDraft(isPhone ? sanitizePhoneInput(event.target.value) : event.target.value);
+                    setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    // Escape cancels this edit only; it must not also close the Settings dialog.
+                    if (event.key === "Escape") {
+                      event.stopPropagation();
+                      onCancel();
+                    }
+                  }}
+                />
+              </div>
+              <button type="submit" className="mvp-profile-edit__save" aria-label={`Save ${label.toLowerCase()}`} disabled={isSaving}>
+                {isSaving ? <LoaderCircle className="spin" size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}
+              </button>
+              <button type="button" className="mvp-profile-edit__cancel" aria-label="Cancel" disabled={isSaving} onClick={onCancel}>
+                <X size={16} aria-hidden="true" />
+              </button>
+            </form>
+            {error ? <p className="mvp-profile-edit__error" id={errorId} role="alert">{error}</p> : null}
+          </dd>
+        ) : (
+          <dd className="mvp-profile-field__value">
+            <span>{value}</span>
+            <button type="button" className="mvp-profile-field__edit" aria-label={`Edit ${label.toLowerCase()}`} onClick={startEditing}>
+              <Pencil size={14} aria-hidden="true" />
+            </button>
+          </dd>
+        )}
+      </div>
+    </div>
+  );
 }
 
 type BillingState =

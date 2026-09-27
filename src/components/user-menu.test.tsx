@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getProfileDetails = vi.fn();
+const updateProfileDetails = vi.fn();
 const getTenantMembers = vi.fn();
 const sendInvitations = vi.fn();
 const cancelInvitation = vi.fn();
@@ -10,7 +11,7 @@ const replace = vi.fn();
 const refresh = vi.fn();
 const push = vi.fn();
 
-vi.mock("@/services/profile-api-client", () => ({ getProfileDetails }));
+vi.mock("@/services/profile-api-client", () => ({ getProfileDetails, updateProfileDetails }));
 vi.mock("@/services/members-api-client", () => ({
   getTenantMembers,
   sendInvitations,
@@ -38,19 +39,30 @@ function renderMenu() {
   return trigger;
 }
 
+// Profile is reached only through Settings › Your account › Profile.
+function openProfile() {
+  const trigger = renderMenu();
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  const sidebar = within(dialog).getByRole("navigation", { name: "Settings sections" });
+  fireEvent.click(within(sidebar).getByRole("button", { name: "Profile" }));
+  return { trigger, dialog, sidebar };
+}
+
 describe("UserMenu profile dialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getProfileDetails.mockResolvedValue(PROFILE);
+    getTenantMembers.mockResolvedValue(OVERVIEW);
   });
 
-  it("keeps the existing menu order and makes Settings and Profile interactive", () => {
+  it("keeps the menu order without a separate Profile item (Profile lives in Settings)", () => {
     renderMenu();
     const menu = screen.getByLabelText("Account menu");
 
-    expect(menu).toHaveTextContent("SettingsProfileDarkUpgrade planLogout");
+    expect(menu).toHaveTextContent("SettingsDarkUpgrade planLogout");
     expect(within(menu).getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeEnabled();
-    expect(within(menu).getByRole("button", { name: "Profile" })).toBeEnabled();
+    expect(within(menu).queryByRole("button", { name: "Profile" })).not.toBeInTheDocument();
     expect(within(menu).getByRole("button", { name: "Settings" })).toBeEnabled();
     expect(within(menu).queryByRole("button", { name: "Upgrade plan" })).not.toBeInTheDocument();
   });
@@ -60,17 +72,101 @@ describe("UserMenu profile dialog", () => {
     expect(screen.queryByRole("button", { name: "Switch company" })).not.toBeInTheDocument();
   });
 
-  it("loads and displays exactly the five approved profile fields", async () => {
-    renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+  it("shows Profile under Your account, grouped apart from the company sections", () => {
+    const { dialog, sidebar } = openProfile();
 
-    const dialog = screen.getByRole("dialog", { name: "Profile details" });
+    expect(sidebar).toHaveTextContent("Your accountProfileCompanyMembersBillingInvoices");
+    expect(within(sidebar).getByRole("button", { name: "Profile" })).toHaveAttribute("aria-current", "page");
+    expect(within(dialog).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Profile details" })).not.toBeInTheDocument();
+  });
+
+  it("offers edit only for name and phone, never company, role or email", async () => {
+    const { dialog } = openProfile();
+    await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
+
+    expect(within(dialog).getByRole("button", { name: "Edit name" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Edit phone" })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /^Edit / })).toHaveLength(2);
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("saves an edited name inline and refreshes the shell so the sidebar name updates", async () => {
+    updateProfileDetails.mockResolvedValue({ ...PROFILE, fullName: "Nithish Kumar M" });
+    const { dialog } = openProfile();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Edit name" }));
+
+    const input = within(dialog).getByRole("textbox", { name: "Name" });
+    expect(input).toHaveValue("Nithish Kumar");
+    fireEvent.change(input, { target: { value: "Nithish Kumar M" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save name" }));
+
+    await waitFor(() => expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument());
+    expect(updateProfileDetails).toHaveBeenCalledWith({ fullName: "Nithish Kumar M" });
+    expect(within(dialog).getAllByText("Nithish Kumar M").length).toBeGreaterThan(0);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("edits the phone as the 10-digit mobile number beside a fixed +91", async () => {
+    updateProfileDetails.mockResolvedValue({ ...PROFILE, phoneNumber: "919123456780" });
+    const { dialog } = openProfile();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Edit phone" }));
+
+    const input = within(dialog).getByRole("textbox", { name: "Phone" });
+    expect(input).toHaveValue("9876543210");
+    fireEvent.change(input, { target: { value: "+91 91234 56780" } });
+    expect(input).toHaveValue("9123456780");
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+
+    await waitFor(() => expect(within(dialog).getByText("919123456780")).toBeInTheDocument());
+    expect(updateProfileDetails).toHaveBeenCalledWith({ phoneNumber: "9123456780" });
+  });
+
+  it("shows the validation message and does not save an invalid phone", async () => {
+    const { dialog } = openProfile();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Edit phone" }));
+
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Phone" }), { target: { value: "12345" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save phone" }));
+
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Mobile number must be exactly 10 digits.");
+    expect(updateProfileDetails).not.toHaveBeenCalled();
+  });
+
+  it("keeps the edit open with the server message when saving fails", async () => {
+    updateProfileDetails.mockRejectedValue(new Error("Your profile could not be saved."));
+    const { dialog } = openProfile();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Edit name" }));
+
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Name" }), { target: { value: "Ravi Kumar" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save name" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("alert")).toHaveTextContent("Your profile could not be saved."));
+    expect(within(dialog).getByRole("textbox", { name: "Name" })).toHaveValue("Ravi Kumar");
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("cancels an edit with Escape without closing Settings", async () => {
+    const { dialog } = openProfile();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Edit name" }));
+
+    fireEvent.keyDown(within(dialog).getByRole("textbox", { name: "Name" }), { key: "Escape" });
+
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(updateProfileDetails).not.toHaveBeenCalled();
+  });
+
+  it("loads and displays exactly the five approved profile fields", async () => {
+    const { dialog } = openProfile();
     expect(within(dialog).getByRole("status")).toHaveTextContent("Loading your profile");
 
     await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
-    for (const label of ["Name", "Phone", "Email", "Company", "Professional Role"]) {
-      expect(within(dialog).getByText(label)).toBeInTheDocument();
-    }
+    // Scope to the field list: "Company" is also a Settings sidebar group label.
+    const fields = dialog.querySelector("dl.mvp-profile-fields") as HTMLElement;
+    expect(within(fields).getAllByRole("term").map((term) => term.textContent)).toEqual(
+      ["Name", "Phone", "Email", "Company", "Professional Role"],
+    );
     expect(within(dialog).getByText("919876543210")).toBeInTheDocument();
     expect(within(dialog).getAllByText("AgentzPro Realty")).toHaveLength(1);
     expect(getProfileDetails).toHaveBeenCalledTimes(1);
@@ -78,8 +174,7 @@ describe("UserMenu profile dialog", () => {
 
   it("shows a retry action after a load failure", async () => {
     getProfileDetails.mockRejectedValueOnce(new Error("Profile temporarily unavailable."));
-    renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    openProfile();
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Profile temporarily unavailable."));
     getProfileDetails.mockResolvedValueOnce(PROFILE);
@@ -90,8 +185,7 @@ describe("UserMenu profile dialog", () => {
   });
 
   it("closes with Escape and restores focus to the existing menu trigger", async () => {
-    const trigger = renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: "Profile" }));
+    const { trigger } = openProfile();
     await waitFor(() => expect(screen.getByText("nithish@example.com")).toBeInTheDocument());
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -126,13 +220,27 @@ describe("UserMenu settings dialog", () => {
     getTenantMembers.mockResolvedValue(OVERVIEW);
   });
 
+  // Settings opens on Profile, so Members tests switch to the Members section first.
   function openSettings() {
     const trigger = renderMenu();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    return { trigger, dialog: screen.getByRole("dialog", { name: "Settings" }) };
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    const sidebar = within(dialog).getByRole("navigation", { name: "Settings sections" });
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Members" }));
+    return { trigger, dialog };
   }
 
-  it("opens with the Members section selected in the sidebar", async () => {
+  it("opens on the Profile section by default", async () => {
+    renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+
+    const sidebar = within(dialog).getByRole("navigation", { name: "Settings sections" });
+    expect(within(sidebar).getByRole("button", { name: "Profile" })).toHaveAttribute("aria-current", "page");
+    expect((await within(dialog).findAllByText("Real Estate Agent")).length).toBeGreaterThan(0);
+  });
+
+  it("shows the Members section when selected in the sidebar", async () => {
     const { dialog } = openSettings();
 
     const sidebar = within(dialog).getByRole("navigation", { name: "Settings sections" });
@@ -148,9 +256,9 @@ describe("UserMenu settings dialog", () => {
   it("offers only the invitable tenant membership roles and only one invite row", () => {
     const { dialog } = openSettings();
 
-    const role = within(dialog).getByRole("combobox", { name: "Role" });
-    expect(role).toHaveValue("employee");
-    expect(within(role).getAllByRole("option").map((option) => option.textContent)).toEqual(["Employee"]);
+    // Employee is the only invitable role, so it is fixed text, not a dropdown.
+    expect(within(dialog).getByRole("note", { name: "Role" })).toHaveTextContent("Employee");
+    expect(within(dialog).queryByRole("combobox", { name: "Role" })).not.toBeInTheDocument();
 
     expect(within(dialog).getAllByPlaceholderText("jane@example.com")).toHaveLength(1);
     expect(within(dialog).queryByRole("button", { name: "Add more" })).not.toBeInTheDocument();
@@ -181,6 +289,18 @@ describe("UserMenu settings dialog", () => {
     fireEvent.click(within(dialog).getByRole("tab", { name: "Pending Invitations" }));
     expect(within(dialog).getByRole("tab", { name: "Pending Invitations" })).toHaveAttribute("aria-selected", "true");
     expect(within(dialog).getByText("No pending invitations")).toBeInTheDocument();
+  });
+
+  it("offers only Owner and Employee in the Members role filter (no Admin)", async () => {
+    const { dialog } = openSettings();
+    await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
+
+    const filter = within(dialog).getByRole("combobox", { name: "Filter by role" });
+    expect(within(filter).getAllByRole("option").map((option) => option.textContent)).toEqual(
+      ["All roles", "Owner", "Employee"],
+    );
+    // There is no 2FA feature, so there is no 2FA filter either.
+    expect(within(dialog).queryByRole("combobox", { name: /2FA/ })).not.toBeInTheDocument();
   });
 
   it("lists pending invitations with a serial number, their assigned role, and a remove action", async () => {

@@ -1541,6 +1541,75 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   color: var(--primary-strong);
 }
 
+.mvp-settings__nav-group {
+  padding: 14px 10px 4px;
+  color: var(--text-muted);
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.mvp-settings__nav-group:first-child { padding-top: 2px; }
+
+.mvp-settings-profile { display: grid; gap: 18px; }
+.mvp-settings-profile .mvp-profile-summary { margin: 0; }
+
+/* Inline edit for Name and Phone (the only editable Profile fields). */
+.mvp-profile-field__value { display: flex; align-items: center; gap: 8px; }
+.mvp-profile-field__value > span { min-width: 0; overflow-wrap: anywhere; }
+.mvp-profile-field__edit,
+.mvp-profile-edit__save,
+.mvp-profile-edit__cancel {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.mvp-profile-field__edit:hover,
+.mvp-profile-edit__cancel:hover { color: var(--text); border-color: var(--nav-active-border); }
+.mvp-profile-field__edit:focus-visible,
+.mvp-profile-edit__save:focus-visible,
+.mvp-profile-edit__cancel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mvp-profile-edit__save { border-color: var(--primary); background: var(--primary); color: #fff; }
+.mvp-profile-edit__save:disabled,
+.mvp-profile-edit__cancel:disabled { cursor: default; opacity: .6; }
+.mvp-profile-field--editing { border-color: var(--nav-active-border); }
+.mvp-profile-edit { display: flex; align-items: center; gap: 6px; }
+.mvp-profile-edit__control {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.mvp-profile-edit__control:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--nav-active-bg); }
+.mvp-profile-edit__prefix { padding: 0 4px 0 10px; color: var(--text-muted); font-size: .88rem; font-weight: 700; }
+.mvp-profile-edit__control input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: .9rem;
+  font-weight: 700;
+  outline: none;
+}
+.mvp-profile-edit__control input[aria-invalid="true"] { color: var(--danger); }
+.mvp-profile-edit__error { margin: 6px 0 0; color: var(--danger); font-size: .78rem; font-weight: 600; line-height: 1.35; }
+
 .mvp-settings__main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
 
 .mvp-settings__topbar {
@@ -1586,6 +1655,9 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 }
 
 .mvp-settings-input::placeholder { color: var(--text-muted); opacity: .7; }
+
+/* Fixed invite role: same box as the email input, but plain text (no dropdown, not editable). */
+.mvp-invite-card__role { display: flex; align-items: center; background: var(--surface-muted); font-weight: 800; cursor: default; }
 
 .mvp-settings-input:focus-visible,
 .mvp-settings-select select:focus-visible,
