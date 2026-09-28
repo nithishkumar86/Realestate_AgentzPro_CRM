@@ -21,6 +21,7 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
   const [isOpen, setIsOpen] = useState(false);
   // Profile is reached only through Settings › Your account › Profile.
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"profile" | "billing">("profile");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -82,6 +83,13 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
 
   function openSettings(): void {
     setIsOpen(false);
+    setSettingsSection("profile");
+    setIsSettingsOpen(true);
+  }
+
+  function openBilling(): void {
+    setIsOpen(false);
+    setSettingsSection("billing");
     setIsSettingsOpen(true);
   }
 
@@ -98,10 +106,10 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
             <ThemeToggle />
           </div>
 
-          <div className="mvp-user-menu__item mvp-user-menu__item--static">
+          <button type="button" className="mvp-user-menu__item" onClick={openBilling}>
             <CircleArrowUp size={17} aria-hidden="true" />
             <span>Upgrade plan</span>
-          </div>
+          </button>
 
           <div className="mvp-user-menu__divider" role="separator" />
 
@@ -133,7 +141,9 @@ export function UserMenu({ fullName, tenantName }: Readonly<UserMenuProps>) {
         <ChevronUp className="mvp-user-menu__chevron" size={16} aria-hidden="true" />
       </button>
 
-      {isSettingsOpen ? <SettingsDialog fullName={fullName} onClose={closeSettings} /> : null}
+      {isSettingsOpen ? (
+        <SettingsDialog fullName={fullName} onClose={closeSettings} initialSection={settingsSection} />
+      ) : null}
     </div>
   );
 }
