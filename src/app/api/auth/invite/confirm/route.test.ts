@@ -11,6 +11,12 @@ vi.mock("@/lib/server/auth/supabase-auth-client", () => ({
 vi.mock("@/lib/server/auth/same-origin", () => ({ assertSameOrigin: () => undefined }));
 
 const { POST } = await import("@/app/api/auth/invite/confirm/route");
+const { stubSupabaseEnv } = await import("@/test/supabase-env");
+const { isSessionActive } = await import("@/lib/server/auth/idle-session");
+
+function activityCookie(response: Response): string | undefined {
+  return /agentz_last_activity=([^;]*)/.exec(response.headers.get("set-cookie") ?? "")?.[1];
+}
 
 const INVITATION_ID = "a8195490-82e4-455e-8e78-8e7606616e26";
 
@@ -27,6 +33,7 @@ function post(body: unknown): Promise<Response> {
 describe("POST /api/auth/invite/confirm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stubSupabaseEnv();
     findWithdrawnInvitationById.mockResolvedValue(null);
     verifyOtp.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
     setSession.mockResolvedValue({ data: { user: { id: "user-1" } }, error: null });
@@ -60,6 +67,7 @@ describe("POST /api/auth/invite/confirm", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ redirectTo: "/onboarding" });
     expect(setSession).toHaveBeenCalledWith({ access_token: "access", refresh_token: "refresh" });
+    expect(isSessionActive(activityCookie(response), "user-1")).toBe(true);
   });
 
   it("signs in with a token_hash link", async () => {
@@ -67,6 +75,7 @@ describe("POST /api/auth/invite/confirm", () => {
 
     expect(response.status).toBe(200);
     expect(verifyOtp).toHaveBeenCalledWith({ type: "invite", token_hash: "hash" });
+    expect(isSessionActive(activityCookie(response), "user-1")).toBe(true);
   });
 
   it("returns the invalid-link error for a used token on an invitation that was not withdrawn", async () => {
@@ -74,6 +83,7 @@ describe("POST /api/auth/invite/confirm", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: { code: "INVITE_LINK_INVALID" } });
+    expect(activityCookie(response)).toBeUndefined();
   });
 
   it("rejects a malformed invitation id without looking it up", async () => {

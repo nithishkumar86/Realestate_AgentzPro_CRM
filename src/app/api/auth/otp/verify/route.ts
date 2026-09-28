@@ -6,6 +6,7 @@ import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
 import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
+import { setSessionActivity } from "@/lib/server/auth/idle-session";
 import { listPendingInvitationsForUser } from "@/lib/server/member-invitation-service";
 
 export const runtime = "nodejs";
@@ -49,7 +50,10 @@ export async function POST(request: Request): Promise<Response> {
     const state = await resolveLoginState(result.userId, await readActiveTenantHint());
     const redirectTo = await resolvePostLoginDestination(result.userId, state);
 
-    return withNoStore(createSuccessResponse({ verified: true, redirectTo }));
+    const response = createSuccessResponse({ verified: true, redirectTo });
+    // A new session starts its server-side idle clock now; without it the proxy treats it as idle.
+    setSessionActivity(response, result.userId);
+    return withNoStore(response);
   } catch (error) {
     return withNoStore(createErrorResponse(error));
   }

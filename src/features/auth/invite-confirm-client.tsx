@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { InvitationWithdrawnClient } from "@/features/auth/invitation-withdrawn-client";
+import { resetInactivityAfterLogin } from "@/features/auth/inactivity";
 
 const GENERIC_ERROR_MESSAGE = "This invitation link is invalid or has expired. Sign in with your email to continue.";
 
@@ -90,6 +91,8 @@ export function InviteConfirmClient() {
           setState({ status: "error", message: payload?.error?.message ?? GENERIC_ERROR_MESSAGE });
           return;
         }
+        // A fresh session must not inherit idle metadata left by an earlier session in this browser.
+        resetInactivityAfterLogin();
         router.replace(payload.redirectTo);
         router.refresh();
       })

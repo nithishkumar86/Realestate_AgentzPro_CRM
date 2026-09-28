@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { startInactivityTracking } from "@/features/auth/inactivity";
 
+/** Pages in the (auth) group that are only reachable with a session; /login and /auth/confirm are not. */
+export const SIGNED_IN_AUTH_PATHS = ["/billing", "/onboarding", "/workspaces"];
+
+export function SignedInInactivityLogout() {
+  const pathname = usePathname();
+  return SIGNED_IN_AUTH_PATHS.includes(pathname) ? <InactivityLogout /> : null;
+}
+
 export function InactivityLogout() {
   const router = useRouter();
   const pathname = usePathname();

@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { POST } from "./route";
+import { stubSupabaseEnv } from "@/test/supabase-env";
+import { isSessionActive } from "@/lib/server/auth/idle-session";
 
 const mocks = vi.hoisted(() => ({
   verifyOtp: vi.fn(), resolveLoginState: vi.fn(), assertSameOrigin: vi.fn(),
@@ -14,6 +16,7 @@ vi.mock("@/lib/server/member-invitation-service", () => ({ listPendingInvitation
 
 beforeEach(() => {
   vi.resetAllMocks();
+  stubSupabaseEnv();
   mocks.verifyOtp.mockResolvedValue({ verified: true, userId: "user-1" });
   mocks.readActiveTenantHint.mockResolvedValue(null);
   mocks.listPendingInvitationsForUser.mockResolvedValue([]);
@@ -47,6 +50,16 @@ it.each([
   expect(response.headers.get("cache-control")).toContain("no-store");
 });
 
+it("starts the new session's server-side idle clock", async () => {
+  mocks.resolveLoginState.mockResolvedValue(ready);
+  const response = await POST(request());
+  const cookie = response.headers.get("set-cookie") ?? "";
+  const value = /agentz_last_activity=([^;]*)/.exec(cookie)?.[1];
+  expect(isSessionActive(value, "user-1")).toBe(true);
+  expect(cookie).toMatch(/HttpOnly/i);
+  expect(cookie).toMatch(/Max-Age=\d+/i);
+});
+
 it("passes the active-company hint so a chosen company is re-verified at sign-in", async () => {
   mocks.readActiveTenantHint.mockResolvedValue("10000000-0000-4000-8000-000000000001");
   mocks.resolveLoginState.mockResolvedValue(ready);
@@ -67,4 +80,5 @@ it("does not route an unsuccessful verification into the landing page", async ()
   expect(response.status).toBe(401);
   expect(await response.json()).toEqual({ verified: false, blocked: false });
   expect(mocks.resolveLoginState).not.toHaveBeenCalled();
+  expect(response.headers.get("set-cookie") ?? "").not.toContain("agentz_last_activity");
 });

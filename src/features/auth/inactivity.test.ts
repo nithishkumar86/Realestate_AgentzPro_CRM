@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { INACTIVITY_STORAGE_KEY, INACTIVITY_TIMEOUT_MS, resetInactivityAfterLogin, startInactivityTracking } from "./inactivity";
+import { ACTIVITY_HEARTBEAT_MS, INACTIVITY_STORAGE_KEY, INACTIVITY_TIMEOUT_MS, resetInactivityAfterLogin, startInactivityTracking } from "./inactivity";
 
 describe("inactivity policy", () => {
   const stops: (() => void)[] = [];
   const fetchMock = vi.fn();
+  // Heartbeats to /api/auth/activity are asserted separately; these tests count logout requests.
+  const calls = (url: string) => fetchMock.mock.calls.filter(([called]) => called === url);
+  const logoutCalls = () => calls("/api/auth/logout");
+  const heartbeatCalls = () => calls("/api/auth/activity");
   function start(timeoutMs = 10_000) {
     const onSignedOut = vi.fn();
     const onError = vi.fn();
@@ -34,9 +38,9 @@ describe("inactivity policy", () => {
     await vi.advanceTimersByTimeAsync(9000);
     document.dispatchEvent(new Event(event));
     await vi.advanceTimersByTimeAsync(9999);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(logoutCalls()).toHaveLength(1);
   });
   it("logs out once through the existing endpoint and reports success", async () => {
     const tracker = start();
@@ -53,7 +57,7 @@ describe("inactivity policy", () => {
       await vi.advanceTimersByTimeAsync(5000);
       tracker.activity();
     }
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
   });
   it("preserves the deadline across reopening, and checks expiry before accepting activity", async () => {
     const first = start();
@@ -61,7 +65,7 @@ describe("inactivity policy", () => {
     first.stop();
     const second = start();
     await vi.advanceTimersByTimeAsync(5000);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
     second.stop();
     vi.setSystemTime(Date.now() + 2000);
     const third = start();
@@ -74,7 +78,7 @@ describe("inactivity policy", () => {
     vi.setSystemTime(Date.now() + 11_000);
     window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(logoutCalls()).toHaveLength(1);
   });
   it("uses activity from another tab before deciding to sign out", async () => {
     start();
@@ -84,9 +88,9 @@ describe("inactivity policy", () => {
     localStorage.setItem(INACTIVITY_STORAGE_KEY, JSON.stringify(record));
     window.dispatchEvent(new StorageEvent("storage", { key: INACTIVITY_STORAGE_KEY, newValue: JSON.stringify(record) }));
     await vi.advanceTimersByTimeAsync(9999);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
     await vi.advanceTimersByTimeAsync(1);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(logoutCalls()).toHaveLength(1);
   });
   it("redirects a peer on successful logout without another request", () => {
     const tracker = start();
@@ -94,7 +98,7 @@ describe("inactivity policy", () => {
     record.signedOut = true;
     window.dispatchEvent(new StorageEvent("storage", { key: INACTIVITY_STORAGE_KEY, newValue: JSON.stringify(record) }));
     expect(tracker.onSignedOut).toHaveBeenCalledOnce();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
   });
   it("retries failed logout without allowing activity to renew the expired deadline", async () => {
     fetchMock.mockRejectedValueOnce(new Error("offline"));
@@ -103,7 +107,7 @@ describe("inactivity policy", () => {
     expect(tracker.onError).toHaveBeenCalledWith(true);
     expect(tracker.onSignedOut).not.toHaveBeenCalled();
     tracker.activity();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(logoutCalls()).toHaveLength(1);
     window.dispatchEvent(new Event("online"));
     await vi.advanceTimersByTimeAsync(0);
     expect(tracker.onSignedOut).toHaveBeenCalledOnce();
@@ -123,7 +127,7 @@ describe("inactivity policy", () => {
     resetInactivityAfterLogin();
     start();
     await vi.advanceTimersByTimeAsync(9999);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
   });
   it("cleans listeners and pending writes, and ignores activity after stop", async () => {
     const remove = vi.spyOn(document, "removeEventListener");
@@ -137,7 +141,8 @@ describe("inactivity policy", () => {
     document.dispatchEvent(new Event("click"));
     window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(20_000);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
+    expect(heartbeatCalls()).toHaveLength(1);
   });
   it("works in memory when browser storage is unavailable", async () => {
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
@@ -161,7 +166,7 @@ describe("inactivity policy", () => {
     localStorage.setItem(INACTIVITY_STORAGE_KEY, JSON.stringify(record));
     await acquire!();
     expect(request).toHaveBeenCalledOnce();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
   });
 
   it("closes its broadcast channel and accepts peer activity without persistent storage", async () => {
@@ -179,7 +184,7 @@ describe("inactivity policy", () => {
     await vi.advanceTimersByTimeAsync(9000);
     channels[0].onmessage!({ data: { startedAt, lastActivity: Date.now(), signedOut: false } });
     await vi.advanceTimersByTimeAsync(9000);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(0);
     tracker.stop();
     expect(channels[0].close).toHaveBeenCalledOnce();
   });
@@ -198,5 +203,58 @@ describe("inactivity policy", () => {
     expect(tracker.onError).not.toHaveBeenCalled();
     expect(tracker.onSignedOut).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+  describe("server heartbeat", () => {
+    it("reports real activity at most once per interval, with a trailing report for later activity", async () => {
+      const tracker = start(INACTIVITY_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(ACTIVITY_HEARTBEAT_MS);
+      expect(heartbeatCalls()).toHaveLength(0);
+      tracker.activity();
+      expect(heartbeatCalls()).toHaveLength(1);
+      expect(heartbeatCalls()[0][1]).toEqual(expect.objectContaining({ method: "POST", credentials: "same-origin" }));
+      await vi.advanceTimersByTimeAsync(60_000);
+      tracker.activity();
+      tracker.activity();
+      expect(heartbeatCalls()).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(ACTIVITY_HEARTBEAT_MS - 60_000 - 1);
+      expect(heartbeatCalls()).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(heartbeatCalls()).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(4 * ACTIVITY_HEARTBEAT_MS);
+      expect(heartbeatCalls()).toHaveLength(2);
+    });
+    it("never reports activity for an idle page", async () => {
+      start(INACTIVITY_TIMEOUT_MS);
+      await vi.advanceTimersByTimeAsync(INACTIVITY_TIMEOUT_MS - 1);
+      expect(heartbeatCalls()).toHaveLength(0);
+    });
+    it("does not report activity once the deadline has passed", async () => {
+      const tracker = start();
+      vi.setSystemTime(Date.now() + 11_000);
+      tracker.activity();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(heartbeatCalls()).toHaveLength(0);
+      expect(tracker.onSignedOut).toHaveBeenCalledOnce();
+    });
+    it("goes to sign-in without revoking anything when the server has no session", async () => {
+      fetchMock.mockImplementation(async (url: string) => url === "/api/auth/activity"
+        ? { ok: false, status: 401, json: async () => ({}) }
+        : { ok: true, status: 200, json: async () => ({ signedOut: true }) });
+      const tracker = start(INACTIVITY_TIMEOUT_MS);
+      tracker.activity();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(tracker.onSignedOut).toHaveBeenCalledOnce();
+      expect(logoutCalls()).toHaveLength(0);
+      expect(JSON.parse(localStorage.getItem(INACTIVITY_STORAGE_KEY)!).signedOut).toBe(false);
+      expect(tracker.onError).not.toHaveBeenCalled();
+    });
+    it("keeps the session when a heartbeat fails for a network reason", async () => {
+      fetchMock.mockRejectedValue(new Error("offline"));
+      const tracker = start(INACTIVITY_TIMEOUT_MS);
+      tracker.activity();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(tracker.onSignedOut).not.toHaveBeenCalled();
+      expect(logoutCalls()).toHaveLength(0);
+    });
   });
 });

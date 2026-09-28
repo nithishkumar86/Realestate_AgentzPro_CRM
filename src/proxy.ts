@@ -2,12 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/server/env";
 import { AUTH_COOKIE_OPTIONS } from "@/lib/server/auth/cookie-options";
+import { ACTIVE_TENANT_COOKIE, clearActiveTenant } from "@/lib/server/auth/active-tenant";
+import { clearSessionActivity, IDLE_ACTIVITY_COOKIE, isSessionActive } from "@/lib/server/auth/idle-session";
 
 /**
  * Next.js 16 renamed `middleware.ts` to `proxy.ts`; functionality is
  * unchanged and it defaults to the Node.js runtime.
  *
- * This proxy has exactly two jobs (login_system_plan.md section 10 /
+ * This proxy has exactly three jobs (login_system_plan.md section 10 /
  * the Next.js authentication guide's "optimistic checks" pattern):
  *
  * 1. Refresh the Supabase session cookie. `getClaims()` verifies the
@@ -17,13 +19,17 @@ import { AUTH_COOKIE_OPTIONS } from "@/lib/server/auth/cookie-options";
  *    and the returned response object must be the one `setAll` produced
  *    (or a copy carrying its cookies), or the browser and server session
  *    state fall out of sync.
- * 2. Cheap, optimistic redirects based only on whether a session exists —
+ * 2. End a session idle for more than eight hours (see
+ *    src/lib/server/auth/idle-session.ts), before anything downstream sees it.
+ * 3. Cheap, optimistic redirects based only on whether a session exists —
  *    no database access here. The deeper subscription/membership/tenant
  *    check (requireCrmAccess) runs in `(crm)/layout.tsx`, never in proxy.
  */
 
 const CRM_PATH_PREFIXES = ["/leads", "/dashboard", "/connection", "/settings"];
 const LOGIN_PATH = "/login";
+// These routes create a new session and stamp its idle clock; an old session they replace is not checked.
+const SESSION_START_PATHS = ["/api/auth/otp/verify", "/api/auth/invite/confirm"];
 
 /** Matches a path exactly, tolerating a trailing slash. */
 function isPath(pathname: string, target: string): boolean {
@@ -69,9 +75,16 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   });
 
   const { data } = await supabase.auth.getClaims();
-  const hasSession = Boolean(data?.claims?.sub);
+  const userId = data?.claims?.sub;
+  let hasSession = Boolean(userId);
 
   const pathname = request.nextUrl.pathname;
+
+  if (userId && !SESSION_START_PATHS.includes(pathname) &&
+    !isSessionActive(request.cookies.get(IDLE_ACTIVITY_COOKIE)?.value, userId)) {
+    response = await endIdleSession(request, () => supabase.auth.signOut({ scope: "local" }));
+    hasSession = false;
+  }
 
   if (!hasSession && isCrmPath(pathname)) {
     return redirectPreservingCookies(request, LOGIN_PATH, response);
@@ -82,6 +95,39 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   return response;
+}
+
+/**
+ * Revokes the session with Supabase, then removes it from both the request
+ * passed downstream and the browser. The cookies are removed even when the
+ * revoke fails (signOut clears nothing on a network error), so no page or
+ * API route after this point can see the idle session.
+ */
+async function endIdleSession(request: NextRequest, revoke: () => Promise<unknown>): Promise<NextResponse> {
+  try {
+    await revoke();
+  } catch {
+    // Still removed below: the token may stay valid at Supabase, but this browser no longer holds it.
+  }
+
+  const sessionCookies = request.cookies.getAll().map(({ name }) => name).filter(isSupabaseAuthCookie);
+  for (const name of [...sessionCookies, IDLE_ACTIVITY_COOKIE, ACTIVE_TENANT_COOKIE]) {
+    request.cookies.delete(name);
+  }
+
+  // Built after the deletions: NextResponse.next({ request }) copies the request's cookies as they are now.
+  const response = NextResponse.next({ request });
+  for (const name of sessionCookies) {
+    response.cookies.set(name, "", { ...AUTH_COOKIE_OPTIONS, maxAge: 0 });
+  }
+  clearSessionActivity(response);
+  clearActiveTenant(response);
+  response.headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate, max-age=0");
+  return response;
+}
+
+function isSupabaseAuthCookie(name: string): boolean {
+  return name.startsWith("sb-") && name.includes("-auth-token");
 }
 
 /**

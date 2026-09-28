@@ -3,6 +3,7 @@ import { createErrorResponse, createSuccessResponse, parseJsonBody } from "@/app
 import { AppError } from "@/lib/server/app-error";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
+import { setSessionActivity } from "@/lib/server/auth/idle-session";
 import { findWithdrawnInvitationById } from "@/lib/server/member-invitation-service";
 
 export const runtime = "nodejs";
@@ -68,7 +69,10 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    return withNoStore(createSuccessResponse({ redirectTo: "/onboarding" }));
+    const response = createSuccessResponse({ redirectTo: "/onboarding" });
+    // A new session starts its server-side idle clock now; without it the proxy treats it as idle.
+    setSessionActivity(response, result.data.user.id);
+    return withNoStore(response);
   } catch (error) {
     return withNoStore(createErrorResponse(error, request));
   }

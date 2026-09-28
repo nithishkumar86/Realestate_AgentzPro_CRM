@@ -55,6 +55,32 @@ describe("InviteConfirmClient", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("starts a fresh idle record so a previous session's metadata cannot sign the invitee out", async () => {
+    localStorage.setItem("agentzpro-inactivity", JSON.stringify({ startedAt: 1, lastActivity: 1, signedOut: true }));
+    respond(200, { redirectTo: "/onboarding" });
+    openLink(`/auth/confirm?invitation=${INVITATION_ID}#access_token=a&refresh_token=r&type=invite`);
+
+    render(<InviteConfirmClient />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/onboarding"));
+    const record = JSON.parse(localStorage.getItem("agentzpro-inactivity") ?? "null");
+    expect(record.signedOut).toBe(false);
+    expect(Date.now() - record.lastActivity).toBeLessThan(5000);
+    expect(record.startedAt).toBe(record.lastActivity);
+  });
+
+  it("leaves idle metadata untouched when the invitation cannot be confirmed", async () => {
+    const stale = JSON.stringify({ startedAt: 1, lastActivity: 1, signedOut: true });
+    localStorage.setItem("agentzpro-inactivity", stale);
+    respond(401, { error: { code: "INVITE_LINK_INVALID", message: "invalid" } });
+    openLink(`/auth/confirm?invitation=${INVITATION_ID}`);
+
+    render(<InviteConfirmClient />);
+
+    expect(await screen.findByRole("link", { name: "Go to sign in" })).toBeInTheDocument();
+    expect(localStorage.getItem("agentzpro-inactivity")).toBe(stale);
+  });
+
   it("offers sign-in when the link is invalid and the invitation was not withdrawn", async () => {
     respond(401, { error: { code: "INVITE_LINK_INVALID", message: "This invitation link is invalid or has expired. Sign in with your email to continue." } });
     openLink(`/auth/confirm?invitation=${INVITATION_ID}`);

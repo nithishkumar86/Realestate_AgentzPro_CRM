@@ -1,4 +1,6 @@
 export const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000;
+/** Real activity is reported to the server at most this often; the server allows for the lag. */
+export const ACTIVITY_HEARTBEAT_MS = 5 * 60 * 1000;
 export const INACTIVITY_STORAGE_KEY = "agentzpro-inactivity";
 const CHANNEL = "agentzpro-inactivity";
 const WRITE_INTERVAL_MS = 1000;
@@ -59,6 +61,8 @@ export function startInactivityTracking({ onSignedOut, onError, timeoutMs = INAC
   let retryAt = 0;
   let requestTimer: ReturnType<typeof setTimeout> | undefined;
   let requestController: AbortController | undefined;
+  let lastHeartbeat = 0;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
 
   function merge(incoming: ActivityRecord | null): void {
     if (!incoming) return;
@@ -144,6 +148,22 @@ export function startInactivityTracking({ onSignedOut, onError, timeoutMs = INAC
     schedule();
   }
 
+  /** Renews the server-side idle clock (src/lib/server/auth/idle-session.ts). */
+  function heartbeat(): void {
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = undefined;
+    if (stopped || expired) return;
+    lastHeartbeat = Date.now();
+    fetch("/api/auth/activity", { method: "POST", credentials: "same-origin", keepalive: true })
+      .then((response) => {
+        // No session on the server, usually because the proxy ended an idle one. Only go to /login:
+        // calling logout could revoke a live session after a passing auth error, and the proxy sends
+        // a still-valid session from /login straight back into the app.
+        if (response.status === 401 && !stopped) finish();
+      })
+      .catch(() => { /* A missed heartbeat is covered by the server's allowance; the next one retries. */ });
+  }
+
   function activity(): void {
     if (stopped) return;
     merge(readRecord());
@@ -151,6 +171,8 @@ export function startInactivityTracking({ onSignedOut, onError, timeoutMs = INAC
     record.lastActivity = Date.now();
     if (Date.now() - lastWrite >= WRITE_INTERVAL_MS) publish();
     else if (!flushTimer) flushTimer = setTimeout(publish, WRITE_INTERVAL_MS - (Date.now() - lastWrite));
+    if (Date.now() - lastHeartbeat >= ACTIVITY_HEARTBEAT_MS) heartbeat();
+    else if (!heartbeatTimer) heartbeatTimer = setTimeout(heartbeat, lastHeartbeat + ACTIVITY_HEARTBEAT_MS - Date.now());
     schedule();
   }
 
@@ -176,6 +198,7 @@ export function startInactivityTracking({ onSignedOut, onError, timeoutMs = INAC
     stopped = true;
     clearTimeout(timer);
     clearTimeout(flushTimer);
+    clearTimeout(heartbeatTimer);
     clearTimeout(requestTimer);
     requestController?.abort();
     for (const event of events) document.removeEventListener(event, activity, true);

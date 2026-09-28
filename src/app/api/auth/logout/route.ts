@@ -2,6 +2,7 @@ import { createSuccessResponse, createErrorResponse } from "@/app/api/meta/_lib/
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { clearActiveTenant } from "@/lib/server/auth/active-tenant";
+import { clearSessionActivity } from "@/lib/server/auth/idle-session";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,8 @@ export async function POST(request: Request): Promise<Response> {
     assertSameOrigin(request);
 
     const supabase = await createAuthClient();
-    const { error } = await supabase.auth.signOut();
+    // Ends only this browser's session; the user's other devices stay signed in.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) {
       throw error;
     }
@@ -18,6 +20,7 @@ export async function POST(request: Request): Promise<Response> {
     const response = createSuccessResponse({ signedOut: true });
     // The next person to sign in on this browser starts without someone else's company hint.
     clearActiveTenant(response);
+    clearSessionActivity(response);
     return withNoStore(response);
   } catch (error) {
     return withNoStore(createErrorResponse(error));
