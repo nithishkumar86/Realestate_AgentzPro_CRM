@@ -19,7 +19,9 @@
 }
 
 .header { padding-block: 28px; }
-.headerLabel { color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .18em; }
+.loginButton { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 8px 22px; border-radius: 10px; color: #fff; background: #1f6feb; font-size: 14px; font-weight: 600; text-decoration: none; transition: background .15s ease; }
+.loginButton:hover { background: #174ea6; }
+.loginButton:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
 .main { width: min(1100px, calc(100% - 80px)); margin: auto; padding: 54px 0 64px; }
 .hero { text-align: center; }
 
@@ -82,7 +84,6 @@
 @media (max-width: 700px) {
   .header, .footer, .main { width: calc(100% - 40px); }
   .header { padding-block: 22px; }
-  .headerLabel { display: none; }
   .main { padding: 36px 0 40px; }
   .title { font-size: clamp(36px, 8.5vw, 56px); }
   .description { font-size: 15px; }

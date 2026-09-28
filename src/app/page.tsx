@@ -4,21 +4,21 @@ import { isAppError } from "@/lib/server/app-error";
 import Link from "next/link";
 import { ArrowRight, ChartNoAxesCombined, Layers3, UsersRound } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { InactivityLogout } from "@/features/auth/inactivity-logout";
 import styles from "./landing.module.css";
 
 /**
- * The welcome page retains the same access guard and denied-access
- * destinations as the CRM layout.
+ * Public landing page. Signed-out visitors see it with a Login button;
+ * signed-in users with CRM access go straight to /leads. Other denied-access
+ * destinations match the CRM layout.
  */
 export default async function HomePage() {
+  let isSignedOut = false;
   try {
     await requireCrmAccess();
   } catch (error) {
-    if (isAppError(error)) {
-      if (error.code === "UNAUTHENTICATED") {
-        redirect("/login");
-      }
+    if (isAppError(error) && error.code === "UNAUTHENTICATED") {
+      isSignedOut = true;
+    } else if (isAppError(error)) {
       if (error.code === "ONBOARDING_REQUIRED") {
         redirect("/onboarding");
       }
@@ -29,15 +29,22 @@ export default async function HomePage() {
         redirect("/billing");
       }
     }
-    throw error;
+    if (!isSignedOut) {
+      throw error;
+    }
+  }
+
+  if (!isSignedOut) {
+    redirect("/leads");
   }
 
   return (
     <div className={styles.page}>
-      <InactivityLogout />
       <header className={styles.header}>
         <BrandLogo />
-        <span className={styles.headerLabel}>YOUR CRM WORKSPACE</span>
+        <Link href="/login" className={styles.loginButton}>
+          Login
+        </Link>
       </header>
 
       <main className={styles.main}>
