@@ -42,9 +42,14 @@ export default async function HomePage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <BrandLogo />
-        <Link href="/login" className={styles.loginButton}>
-          Login
-        </Link>
+        <nav className={styles.headerActions} aria-label="Account">
+          <Link href="/pricing" className={styles.pricingButton}>
+            Pricing
+          </Link>
+          <Link href="/login" className={styles.loginButton}>
+            Login
+          </Link>
+        </nav>
       </header>
 
       <main className={styles.main}>

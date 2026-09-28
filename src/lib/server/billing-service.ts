@@ -310,23 +310,14 @@ export interface BillingOverview {
 }
 
 export async function getBillingOverview(access: BillingAccess): Promise<BillingOverview> {
-  const db = getSupabaseAdminClient();
   const isOwner = access.membershipRole === "owner";
 
-  const [current, usage, plansResult, payments] = await Promise.all([
+  const [current, usage, plans, payments] = await Promise.all([
     loadCurrentSubscription(access.tenantId),
     loadSeatUsage(access.tenantId),
-    db
-      .from("billing_plans")
-      .select("plan_code,plan_name,billing_period,price_per_seat_paise")
-      .eq("is_active", true)
-      .order("price_per_seat_paise", { ascending: true }),
+    listActivePlans(),
     isOwner ? listBillingPayments(access) : Promise.resolve([]),
   ]);
-
-  if (plansResult.error) {
-    throw new AppError("Billing details could not be loaded.", { status: 500, code: "BILLING_LOAD_FAILED", retryable: true });
-  }
 
   const isLive = current !== null && (LIVE_STATUSES as readonly string[]).includes(current.razorpay_status);
 
@@ -354,16 +345,34 @@ export async function getBillingOverview(access: BillingAccess): Promise<Billing
           }
         : null,
     canSubscribe: isOwner && !isLive,
-    plans: ((plansResult.data ?? []) as { plan_code: string; plan_name: string; billing_period: "monthly" | "yearly"; price_per_seat_paise: number }[]).map(
-      (row) => ({
-        planCode: row.plan_code,
-        planName: row.plan_name,
-        billingPeriod: row.billing_period,
-        pricePerSeatPaise: row.price_per_seat_paise,
-      }),
-    ),
+    plans,
     payments,
   };
+}
+
+/**
+ * The plans currently on sale, cheapest first. Public data (no tenant, no Razorpay ids), so the signed-out
+ * /pricing page reads it too — prices shown there always match what checkout charges.
+ */
+export async function listActivePlans(): Promise<BillingPlanOption[]> {
+  const { data, error } = await getSupabaseAdminClient()
+    .from("billing_plans")
+    .select("plan_code,plan_name,billing_period,price_per_seat_paise")
+    .eq("is_active", true)
+    .order("price_per_seat_paise", { ascending: true });
+
+  if (error) {
+    throw new AppError("Billing details could not be loaded.", { status: 500, code: "BILLING_LOAD_FAILED", retryable: true });
+  }
+
+  return ((data ?? []) as { plan_code: string; plan_name: string; billing_period: "monthly" | "yearly"; price_per_seat_paise: number }[]).map(
+    (row) => ({
+      planCode: row.plan_code,
+      planName: row.plan_name,
+      billingPeriod: row.billing_period,
+      pricePerSeatPaise: row.price_per_seat_paise,
+    }),
+  );
 }
 
 /**

@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PLAN_FEATURES } from "@/features/billing/plan-features";
 import type { BillingOverview } from "@/lib/server/billing-service";
 import { cancelSubscriptionAtPeriodEnd, getBillingStatus, startCheckout } from "@/services/billing-api-client";
 
@@ -54,13 +55,6 @@ function formatRupees(paise: number, maximumFractionDigits = 2): string {
 function tierName(planName: string): string {
   return planName.replace(/\s*(monthly|yearly)\s*$/i, "") || planName;
 }
-
-const PLAN_FEATURES = [
-  "Unlimited AI label classification",
-  "Unlimited ad connections",
-  "Custom seats — pay only for your team",
-  "Multi-membership — one login across many companies",
-];
 
 function PlanFeatures({ heading }: Readonly<{ heading: string }>) {
   return (
