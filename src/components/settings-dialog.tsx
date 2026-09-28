@@ -82,12 +82,14 @@ type MembersState =
 export interface SettingsDialogProps {
   fullName: string;
   onClose: () => void;
+  /** Section shown when the dialog opens; defaults to "profile". */
+  initialSection?: SettingsSection;
 }
 
-export function SettingsDialog({ fullName, onClose }: Readonly<SettingsDialogProps>) {
+export function SettingsDialog({ fullName, onClose, initialSection }: Readonly<SettingsDialogProps>) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [section, setSection] = useState<SettingsSection>("profile");
+  const [section, setSection] = useState<SettingsSection>(initialSection ?? "profile");
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;

@@ -7,6 +7,7 @@ const getTenantMembers = vi.fn();
 const sendInvitations = vi.fn();
 const cancelInvitation = vi.fn();
 const removeTenantMember = vi.fn();
+const getBillingOverview = vi.fn();
 const replace = vi.fn();
 const refresh = vi.fn();
 const push = vi.fn();
@@ -17,6 +18,12 @@ vi.mock("@/services/members-api-client", () => ({
   sendInvitations,
   cancelInvitation,
   removeTenantMember,
+}));
+// Keeps BillingOwnerOnlyError, getInvoices etc. real; only getBillingOverview is stubbed so
+// BillingSection can be driven without hitting the network.
+vi.mock("@/services/billing-api-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/billing-api-client")>()),
+  getBillingOverview,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, refresh, push }),
@@ -64,7 +71,7 @@ describe("UserMenu profile dialog", () => {
     expect(within(menu).getByRole("button", { name: /Switch to (dark|light) mode/ })).toBeEnabled();
     expect(within(menu).queryByRole("button", { name: "Profile" })).not.toBeInTheDocument();
     expect(within(menu).getByRole("button", { name: "Settings" })).toBeEnabled();
-    expect(within(menu).queryByRole("button", { name: "Upgrade plan" })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("button", { name: "Upgrade plan" })).toBeEnabled();
   });
 
   it("no longer lists Switch company (it lives at the top of the sidebar)", () => {
@@ -238,6 +245,17 @@ describe("UserMenu settings dialog", () => {
     const sidebar = within(dialog).getByRole("navigation", { name: "Settings sections" });
     expect(within(sidebar).getByRole("button", { name: "Profile" })).toHaveAttribute("aria-current", "page");
     expect((await within(dialog).findAllByText("Real Estate Agent")).length).toBeGreaterThan(0);
+  });
+
+  it("opens Settings on the Billing section when Upgrade plan is clicked", () => {
+    getBillingOverview.mockReturnValue(new Promise(() => {})); // stays loading; no overview fixture needed
+    renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Upgrade plan" }));
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+
+    const sidebar = within(dialog).getByRole("navigation", { name: "Settings sections" });
+    expect(within(sidebar).getByRole("button", { name: "Billing" })).toHaveAttribute("aria-current", "page");
+    expect(within(dialog).getByRole("heading", { name: "Billing" })).toBeInTheDocument();
   });
 
   it("shows the Members section when selected in the sidebar", async () => {
