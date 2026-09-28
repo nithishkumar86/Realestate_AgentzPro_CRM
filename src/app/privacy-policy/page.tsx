@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 };
 
 const EFFECTIVE_DATE = "September 14, 2026";
+const LAST_UPDATED = "September 28, 2026";
 
 function SiteHeader() {
   return (
@@ -58,9 +59,10 @@ const TOC = [
   ["your-rights", "9. Your Rights & Data Deletion"],
   ["cookies", "10. Cookies & Tracking"],
   ["children", "11. Children's Privacy"],
-  ["governing-law", "12. Governing Law"],
-  ["changes", "13. Changes to This Policy"],
-  ["contact", "14. Contact Us"],
+  ["payments", "12. Payments, Cancellation & Refunds"],
+  ["governing-law", "13. Governing Law"],
+  ["changes", "14. Changes to This Policy"],
+  ["contact", "15. Contact Us"],
 ] as const;
 
 export default function PrivacyPolicyPage() {
@@ -73,7 +75,7 @@ export default function PrivacyPolicyPage() {
           <h1 className={styles.policyTitle}>AgentzPro CRM Privacy Policy</h1>
           <p className={styles.policyMeta}>
             Effective Date: {EFFECTIVE_DATE} &middot; Last Updated:{" "}
-            {EFFECTIVE_DATE}
+            {LAST_UPDATED}
           </p>
           <p className={styles.policyIntro}>
             This Privacy Policy explains how <strong>AI Digital Tamizha</strong>{" "}
@@ -359,7 +361,7 @@ export default function PrivacyPolicyPage() {
               <strong>Anyone</strong> — including a tenant wishing to close
               their account entirely, or an individual lead who wants their
               data removed — can request deletion by contacting us directly
-              using the details in Section 14 (Contact Us).
+              using the details in Section 15 (Contact Us).
             </li>
           </ul>
           <p>
@@ -393,8 +395,32 @@ export default function PrivacyPolicyPage() {
           </p>
         </section>
 
-        <section id="governing-law" className={styles.section}>
+        <section id="payments" className={styles.section}>
           <span className={styles.sectionNum}>12</span>
+          <h2 className={styles.sectionTitle}>
+            Payments, Cancellation &amp; Refunds
+          </h2>
+          <p>
+            Paid plans for AgentzPro CRM are billed per seat, monthly or
+            yearly, and payments are processed securely by our payment
+            partner, Razorpay.
+          </p>
+          <ul>
+            <li>
+              <strong>Cancel anytime.</strong> Once a payment is made, you can
+              cancel your subscription at any time — it is entirely your
+              choice. Cancellation stops future renewals, and you keep access
+              until the end of the period you have already paid for.
+            </li>
+            <li>
+              <strong>No refunds.</strong> Payments already made are not
+              refunded, whether for a monthly plan or a yearly plan.
+            </li>
+          </ul>
+        </section>
+
+        <section id="governing-law" className={styles.section}>
+          <span className={styles.sectionNum}>13</span>
           <h2 className={styles.sectionTitle}>Governing Law</h2>
           <p>
             AI Digital Tamizha is based in Chennai, Tamil Nadu, India, and we
@@ -406,7 +432,7 @@ export default function PrivacyPolicyPage() {
         </section>
 
         <section id="changes" className={styles.section}>
-          <span className={styles.sectionNum}>13</span>
+          <span className={styles.sectionNum}>14</span>
           <h2 className={styles.sectionTitle}>Changes to This Policy</h2>
           <p>
             We may update this Privacy Policy from time to time to reflect
@@ -418,7 +444,7 @@ export default function PrivacyPolicyPage() {
         </section>
 
         <section id="contact" className={styles.section}>
-          <span className={styles.sectionNum}>14</span>
+          <span className={styles.sectionNum}>15</span>
           <h2 className={styles.sectionTitle}>Contact Us</h2>
           <p>
             If you have any questions, concerns, or requests regarding this
