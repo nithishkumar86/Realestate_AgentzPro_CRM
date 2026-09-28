@@ -157,8 +157,15 @@ export class RazorpayClient {
       const parsedError = errorBodySchema.safeParse(payload);
       const razorpayCode = parsedError.success ? parsedError.data.error?.code : undefined;
       const retryable = response.status === 429 || response.status >= 500;
-      // The description is Razorpay's text; it goes to logs via AppError.details, never to the browser
-      // as a message of ours.
+      // The description is Razorpay's text; it goes to server logs only. AppError.details is echoed to
+      // the browser, so it stays out of there.
+      console.error(JSON.stringify({
+        event: "razorpay_request_failed",
+        path,
+        httpStatus: response.status,
+        razorpayCode: razorpayCode ?? null,
+        razorpayDescription: parsedError.success ? parsedError.data.error?.description ?? null : null,
+      }));
       throw new AppError("Razorpay rejected the request.", {
         status: retryable ? 502 : 400,
         code: "RAZORPAY_REQUEST_FAILED",
