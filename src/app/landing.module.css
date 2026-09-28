@@ -78,10 +78,10 @@
 .icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; color: var(--primary-strong); background: var(--nav-active-bg); }
 .feature h2 { margin: 18px 0 8px; font-size: 16px; line-height: 1.5; letter-spacing: -.02em; }
 .feature p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
-.footer { padding-block: 22px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+.footer { padding-block: 22px; border-top: 1px solid var(--border); font-size: 14px; color: var(--text-muted); }
 .footerLeft { display: flex; align-items: center; gap: 20px; }
 .footerRight { display: flex; align-items: center; gap: 20px; }
-.footerLink { color: var(--text-muted); font-size: 12px; text-decoration: none; }
+.footerLink { color: var(--text-muted); font-size: inherit; text-decoration: none; }
 .footerLink:hover { color: var(--primary-strong); text-decoration: underline; }
 .footerLink:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
 
