@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toReadableLabel } from "@/lib/date-utils";
 import { displayValue } from "@/components/ui";
+import { LEAD_STATUSES } from "@/features/leads/lead-options";
 import { LeadsPageClient } from "@/features/leads/leads-page-client";
 
 vi.mock("next/link", () => ({
@@ -73,10 +74,10 @@ function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolea
     }
     const patchMatch = /^\/api\/leads\/([^/]+)$/.exec(url);
     if (patchMatch && init?.method === "PATCH") {
-      if (patchOptions.fail) return jsonResponse({ error: { message: "The label could not be updated." } }, 500);
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      if (patchOptions.fail) return jsonResponse({ error: { message: `The ${"status" in body ? "status" : "label"} could not be updated.` } }, 500);
       sent.patches.push({ id: patchMatch[1], body });
-      return jsonResponse({ id: patchMatch[1], status: "New Lead", label: body.label, labelSource: "telecaller" });
+      return jsonResponse({ id: patchMatch[1], status: body.status ?? "New Lead", label: body.label ?? "Warm", labelSource: "telecaller" });
     }
     const deleteMatch = /^\/api\/leads\/([^/]+)$/.exec(url);
     if (deleteMatch && init?.method === "DELETE") {
@@ -433,6 +434,15 @@ describe("deleting leads", () => {
   });
 });
 
+function triggerFor(kind: "label" | "status", name = "Dummy One") {
+  return screen.getByRole("button", { name: `Change ${kind} for ${name}` });
+}
+
+function choose(kind: "label" | "status", option: string, name = "Dummy One") {
+  fireEvent.click(triggerFor(kind, name));
+  fireEvent.click(screen.getByRole("option", { name: option }));
+}
+
 describe("editing a lead's label", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -441,12 +451,12 @@ describe("editing a lead's label", () => {
     const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     await renderLeadsPage(sent);
 
-    const select = screen.getByRole("combobox", { name: "Change label for Dummy One" }) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "Hot" } });
+    const select = triggerFor("label");
+    choose("label", "Hot");
 
     expect(confirmSpy).toHaveBeenCalledWith("Change label from Warm to Hot? This will be saved as the final label.");
     expect(sent.patches).toEqual([]);
-    expect(select.value).toBe("Warm");
+    expect(select.textContent).toBe("Warm");
   });
 
   it("saves the new label and shows the Telecaller source once the warning is confirmed", async () => {
@@ -454,11 +464,11 @@ describe("editing a lead's label", () => {
     vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderLeadsPage(sent);
 
-    const select = screen.getByRole("combobox", { name: "Change label for Dummy One" }) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "Hot" } });
+    const select = triggerFor("label");
+    choose("label", "Hot");
 
     await waitFor(() => expect(sent.patches).toEqual([{ id: "lead-1", body: { label: "Hot" } }]));
-    await waitFor(() => expect(select.value).toBe("Hot"));
+    await waitFor(() => expect(select.textContent).toBe("Hot"));
     expect(screen.getByText("Telecaller")).toBeInTheDocument();
   });
 
@@ -467,7 +477,7 @@ describe("editing a lead's label", () => {
     const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderLeadsPage(sent);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Change label for Dummy One" }), { target: { value: "Warm" } });
+    choose("label", "Warm");
 
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(sent.patches).toEqual([]);
@@ -478,10 +488,76 @@ describe("editing a lead's label", () => {
     vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderLeadsPage(sent);
 
-    const select = screen.getByRole("combobox", { name: "Change label for Dummy One" }) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "Hot" } });
+    const select = triggerFor("label");
+    choose("label", "Hot");
 
     await screen.findByText("The label could not be updated.");
-    expect(select.value).toBe("Warm");
+    expect(select.textContent).toBe("Warm");
+  });
+});
+
+describe("editing a lead's status", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("offers all 13 statuses and defaults a new lead to New Lead", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    await renderLeadsPage(sent);
+
+    expect(triggerFor("status").textContent).toBe("New Lead");
+    fireEvent.click(triggerFor("status"));
+    const names = screen.getAllByRole("option").map((option) => option.textContent);
+    expect(names).toEqual([...LEAD_STATUSES]);
+    expect(names).toHaveLength(13);
+    expect(names).not.toContain("All statuses");
+  });
+
+  it("warns before saving, and does not send a request when the warning is declined", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    await renderLeadsPage(sent);
+
+    const select = triggerFor("status");
+    choose("status", "Site visit done");
+
+    expect(confirmSpy).toHaveBeenCalledWith("Change status from New Lead to Site visit done? This will be saved and reflected in the CRM.");
+    expect(sent.patches).toEqual([]);
+    expect(select.textContent).toBe("New Lead");
+  });
+
+  it("saves only the status once confirmed and leaves the label and its source alone", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderLeadsPage(sent);
+
+    const select = triggerFor("status");
+    choose("status", "Site visit done");
+
+    await waitFor(() => expect(sent.patches).toEqual([{ id: "lead-1", body: { status: "Site visit done" } }]));
+    await waitFor(() => expect(select.textContent).toBe("Site visit done"));
+    expect(triggerFor("label").textContent).toBe("Warm");
+    expect(screen.queryByText("Telecaller")).not.toBeInTheDocument();
+  });
+
+  it("does not send a request when the same status is re-selected", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderLeadsPage(sent);
+
+    choose("status", "New Lead");
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(sent.patches).toEqual([]);
+  });
+
+  it("shows the server's error and leaves the status unchanged when the save fails", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS, { fail: true });
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderLeadsPage(sent);
+
+    const select = triggerFor("status");
+    choose("status", "Closed");
+
+    await screen.findByText("The status could not be updated.");
+    expect(select.textContent).toBe("New Lead");
   });
 });
