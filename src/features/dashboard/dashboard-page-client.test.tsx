@@ -81,7 +81,7 @@ describe("dashboard page", () => {
     for (const name of ["Page", "Ad", "Status", "Label"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Date" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Today's Leads/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Today's Leads/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Download/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Leads Today")).not.toBeInTheDocument();
@@ -98,7 +98,7 @@ describe("dashboard page", () => {
     await waitFor(() => expect(statBodies.at(-1)).not.toHaveProperty("pageRecordId"));
   });
 
-  it("applies a date range and Today's Leads, which are mutually exclusive", async () => {
+  it("applies a date range", async () => {
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     fireEvent.click(screen.getByRole("button", { name: "Date" }));
@@ -108,9 +108,6 @@ describe("dashboard page", () => {
     fireEvent.change(to, { target: { value: "2026-09-10" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ dateFrom: "2026-09-01", dateTo: "2026-09-10", quickFilter: "all" }));
-    fireEvent.click(screen.getByRole("button", { name: /Today's Leads/ }));
-    await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ quickFilter: "today" }));
-    expect(statBodies.at(-1)).not.toHaveProperty("dateFrom");
   });
 
   it("updates in place when the server reports a new lead, without a reload", async () => {
