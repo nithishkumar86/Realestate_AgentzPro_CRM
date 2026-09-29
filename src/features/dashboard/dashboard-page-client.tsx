@@ -48,7 +48,7 @@ export function DashboardPageClient() {
         />
       ) : null}
 
-      <LeadFilterBar filters={filters} showSearch={false} />
+      <LeadFilterBar filters={filters} showSearch={false} showQuickToggle={false} />
       {filterError ? <div className="mvp-inline-error">{filterError}</div> : null}
       <LeadActiveFilters filters={filters} />
 

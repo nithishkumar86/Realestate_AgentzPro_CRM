@@ -82,9 +82,9 @@ function FilterChip({ chipLabel, value, onRemove }: { chipLabel: string; value: 
 /**
  * The search box, Page/Ad/Status/Label dropdowns, Date popover and Today's Leads toggle. `actions`
  * fills the right-hand end of the second row (the leads page puts Delete/Download there; the
- * dashboard has none).
+ * dashboard has none). The dashboard also hides the search box and the Today's Leads toggle.
  */
-export function LeadFilterBar({ filters, actions, showSearch = true }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean }) {
+export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean }) {
   const { options, pageRecordId, adId, search, quick, status, label, from, to } = filters;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isDateOpen, setIsDateOpen] = useState(false);
@@ -142,9 +142,9 @@ export function LeadFilterBar({ filters, actions, showSearch = true }: { filters
           <button type="button" className="mvp-date-popover__apply" disabled={!draftFrom || !draftTo} onClick={applyDateFilter}>Apply</button>
         </div> : null}
       </div>
-      <button className={`mvp-gradient-button mvp-gradient-button--filter${quick !== "All Leads" ? " mvp-gradient-button--on" : ""}`} type="button" onClick={filters.toggleQuickRange}>
+      {showQuickToggle ? <button className={`mvp-gradient-button mvp-gradient-button--filter${quick !== "All Leads" ? " mvp-gradient-button--on" : ""}`} type="button" onClick={filters.toggleQuickRange}>
         <Filter size={16} />{quick === "All Leads" ? "Today's Leads" : "All Leads"}
-      </button>
+      </button> : null}
       {actions ? <div className="mvp-filter-actions-right">{actions}</div> : null}
     </div>
   </section>;

@@ -2159,8 +2159,7 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 .mvp-filter-actions-right { display: flex; gap: 14px; margin-left: auto; }
 
 /* No search box (dashboard): the two rows collapse into one line — the four
-   dropdowns and Date share the width equally, the Today's Leads pill keeps its
-   natural size. Wraps cleanly on narrow screens. */
+   dropdowns and Date share the width equally. Wraps cleanly on narrow screens. */
 .mvp-filter-card--single-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; }
 .mvp-filter-card--single-row .mvp-filter-row { display: contents; }
 .mvp-filter-card--single-row .mvp-field-box,
