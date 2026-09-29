@@ -137,12 +137,12 @@ export async function deleteLead(context: TenantRequestContext, leadId: string):
 }
 function asNullableString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value : null; }
 
-async function getTenantTimezone(tenantId: string): Promise<string> {
+export async function getTenantTimezone(tenantId: string): Promise<string> {
   const { data, error } = await getSupabaseAdminClient().from("tenants").select("timezone").eq("tenant_id", tenantId).single();
   if (error || !data || typeof data.timezone !== "string" || data.timezone === "UTC") throw new AppError("A verified tenant timezone is required before lead date filtering.", { status: 503, code: "TENANT_TIMEZONE_UNAVAILABLE" });
   return data.timezone;
 }
-function resolveDateRange(request: LeadSearchRequest, timezone: string): { from: string; to: string } | null {
+export function resolveDateRange(request: LeadSearchRequest, timezone: string): { from: string; to: string } | null {
   let from = request.dateFrom; let to = request.dateTo;
   if (request.quickFilter === "today") from = to = localDate(new Date(), timezone);
   if (request.quickFilter === "month") { const today = localDate(new Date(), timezone); from = `${today.slice(0, 7)}-01`; to = today; }
@@ -150,7 +150,7 @@ function resolveDateRange(request: LeadSearchRequest, timezone: string): { from:
   if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) throw new AppError("Select a valid inclusive date range.", { status: 400, code: "INVALID_DATE_RANGE" });
   return { from: zonedMidnight(from, timezone).toISOString(), to: zonedMidnight(addDays(to, 1), timezone).toISOString() };
 }
-function localDate(date: Date, timezone: string): string { return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date); }
-function addDays(date: string, days: number): string { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
-function zonedMidnight(date: string, timezone: string): Date { let instant = new Date(`${date}T00:00:00.000Z`); for (let i = 0; i < 2; i += 1) { const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(instant); const item = (type: string) => Number(parts.find((part) => part.type === type)?.value); const rendered = Date.UTC(item("year"), item("month") - 1, item("day"), item("hour"), item("minute")); instant = new Date(instant.getTime() - (rendered - Date.parse(`${date}T00:00:00.000Z`))); } return instant; }
+export function localDate(date: Date, timezone: string): string { return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date); }
+export function addDays(date: string, days: number): string { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
+export function zonedMidnight(date: string, timezone: string): Date { let instant = new Date(`${date}T00:00:00.000Z`); for (let i = 0; i < 2; i += 1) { const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(instant); const item = (type: string) => Number(parts.find((part) => part.type === type)?.value); const rendered = Date.UTC(item("year"), item("month") - 1, item("day"), item("hour"), item("minute")); instant = new Date(instant.getTime() - (rendered - Date.parse(`${date}T00:00:00.000Z`))); } return instant; }
 export function normalizeIndianPhone(value: string): string | null { const digits = value.replace(/\D/g, ""); if (!digits) return null; if (/^91\d{10}$/.test(digits)) return digits; if (/^0\d{10}$/.test(digits)) return `91${digits.slice(1)}`; if (/^\d{10}$/.test(digits)) return `91${digits}`; return digits; }

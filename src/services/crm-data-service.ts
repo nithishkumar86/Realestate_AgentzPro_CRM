@@ -1,4 +1,4 @@
-import type { DashboardData, Lead, LeadCounts, LeadQuery, PaginatedLeads, SettingsData } from "@/lib/types";
+import type { Lead, LeadCounts, LeadQuery, PaginatedLeads, SettingsData } from "@/lib/types";
 import { type DateRange, formatCalendarDate, getCustomRange, getMonthRange, getTodayRange, getWeekRange } from "@/lib/date-utils";
 
 export async function getLeadCounts(): Promise<LeadCounts> { return { today: 0, month: 0, all: 0 }; }
@@ -10,18 +10,6 @@ export async function getLeads(query: LeadQuery): Promise<PaginatedLeads> {
 export async function getAllMatchingLeads(query: Omit<LeadQuery, "page" | "pageSize">): Promise<Lead[]> { void query; return []; }
 
 export async function getLeadById(): Promise<Lead> { throw new Error("Lead details are not available."); }
-
-export async function getDashboardData(): Promise<DashboardData> {
-  const now = new Date();
-  return {
-    counts: await getLeadCounts(),
-    monthlyTotals: Array.from({ length: 6 }, (_, index) => {
-      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (5 - index), 1));
-      return { month: new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date), count: 0, isCurrent: index === 5 };
-    }),
-    pageDistribution: [],
-  };
-}
 
 export async function getSettingsData(): Promise<SettingsData> {
   return { profile: { fullName: "", emailAddress: "", phoneNumber: "", roleTitle: "" }, company: { companyName: "", businessType: "", primaryMarket: "", website: "" }, subscription: { planName: "", status: "", renewalNote: "" } };
