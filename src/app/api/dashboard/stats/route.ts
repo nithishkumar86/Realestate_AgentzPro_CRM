@@ -9,7 +9,6 @@ export const runtime = "nodejs";
 // Same filter vocabulary as /api/leads/query, minus paging and sorting. .strict() also rejects any
 // client-supplied tenant identifier: the tenant comes only from the verified session.
 const requestSchema = z.object({
-  search: z.string().max(200).optional(),
   quickFilter: z.enum(["all", "today", "month"]).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),

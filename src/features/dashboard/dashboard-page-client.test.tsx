@@ -79,7 +79,7 @@ describe("dashboard page", () => {
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     for (const name of ["Page", "Ad", "Status", "Label"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
-    expect(screen.getByRole("searchbox")).toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Date" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Today's Leads/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();

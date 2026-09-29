@@ -4,7 +4,6 @@ import { AppError } from "@/lib/server/app-error";
 import {
   getTenantTimezone,
   localDate,
-  normalizeIndianPhone,
   resolveDateRange,
   zonedMidnight,
   type LeadSearchRequest,
@@ -15,7 +14,7 @@ import type { TenantRequestContext } from "@/lib/server/tenant-context";
 /** The /leads filters the dashboard honours. Paging, sorting and bulk actions do not apply. */
 export type DashboardStatsRequest = Pick<
   LeadSearchRequest,
-  "search" | "quickFilter" | "dateFrom" | "dateTo" | "pageRecordId" | "adId" | "status" | "label"
+  "quickFilter" | "dateFrom" | "dateTo" | "pageRecordId" | "adId" | "status" | "label"
 >;
 
 export type TimelineGranularity = "hour" | "day" | "month";
@@ -83,10 +82,6 @@ export function buildDashboardRpcArgs(
   // Same elapsed time into last month, never running past the start of this month.
   const prevSamePeriodEnd = new Date(Math.min(prevMonthStart.getTime() + (now.getTime() - monthStart.getTime()), monthStart.getTime()));
 
-  // queryLeads replaces these characters with spaces before building its ilike patterns.
-  const trimmed = request.search?.trim() ?? "";
-  const search = trimmed ? trimmed.replace(/[,%()]/g, " ") : null;
-
   return {
     p_tenant_id: tenantId,
     p_from: range?.from ?? null,
@@ -99,8 +94,8 @@ export function buildDashboardRpcArgs(
     p_ad_id: request.adId ?? null,
     p_status: request.status ?? null,
     p_label: request.label ?? null,
-    p_search: search,
-    p_search_digits: search ? normalizeIndianPhone(search) : null,
+    p_search: null, // the dashboard has no search; the RPC signature still expects the argument
+    p_search_digits: null,
     p_tz: timezone,
     p_granularity: chooseGranularity(range),
   };
