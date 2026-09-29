@@ -75,12 +75,6 @@ export interface LeadCounts {
   all: number;
 }
 
-export interface DashboardData {
-  counts: LeadCounts;
-  monthlyTotals: Array<{ month: string; count: number; isCurrent: boolean }>;
-  pageDistribution: Array<{ pageName: string; count: number }>;
-}
-
 export interface UserProfileFields {
   fullName: string;
   emailAddress: string;
