@@ -2,8 +2,9 @@
 
 import { Download, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { LEAD_LABELS, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
+import { LEAD_LABELS, LEAD_STATUSES, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
+import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
@@ -16,6 +17,8 @@ export function LeadsPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  // Which row's Status/Label panel is open ("<leadId>:status" | "<leadId>:label"); only one at a time.
+  const [openRowDropdown, setOpenRowDropdown] = useState<string | null>(null);
   // The leads page opens on the newest lead's ad; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: true, onError: setError });
   const { quick, status, label, from, to, pageRecordId, adId, search } = filters;
@@ -99,6 +102,26 @@ export function LeadsPageClient() {
     }
   }
 
+  /**
+   * Same confirm-then-save shape as updateLabel. Every lead starts as "New Lead" (database default);
+   * the team moves it through the 13 statuses here and the change is written straight to lead_data,
+   * so the filters, export and dashboard all see it. Only `status` is merged back into state — the
+   * label and its source are untouched by a status change.
+   */
+  async function updateStatus(leadId: string, currentStatus: LeadStatus, nextStatus: LeadStatus): Promise<void> {
+    if (nextStatus === currentStatus) return;
+    const warned = globalThis.confirm(`Change status from ${currentStatus} to ${nextStatus}? This will be saved and reflected in the CRM.`);
+    if (!warned) return;
+    try {
+      const response = await fetch(`/api/leads/${leadId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: nextStatus }) });
+      if (!response.ok) throw new Error(await readError(response, "The status could not be updated."));
+      const updated = await response.json() as { status: LeadStatus };
+      setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, status: updated.status } : existing));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The status could not be updated.");
+    }
+  }
+
   return <div className="mvp-leads">
     <LeadFilterBar filters={filters} actions={<>
       <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
@@ -113,10 +136,14 @@ export function LeadsPageClient() {
     <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
       {loading ? <tr><td className="mvp-empty" colSpan={8}>Loading leads...</td></tr> : null}
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={8}>No leads match these filters.</td></tr> : null}
-      {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td>{lead.leadName ?? "Unnamed Lead"}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>{lead.status}</td><td className="mvp-label-cell">
-        <select className="mvp-label-select" aria-label={`Change label for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.label} onChange={(event) => void updateLabel(lead.id, lead.label, event.target.value as LeadLabel)}>
-          {LEAD_LABELS.map((option) => <option key={option} value={option}>{option}</option>)}
-        </select>
+      {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td>{lead.leadName ?? "Unnamed Lead"}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
+        <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
+          open={openRowDropdown === `${lead.id}:status`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:status` : null)}
+          onChange={(next) => void updateStatus(lead.id, lead.status, next)} />
+      </td><td className="mvp-label-cell">
+        <RowDropdown ariaLabel={`Change label for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.label} options={LEAD_LABELS} width={140}
+          open={openRowDropdown === `${lead.id}:label`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:label` : null)}
+          onChange={(next) => void updateLabel(lead.id, lead.label, next)} />
         {lead.labelSource === "ai" ? <span className="mvp-label-source mvp-label-source--ai" title="Set by AI">AI</span> : null}
         {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
       </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}

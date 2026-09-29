@@ -2472,8 +2472,13 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-table td:first-child input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 .mvp-table td small { display: block; margin-top: 2px; color: var(--text-muted); }
 .mvp-label-cell { display: flex; align-items: center; gap: 6px; }
-.mvp-label-select { min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: .78rem; font-weight: 700; cursor: pointer; }
-.mvp-label-select:hover { border-color: var(--primary); }
+/* Per-row Status/Label trigger; its popover reuses the filter's .mvp-dropdown-panel/.mvp-dropdown-option rules. */
+.mvp-row-dropdown { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: .82rem; font-weight: 700; text-align: left; cursor: pointer; appearance: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.mvp-row-dropdown:hover { border-color: var(--primary); }
+.mvp-row-dropdown[aria-expanded="true"] { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+.mvp-row-dropdown:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 1px; }
+.mvp-row-dropdown__value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mvp-row-dropdown__panel { position: fixed; right: auto; max-width: 300px; z-index: 60; }
 .mvp-label-source { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: .68rem; font-weight: 800; white-space: nowrap; }
 .mvp-label-source--ai { color: #175cd3; background: #dbeafe; }
 .mvp-label-source--telecaller { color: #067647; background: #dcfae6; }
