@@ -92,15 +92,6 @@ describe("buildDashboardRpcArgs", () => {
     expect(none).toMatchObject({ p_page_record_id: null, p_ad_id: null, p_status: null, p_label: null, p_search: null, p_search_digits: null });
   });
 
-  it("normalises search exactly like queryLeads: separators become spaces, phones gain the 91 prefix", () => {
-    // Each of , % ( ) becomes one space (so "%(" gives two), the same character-for-character rule as queryLeads.
-    expect(buildDashboardRpcArgs(TENANT, TZ, { search: "  a,b%(c)  " }, NOW).p_search).toBe("a b  c ");
-    expect(buildDashboardRpcArgs(TENANT, TZ, { search: "   " }, NOW).p_search).toBeNull();
-    const phone = buildDashboardRpcArgs(TENANT, TZ, { search: "98765 43210" }, NOW);
-    expect(phone.p_search).toBe("98765 43210");
-    expect(phone.p_search_digits).toBe("919876543210");
-    expect(buildDashboardRpcArgs(TENANT, TZ, { search: "Ravi" }, NOW).p_search_digits).toBeNull();
-  });
 });
 
 describe("getDashboardStats", () => {

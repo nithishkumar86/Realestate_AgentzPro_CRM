@@ -84,7 +84,7 @@ function FilterChip({ chipLabel, value, onRemove }: { chipLabel: string; value: 
  * fills the right-hand end of the second row (the leads page puts Delete/Download there; the
  * dashboard has none).
  */
-export function LeadFilterBar({ filters, actions }: { filters: LeadFilters; actions?: ReactNode }) {
+export function LeadFilterBar({ filters, actions, showSearch = true }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean }) {
   const { options, pageRecordId, adId, search, quick, status, label, from, to } = filters;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isDateOpen, setIsDateOpen] = useState(false);
@@ -99,13 +99,13 @@ export function LeadFilterBar({ filters, actions }: { filters: LeadFilters; acti
     setIsDateOpen(false);
   };
 
-  return <section className="mvp-filter-card">
+  return <section className={`mvp-filter-card${showSearch ? "" : " mvp-filter-card--single-row"}`}>
     <div className="mvp-filter-row">
-      <label className="mvp-search-field">
+      {showSearch ? <label className="mvp-search-field">
         <Search size={16} />
         <span className="sr-only">Search leads</span>
         <input type="search" value={search} placeholder="Search leads by name, phone, or location..." onChange={(event) => filters.setSearch(event.target.value)} />
-      </label>
+      </label> : null}
       <FieldDropdown id="page" icon={<BookOpen size={16} />} label="Page" placeholder="All Pages" value={pageRecordId}
         options={options.pages.map((page) => ({ value: page.id, label: page.name }))}
         openField={openDropdown} onOpenChange={setOpenDropdown}

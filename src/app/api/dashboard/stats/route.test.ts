@@ -21,7 +21,7 @@ describe("POST /api/dashboard/stats", () => {
   it("takes the tenant only from the verified session and forwards the filters", async () => {
     mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
     mocks.stats.mockResolvedValue({ tenantId: "tenant-a", total: 3 });
-    const filters = { quickFilter: "all", status: "Sale", label: "Hot", adId: "unattributed", dateFrom: "2026-09-01", dateTo: "2026-09-10", search: "Ravi", pageRecordId: "00000000-0000-4000-8000-000000000001" };
+    const filters = { quickFilter: "all", status: "Sale", label: "Hot", adId: "unattributed", dateFrom: "2026-09-01", dateTo: "2026-09-10", pageRecordId: "00000000-0000-4000-8000-000000000001" };
     const response = await POST(post(filters));
     expect(response.status).toBe(200);
     expect(mocks.stats).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, filters);
@@ -35,7 +35,7 @@ describe("POST /api/dashboard/stats", () => {
     ["paging fields the dashboard does not accept", { page: 1, pageSize: 25 }],
     ["an unknown status", { status: "Nonsense" }],
     ["a non-uuid page id", { pageRecordId: "not-a-uuid" }],
-    ["an over-long search", { search: "x".repeat(201) }],
+    ["a search field, which the dashboard no longer accepts", { search: "Ravi" }],
   ])("rejects %s with a 400 before touching data", async (_name, body) => {
     mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
     const response = await POST(post(body));

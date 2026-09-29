@@ -48,7 +48,7 @@ export function DashboardPageClient() {
         />
       ) : null}
 
-      <LeadFilterBar filters={filters} />
+      <LeadFilterBar filters={filters} showSearch={false} />
       {filterError ? <div className="mvp-inline-error">{filterError}</div> : null}
       <LeadActiveFilters filters={filters} />
 
@@ -69,7 +69,7 @@ export function DashboardPageClient() {
               {delta.direction === "up" ? <ArrowUpRight size={16} aria-hidden="true" /> : delta.direction === "down" ? <ArrowDownRight size={16} aria-hidden="true" /> : <Minus size={16} aria-hidden="true" />}
               <span>{delta.text}</span>
             </div> : null}
-            <div className="dash-hero__note">Current month in your company timezone. Follows the Page, Ad, Status, Label and Search filters.</div>
+            <div className="dash-hero__note">Current month in your company timezone. Follows the Page, Ad, Status and Label filters.</div>
           </section>
 
           {stats.total === 0 ? (
