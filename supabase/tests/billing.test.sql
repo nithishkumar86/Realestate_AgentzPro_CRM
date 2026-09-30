@@ -38,7 +38,7 @@ insert into public.tenants_subscriptions (tenant_id, subscription_status, trial_
 insert into public.billing_plans
     (billing_plan_id, plan_code, plan_name, tier, billing_period, razorpay_plan_id, price_per_seat_paise, total_count)
 values
-    ('20000000-0000-0000-0000-000000000001', 'pro_monthly', 'Pro Monthly', 'pro', 'monthly', 'plan_TESTPRO', 49900, 120);
+    ('20000000-0000-0000-0000-000000000001', 'pro_monthly_pgtap', 'Pro Monthly', 'pro', 'monthly', 'plan_TESTPRO', 49900, 120);
 
 -- Both tenants started a checkout; A for 2 seats.
 insert into public.billing_subscriptions
@@ -113,10 +113,15 @@ select ok(
     'Tenant A becomes active until the paid period end, pointing at its subscription'
 );
 
+-- has_crm_access checks the signed-in user's membership (auth.uid()), so sign in as Owner A first.
+select tests.authenticate_as('00000000-0000-0000-0000-00000000000a');
+
 select ok(
     private.has_crm_access('10000000-0000-0000-0000-00000000000a'),
     'The unchanged access predicate now grants Tenant A access'
 );
+
+reset role;
 
 -- ===========================================================================
 -- 2. Idempotency and "access only moves forward"
@@ -133,7 +138,7 @@ select is(
     'A redelivered payment never writes a second receipt'
 );
 
-do $$ begin perform tests.pay_a('pay_A0_OLD', '10000000-0000-0000-0000-00000000000a', now() - interval '60 days', now() - interval '30 days'); end $$;
+do $$ begin perform tests.pay_a('pay_A0OLD', '10000000-0000-0000-0000-00000000000a', now() - interval '60 days', now() - interval '30 days'); end $$;
 
 select ok(
     (select current_period_ends_at > now() + interval '29 days'

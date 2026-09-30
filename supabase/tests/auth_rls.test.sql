@@ -225,6 +225,8 @@ select ok(
     'A valid trial (trial_ends_at in the future) grants CRM access'
 );
 
+reset role;
+
 select tests.authenticate_as('00000000-0000-0000-0000-000000000002');
 
 select ok(
