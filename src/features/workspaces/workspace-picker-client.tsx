@@ -34,13 +34,15 @@ function detectTimezone(): string | undefined {
 export interface WorkspacePickerClientProps {
   workspaces: UserWorkspaces;
   activeTenantId: string | null;
+  /** The signed-in person's saved details, reused for a new company; null hides the "Creating as" line. */
+  creator?: { fullName: string; phoneNumber: string } | null;
 }
 
 /**
  * The company switcher. Every action posts to a server route that re-checks the signed-in user's
  * own membership or invitation; nothing here decides access by itself.
  */
-export function WorkspacePickerClient({ workspaces, activeTenantId }: Readonly<WorkspacePickerClientProps>) {
+export function WorkspacePickerClient({ workspaces, activeTenantId, creator = null }: Readonly<WorkspacePickerClientProps>) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -187,6 +189,11 @@ export function WorkspacePickerClient({ workspaces, activeTenantId }: Readonly<W
           <h2 id="workspace-create-title" className={styles.sectionTitle}>Your own company</h2>
           {isCreateOpen ? (
             <form className="auth-form" noValidate onSubmit={(event) => void createCompany(event)}>
+              {creator ? (
+                <p className={styles.meta}>
+                  Creating as {creator.fullName} · {creator.phoneNumber}. Change these in Settings → Profile.
+                </p>
+              ) : null}
               <AccountField
                 name="companyName"
                 label="Company name"
