@@ -48,12 +48,27 @@ describe("updateCurrentProfile", () => {
     expect(update).toHaveBeenCalledWith({ phone_number: "919123456780" });
   });
 
+  it("updates the professional role, tidied, with the same rules as sign-up", async () => {
+    await updateCurrentProfile({ professionalRole: "  Sales   Manager " });
+
+    expect(update).toHaveBeenCalledWith({ professional_role: "Sales Manager" });
+    expect(eq).toHaveBeenCalledWith("user_id", "user-1");
+  });
+
+  it("rejects an invalid professional role without writing", async () => {
+    await expect(updateCurrentProfile({ professionalRole: "R2" })).rejects.toMatchObject({
+      status: 400,
+      code: "INVALID_PROFILE_UPDATE",
+      details: { fieldErrors: { professionalRole: expect.any(String) } },
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it.each([
     { companyName: "Other Co" },
-    { professionalRole: "Owner" },
-    { fullName: "Ravi Kumar", professionalRole: "Owner" },
+    { fullName: "Ravi Kumar", companyName: "Other Co" },
     { emailAddress: "x@example.com" },
-  ])("refuses to change anything but name and phone: %o", async (input) => {
+  ])("refuses to change anything but name, phone and professional role: %o", async (input) => {
     await expect(updateCurrentProfile(input)).rejects.toMatchObject({ status: 400, code: "INVALID_PROFILE_UPDATE" });
     expect(update).not.toHaveBeenCalled();
   });

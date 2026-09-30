@@ -88,14 +88,30 @@ describe("UserMenu profile dialog", () => {
     expect(screen.queryByRole("dialog", { name: "Profile details" })).not.toBeInTheDocument();
   });
 
-  it("offers edit only for name and phone, never company, role or email", async () => {
+  it("offers edit only for name, phone and professional role, never company or email", async () => {
     const { dialog } = openProfile();
     await waitFor(() => expect(within(dialog).getByText("nithish@example.com")).toBeInTheDocument());
 
     expect(within(dialog).getByRole("button", { name: "Edit name" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Edit phone" })).toBeInTheDocument();
-    expect(within(dialog).getAllByRole("button", { name: /^Edit / })).toHaveLength(2);
+    expect(within(dialog).getByRole("button", { name: "Edit professional role" })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: /^Edit / })).toHaveLength(3);
     expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("saves an edited professional role inline", async () => {
+    updateProfileDetails.mockResolvedValue({ ...PROFILE, professionalRole: "Sales Manager" });
+    const { dialog } = openProfile();
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Edit professional role" }));
+
+    const input = within(dialog).getByRole("textbox", { name: "Professional Role" });
+    expect(input).toHaveValue(PROFILE.professionalRole);
+    fireEvent.change(input, { target: { value: "Sales Manager" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save professional role" }));
+
+    await waitFor(() => expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument());
+    expect(updateProfileDetails).toHaveBeenCalledWith({ professionalRole: "Sales Manager" });
+    expect(within(dialog).getAllByText("Sales Manager").length).toBeGreaterThan(0);
   });
 
   it("saves an edited name inline and refreshes the shell so the sidebar name updates", async () => {

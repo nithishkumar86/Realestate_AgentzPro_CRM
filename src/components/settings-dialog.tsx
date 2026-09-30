@@ -922,7 +922,6 @@ function ProfileContent({
   const readOnlyFields = [
     { label: "Email", value: profile.emailAddress, icon: Mail },
     { label: "Company", value: profile.companyName, icon: Building2 },
-    { label: "Professional Role", value: profile.professionalRole, icon: BriefcaseBusiness },
   ] as const;
 
   return (
@@ -967,6 +966,17 @@ function ProfileContent({
             </div>
           </div>
         ))}
+        <EditableProfileRow
+          field="professionalRole"
+          label="Professional Role"
+          icon={BriefcaseBusiness}
+          value={profile.professionalRole}
+          editValue={profile.professionalRole}
+          isEditing={editing === "professionalRole"}
+          onEdit={() => setEditing("professionalRole")}
+          onCancel={() => setEditing(null)}
+          onSave={(value) => save("professionalRole", value)}
+        />
       </dl>
     </div>
   );
@@ -1053,7 +1063,7 @@ function EditableProfileRow({
                   autoFocus
                   value={draft}
                   inputMode={isPhone ? "numeric" : "text"}
-                  autoComplete={isPhone ? "tel-national" : "name"}
+                  autoComplete={isPhone ? "tel-national" : field === "professionalRole" ? "organization-title" : "name"}
                   maxLength={isPhone ? 10 : 60}
                   aria-invalid={error ? true : undefined}
                   aria-describedby={error ? errorId : undefined}
