@@ -21,7 +21,7 @@ function tenantTimezone(timezone: string | null = TZ) {
 beforeEach(() => vi.resetAllMocks());
 
 describe("buildDashboardRpcArgs", () => {
-  // The Today / This month quick filters are resolved by resolveDateWindow (lead-query-service, shared
+  // The Today / This month quick filters are resolved by resolveDateRange (lead-query-service, shared
   // with /leads), which reads the real clock instead of the `now` passed in. Pin only Date to NOW so
   // these tests mean the same thing on every day they run.
   beforeEach(() => {
