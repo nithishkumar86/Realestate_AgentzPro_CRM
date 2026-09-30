@@ -429,6 +429,7 @@ export async function findPendingInvitationForUser(userId: string): Promise<Invi
         .is("user_id", null)
         .eq("status", "pending")
         .gt("expires_at", nowIso)
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (byEmail.error) {
