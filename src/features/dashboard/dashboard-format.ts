@@ -68,3 +68,27 @@ export function adLabel(ad: { adId: string; name: string | null }): string {
   if (ad.adId === "other" || ad.adId === "unattributed") return ad.name ?? ad.adId;
   return `${ad.name ?? "Name pending"} (${ad.adId.slice(-4)})`;
 }
+
+/** Theme colours live in globals.css (--chart-*) so light and dark each get a tuned palette. */
+export const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)", "var(--chart-7)", "var(--chart-8)"];
+
+export interface AdBar { name: string; count: number; color: string }
+
+/**
+ * Colours for ranked ads, rank 1 first: the seven vivid palette colours plus lime for rank 8. The
+ * palette's own eighth colour is grey, which would look like the grey catch-all rows, so it is skipped.
+ */
+const AD_COLORS = [...CHART_COLORS.slice(0, 7), "var(--status-12)"];
+
+/**
+ * Top-ads rows, each ranked ad in its own colour so the bars can be told apart. The database returns
+ * at most 8 ranked ads (get_dashboard_stats), so colours never repeat. The "Other" and "Unattributed"
+ * catch-all rows are neutral grey: they are totals, not a ranked ad, so they never borrow an ad's colour.
+ */
+export function adBarData(ads: Array<{ adId: string; name: string | null; count: number }>): AdBar[] {
+  let rank = 0;
+  return ads.map((ad) => {
+    const isCatchAll = ad.adId === "other" || ad.adId === "unattributed";
+    return { name: adLabel(ad), count: ad.count, color: isCatchAll ? "var(--chart-muted)" : AD_COLORS[rank++ % AD_COLORS.length] };
+  });
+}

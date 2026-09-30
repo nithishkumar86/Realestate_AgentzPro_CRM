@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { EmptyState, Notice, PageHeader, SkeletonRows } from "@/components/ui";
 import { DonutChart, HorizontalBarChart, StatusRankChart, TimelineChart, labelDonutData, pageDonutData } from "@/features/dashboard/dashboard-charts";
-import { adLabel, describeDelta, formatCount } from "@/features/dashboard/dashboard-format";
+import { adBarData, describeDelta, formatCount } from "@/features/dashboard/dashboard-format";
 import { useDashboardStats, type LiveState } from "@/features/dashboard/use-dashboard-live";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
 import { useLeadFilters } from "@/features/leads/use-lead-filters";
@@ -99,7 +99,7 @@ export function DashboardPageClient() {
                 </section>
                 <section className="dash-panel">
                   <header className="dash-panel__head"><div><h2>Top ads</h2><p>Highest-volume ads</p></div></header>
-                  <HorizontalBarChart data={stats.topAds.map((ad) => ({ name: adLabel(ad), count: ad.count }))} ariaLabel="Leads by ad" color="var(--chart-3)" />
+                  <HorizontalBarChart data={adBarData(stats.topAds)} ariaLabel="Leads by ad" />
                 </section>
               </div>
             </>

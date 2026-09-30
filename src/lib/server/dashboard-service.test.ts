@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildDashboardRpcArgs, getDashboardStats } from "@/lib/server/dashboard-service";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
@@ -21,6 +21,17 @@ function tenantTimezone(timezone: string | null = TZ) {
 beforeEach(() => vi.resetAllMocks());
 
 describe("buildDashboardRpcArgs", () => {
+  // The Today / This month quick filters are resolved by resolveDateRange (lead-query-service, shared
+  // with /leads), which reads the real clock instead of the `now` passed in. Pin only Date to NOW so
+  // these tests mean the same thing on every day they run.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("uses the tenant-local calendar month and never a UTC month", () => {
     const args = buildDashboardRpcArgs(TENANT, TZ, {}, NOW);
     // 1 Sep 00:00 IST is 31 Aug 18:30 UTC
