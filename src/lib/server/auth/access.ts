@@ -1,7 +1,8 @@
 import "server-only";
 
 import { AppError } from "@/lib/server/app-error";
-import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
+import { WORKSPACE_CHANGED_CODE } from "@/lib/active-tenant-header";
+import { readActiveTenantHint, readClientTenantClaim } from "@/lib/server/auth/active-tenant";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState, type LoginState } from "@/lib/server/auth/login-state";
 
@@ -53,6 +54,21 @@ export function evaluateCrmAccess(state: LoginState): boolean {
 }
 
 /**
+ * The active company is one cookie shared by every tab of this browser. A page rendered for
+ * company A sends A's id with each request; if another tab has since switched to B, answering would
+ * show or change B's data under A's name. Refuse instead, so the page can reload into B.
+ */
+async function assertClientTenantMatches(activeTenantId: string): Promise<void> {
+  const claimed = await readClientTenantClaim();
+  if (claimed !== null && claimed !== activeTenantId.toLowerCase()) {
+    throw new AppError("You switched company in another tab. This page will reload.", {
+      status: 409,
+      code: WORKSPACE_CHANGED_CODE,
+    });
+  }
+}
+
+/**
  * Composes session verification, login-state resolution, and the access
  * predicate into the one check every tenant-scoped server operation must
  * pass. Throws a typed AppError rather than returning a boolean so callers
@@ -88,6 +104,8 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
       code: "ACCOUNT_INTEGRITY_ERROR",
     });
   }
+
+  await assertClientTenantMatches(state.tenantId);
 
   if (!evaluateCrmAccess(state)) {
     throw new AppError("CRM access is not currently available for this account.", {
@@ -142,6 +160,7 @@ export async function requireBillingMember(): Promise<BillingAccess> {
   if (state.status === "integrity_error") {
     throw new AppError("Account access could not be verified.", { status: 403, code: "ACCOUNT_INTEGRITY_ERROR" });
   }
+  await assertClientTenantMatches(state.tenantId);
   if (state.tenantStatus !== "active" || state.membershipStatus !== "active") {
     throw new AppError("Billing is not available for this account.", { status: 403, code: "BILLING_NOT_ALLOWED" });
   }

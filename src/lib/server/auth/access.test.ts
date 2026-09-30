@@ -24,12 +24,13 @@ vi.mock("@/lib/server/auth/login-state", () => ({
 }));
 vi.mock("@/lib/server/auth/active-tenant", () => ({
   readActiveTenantHint: vi.fn(async () => null),
+  readClientTenantClaim: vi.fn(async () => null),
 }));
 
 const { evaluateCrmAccess, requireCrmAccess, requireBillingMember, requireBillingOwner } = await import("@/lib/server/auth/access");
 const { verifySession } = await import("@/lib/server/auth/session");
 const { resolveLoginState } = await import("@/lib/server/auth/login-state");
-const { readActiveTenantHint } = await import("@/lib/server/auth/active-tenant");
+const { readActiveTenantHint, readClientTenantClaim } = await import("@/lib/server/auth/active-tenant");
 
 describe("evaluateCrmAccess", () => {
   it("grants access for a valid trial before trial_ends_at", () => {
@@ -136,6 +137,46 @@ describe("requireCrmAccess", () => {
       fullName: READY_BASE.fullName,
       membershipRole: READY_BASE.membershipRole,
     });
+  });
+});
+
+describe("stale-tab guard (another tab switched company)", () => {
+  const OTHER_TENANT = "10000000-0000-0000-0000-000000000002";
+  const trial = () => ({ ...READY_BASE, subscriptionStatus: "trialing", trialEndsAt: future(ONE_HOUR_MS) });
+
+  it("refuses with WORKSPACE_CHANGED (409) when the page's company is not the active one", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
+    vi.mocked(resolveLoginState).mockResolvedValue(trial());
+    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(OTHER_TENANT);
+
+    await expect(requireCrmAccess()).rejects.toMatchObject({ status: 409, code: "WORKSPACE_CHANGED" });
+  });
+
+  it("refuses billing the same way", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
+    vi.mocked(resolveLoginState).mockResolvedValue(trial());
+    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(OTHER_TENANT);
+
+    await expect(requireBillingMember()).rejects.toMatchObject({ status: 409, code: "WORKSPACE_CHANGED" });
+  });
+
+  it("allows a matching claim (any letter case) and a request with no claim", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
+    vi.mocked(resolveLoginState).mockResolvedValue(trial());
+
+    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(READY_BASE.tenantId.toLowerCase());
+    await expect(requireCrmAccess()).resolves.toMatchObject({ tenantId: READY_BASE.tenantId });
+    await expect(requireCrmAccess()).resolves.toMatchObject({ tenantId: READY_BASE.tenantId });
+  });
+
+  it("never lets the claim choose the company", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
+    vi.mocked(resolveLoginState).mockResolvedValue(trial());
+    vi.mocked(readActiveTenantHint).mockResolvedValueOnce(null);
+    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(OTHER_TENANT);
+
+    await expect(requireCrmAccess()).rejects.toMatchObject({ code: "WORKSPACE_CHANGED" });
+    expect(resolveLoginState).toHaveBeenLastCalledWith("user-1", null);
   });
 });
 
