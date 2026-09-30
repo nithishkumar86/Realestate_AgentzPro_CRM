@@ -22,6 +22,11 @@ interface ResponseBody {
   error?: { message?: string; details?: { fieldErrors?: unknown } };
 }
 
+/** Stored phones are "91" + 10 digits; shown as "+91 9876543210", as on the sign-up form. */
+function formatPhone(stored: string): string {
+  return stored.length === 12 && stored.startsWith("91") ? `+91 ${stored.slice(2)}` : stored;
+}
+
 /** Same approach as owner onboarding: the browser's zone, never trusted by the server. */
 function detectTimezone(): string | undefined {
   try {
@@ -35,7 +40,7 @@ export interface WorkspacePickerClientProps {
   workspaces: UserWorkspaces;
   activeTenantId: string | null;
   /** The signed-in person's saved details, reused for a new company; null hides the "Creating as" line. */
-  creator?: { fullName: string; phoneNumber: string } | null;
+  creator?: { fullName: string; phoneNumber: string; professionalRole: string } | null;
 }
 
 /**
@@ -190,9 +195,15 @@ export function WorkspacePickerClient({ workspaces, activeTenantId, creator = nu
           {isCreateOpen ? (
             <form className="auth-form" noValidate onSubmit={(event) => void createCompany(event)}>
               {creator ? (
-                <p className={styles.meta}>
-                  Creating as {creator.fullName} · {creator.phoneNumber}. Change these in Settings → Profile.
-                </p>
+                <div className={styles.creator}>
+                  <p>
+                    Creating as <strong>{creator.fullName}</strong> · {formatPhone(creator.phoneNumber)} · {creator.professionalRole}
+                  </p>
+                  <p>
+                    You will be the <strong>Owner</strong> of this new company. To change your name, phone or professional
+                    role, go to Settings → Profile.
+                  </p>
+                </div>
               ) : null}
               <AccountField
                 name="companyName"

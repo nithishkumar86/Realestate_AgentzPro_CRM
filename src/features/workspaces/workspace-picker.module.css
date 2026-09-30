@@ -109,3 +109,23 @@
     flex: 1;
   }
 }
+
+/* "Creating as" note above the Company name box on Create new company. */
+.creator {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.creator p {
+  margin: 0;
+}
+
+.creator strong {
+  color: var(--text);
+}

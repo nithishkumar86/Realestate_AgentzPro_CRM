@@ -40,10 +40,16 @@ export default async function WorkspacesPage() {
   const supabase = await createAuthClient();
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, phone_number")
+    .select("full_name, phone_number, professional_role")
     .eq("user_id", session.userId)
     .maybeSingle();
-  const creator = profile ? { fullName: profile.full_name as string, phoneNumber: profile.phone_number as string } : null;
+  const creator = profile
+    ? {
+        fullName: profile.full_name as string,
+        phoneNumber: profile.phone_number as string,
+        professionalRole: profile.professional_role as string,
+      }
+    : null;
 
   return <WorkspacePickerClient workspaces={workspaces} activeTenantId={activeTenantId} creator={creator} />;
 }

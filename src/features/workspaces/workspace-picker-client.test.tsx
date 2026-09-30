@@ -88,10 +88,17 @@ describe("WorkspacePickerClient", () => {
 
   it("shows whose saved details the new company will use, and nothing when they are unknown", () => {
     const { unmount } = render(
-      <WorkspacePickerClient workspaces={EMPLOYEE_ONLY} activeTenantId={null} creator={{ fullName: "Ravi", phoneNumber: "9990000001" }} />,
+      <WorkspacePickerClient
+        workspaces={EMPLOYEE_ONLY}
+        activeTenantId={null}
+        creator={{ fullName: "Ravi", phoneNumber: "919876543210", professionalRole: "Telecaller" }}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: "+ Create new company" }));
-    expect(screen.getByText(/Creating as Ravi · 9990000001/)).toBeInTheDocument();
+    expect(screen.getByText(/Creating as/)).toHaveTextContent("Creating as Ravi · +91 9876543210 · Telecaller");
+    expect(screen.getByText(/of this new company/)).toHaveTextContent(
+      "You will be the Owner of this new company. To change your name, phone or professional role, go to Settings → Profile.",
+    );
     unmount();
 
     render(<WorkspacePickerClient workspaces={EMPLOYEE_ONLY} activeTenantId={null} />);
