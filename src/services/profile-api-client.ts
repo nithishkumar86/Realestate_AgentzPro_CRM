@@ -40,9 +40,9 @@ function isProfileDetails(value: unknown): value is ProfileDetails {
     .every((key) => typeof profile[key] === "string" && profile[key].trim().length > 0);
 }
 
-export type EditableProfileField = "fullName" | "phoneNumber";
+export type EditableProfileField = "fullName" | "phoneNumber" | "professionalRole";
 
-/** Saves the signed-in person's own name or 10-digit mobile number; returns the refreshed profile. */
+/** Saves the signed-in person's own name, 10-digit mobile number or professional role; returns the refreshed profile. */
 export async function updateProfileDetails(
   changes: Partial<Record<EditableProfileField, string>>,
 ): Promise<ProfileDetails> {
