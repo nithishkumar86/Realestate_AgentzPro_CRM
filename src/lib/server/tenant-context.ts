@@ -28,3 +28,9 @@ export async function resolveTenantRequestContext(): Promise<TenantRequestContex
 export async function resolveTenantId(): Promise<string> {
   return (await resolveTenantRequestContext()).tenantId;
 }
+
+/** The request's tenant plus whether the signed-in person owns it, for owner-only actions. */
+export async function resolveTenantOwnership(): Promise<{ tenantId: string; isOwner: boolean }> {
+  const access = await requireCrmAccess();
+  return { tenantId: access.tenantId, isOwner: access.membershipRole === "owner" };
+}

@@ -6,7 +6,7 @@ import { MetaClient, MetaGraphRequestError, type EligibleMetaPage, type Verified
 import { assertMetaRateLimit } from "@/lib/server/meta-rate-limit";
 import { decryptToken, encryptToken } from "@/lib/server/token-crypto";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
-import { resolveTenantId } from "@/lib/server/tenant-context";
+import { resolveTenantOwnership } from "@/lib/server/tenant-context";
 
 export type SafeConnectionPage = {
   id: string;
@@ -21,6 +21,8 @@ export type SafeConnectionPage = {
 export type SafeConnectionOverview = {
   connectionStatus: "active" | "reauthorization_required" | "disconnected" | "not_connected";
   pages: SafeConnectionPage[];
+  /** Only the company owner may connect or disconnect Facebook; employees see the Pages read-only. */
+  canManage: boolean;
 };
 
 export type SafeEligiblePage = {
@@ -54,8 +56,17 @@ type PageRow = {
 export class ConnectionService {
   private readonly metaClient = new MetaClient();
 
+  /** Connecting, reconnecting and disconnecting Facebook are owner-only; returns the owner's tenant. */
+  private async resolveOwnerTenantId(): Promise<string> {
+    const { tenantId, isOwner } = await resolveTenantOwnership();
+    if (!isOwner) {
+      throw new AppError("Only the company owner can connect or disconnect Facebook Pages.", { status: 403, code: "CONNECTION_OWNER_REQUIRED" });
+    }
+    return tenantId;
+  }
+
   public async startConnection(shortLivedUserAccessToken: string): Promise<{ connectionId: string; pages: SafeEligiblePage[] }> {
-    const tenantId = await resolveTenantId();
+    const tenantId = await this.resolveOwnerTenantId();
     await assertMetaRateLimit("connection_start", tenantId);
     const shortLivedToken = await this.metaClient.validateUserToken(shortLivedUserAccessToken);
     const exchangedToken = await this.metaClient.exchangeForLongLivedToken(shortLivedUserAccessToken);
@@ -95,13 +106,13 @@ export class ConnectionService {
   }
 
   public async getEligiblePages(connectionId: string): Promise<SafeEligiblePage[]> {
-    const tenantId = await resolveTenantId();
+    const tenantId = await this.resolveOwnerTenantId();
     await assertMetaRateLimit("pages_list", tenantId);
     return this.getEligiblePagesForConnection(tenantId, connectionId);
   }
 
   public async connectSelectedPages(connectionId: string, facebookPageIds: string[]): Promise<SafeConnectionOverview> {
-    const tenantId = await resolveTenantId();
+    const tenantId = await this.resolveOwnerTenantId();
     await assertMetaRateLimit("pages_connect", tenantId);
     if (facebookPageIds.length === 0) {
       throw new AppError("At least one Facebook Page must be selected.", { status: 422, code: "META_PAGE_SELECTION_INVALID" });
@@ -228,7 +239,7 @@ export class ConnectionService {
   }
 
   public async getOverview(): Promise<SafeConnectionOverview> {
-    const tenantId = await resolveTenantId();
+    const { tenantId, isOwner } = await resolveTenantOwnership();
     const supabase = getSupabaseAdminClient();
     const [{ data: connections, error: connectionError }, { data: pages, error: pageError }] = await Promise.all([
       supabase.from("meta_connections").select("id,connection_status,user_token_expires_at,data_access_expires_at").eq("tenant_id", tenantId).order("connected_at", { ascending: false }),
@@ -252,11 +263,12 @@ export class ConnectionService {
         status: page.connection_status,
         lastConnectedAt: page.connected_at,
       })),
+      canManage: isOwner,
     };
   }
 
   public async disconnectPage(pageRecordId: string): Promise<SafeConnectionOverview> {
-    const tenantId = await resolveTenantId();
+    const tenantId = await this.resolveOwnerTenantId();
     await assertMetaRateLimit("disconnect", tenantId);
     const supabase = getSupabaseAdminClient();
 
@@ -292,7 +304,7 @@ export class ConnectionService {
   }
 
   public async disconnectConnection(connectionId: string): Promise<SafeConnectionOverview> {
-    const tenantId = await resolveTenantId();
+    const tenantId = await this.resolveOwnerTenantId();
     await assertMetaRateLimit("disconnect", tenantId);
     const supabase = getSupabaseAdminClient();
 

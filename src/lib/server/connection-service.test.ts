@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectionService } from "@/lib/server/connection-service";
 import { LeadRecoveryService } from "@/lib/server/lead-recovery-service";
 import { MetaClient, MetaGraphRequestError } from "@/lib/server/meta-client";
-import { resolveTenantId } from "@/lib/server/tenant-context";
+import { resolveTenantOwnership } from "@/lib/server/tenant-context";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
-vi.mock("@/lib/server/tenant-context", () => ({ resolveTenantId: vi.fn() }));
+vi.mock("@/lib/server/tenant-context", () => ({ resolveTenantOwnership: vi.fn() }));
 vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: vi.fn() }));
 vi.mock("@/lib/server/token-crypto", () => ({ encryptToken: (token: string) => `ciphertext:${token}`, decryptToken: () => "user-token" }));
 vi.mock("@/lib/server/env", () => ({ getMetaEnv: vi.fn() }));
@@ -50,14 +50,34 @@ beforeEach(() => {
   for (const method of [query.select, query.update, query.eq, query.neq, query.in, query.order, query.limit]) method.mockReturnValue(query);
   single.mockResolvedValue({ data: { connection_status: "active", user_token_status: "active", long_lived_user_access_token_encrypted: "encrypted-user-token" }, error: null });
   rpc.mockResolvedValue({ error: null });
-  vi.mocked(resolveTenantId).mockResolvedValue("tenant-a");
+  vi.mocked(resolveTenantOwnership).mockResolvedValue({ tenantId: "tenant-a", isOwner: true });
   vi.mocked(getSupabaseAdminClient).mockReturnValue({ from: vi.fn(() => query), rpc } as unknown as ReturnType<typeof getSupabaseAdminClient>);
   vi.spyOn(MetaClient.prototype, "getEligiblePages").mockResolvedValue([page]);
   vi.spyOn(MetaClient.prototype, "validatePageToken").mockResolvedValue(verified);
   vi.spyOn(MetaClient.prototype, "subscribePageToLeadgen").mockResolvedValue();
   vi.spyOn(MetaClient.prototype, "confirmPageLeadgenSubscription").mockResolvedValue();
   vi.spyOn(LeadRecoveryService.prototype, "backfillReconnectedPages").mockResolvedValue();
-  vi.spyOn(ConnectionService.prototype, "getOverview").mockResolvedValue({ connectionStatus: "active", pages: [] });
+  vi.spyOn(ConnectionService.prototype, "getOverview").mockResolvedValue({ connectionStatus: "active", pages: [], canManage: true });
+});
+
+describe("owner-only Facebook actions", () => {
+  beforeEach(() => {
+    vi.mocked(resolveTenantOwnership).mockResolvedValue({ tenantId: "tenant-a", isOwner: false });
+  });
+
+  it.each([
+    ["startConnection", (service: ConnectionService) => service.startConnection("short-lived-token")],
+    ["getEligiblePages", (service: ConnectionService) => service.getEligiblePages("connection-a")],
+    ["connectSelectedPages", (service: ConnectionService) => service.connectSelectedPages("connection-a", ["page-1"])],
+    ["disconnectPage", (service: ConnectionService) => service.disconnectPage("page-record-1")],
+    ["disconnectConnection", (service: ConnectionService) => service.disconnectConnection("connection-a")],
+  ] as const)("refuses %s for an employee before touching the database or Meta", async (_name, action) => {
+    await expect(action(new ConnectionService())).rejects.toMatchObject({ status: 403, code: "CONNECTION_OWNER_REQUIRED" });
+    expect(getSupabaseAdminClient).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(MetaClient.prototype.getEligiblePages).not.toHaveBeenCalled();
+    expect(MetaClient.prototype.subscribePageToLeadgen).not.toHaveBeenCalled();
+  });
 });
 
 describe("connectSelectedPages", () => {
@@ -87,7 +107,7 @@ describe("connectSelectedPages", () => {
   });
 
   it("stops before database or Meta calls if tenant access is denied", async () => {
-    vi.mocked(resolveTenantId).mockRejectedValue(new Error("access denied"));
+    vi.mocked(resolveTenantOwnership).mockRejectedValue(new Error("access denied"));
     await expect(new ConnectionService().connectSelectedPages("connection-a", ["page-1"])).rejects.toThrow("access denied");
     expect(getSupabaseAdminClient).not.toHaveBeenCalled();
     expect(MetaClient.prototype.validatePageToken).not.toHaveBeenCalled();
@@ -162,7 +182,7 @@ describe("connectSelectedPages", () => {
   it("keeps the Pages connected when releasing held leads fails", async () => {
     vi.mocked(LeadRecoveryService.prototype.backfillReconnectedPages).mockRejectedValue(new Error("release failed"));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(new ConnectionService().connectSelectedPages("connection-a", ["page-1"])).resolves.toEqual({ connectionStatus: "active", pages: [] });
+    await expect(new ConnectionService().connectSelectedPages("connection-a", ["page-1"])).resolves.toEqual({ connectionStatus: "active", pages: [], canManage: true });
     expect(log).toHaveBeenCalledWith(expect.stringContaining("BACKFILL_RELEASE_FAILED"));
   });
 
@@ -244,7 +264,7 @@ describe("disconnectPage", () => {
     vi.mocked(getSupabaseAdminClient).mockReturnValue({ from, rpc } as unknown as ReturnType<typeof getSupabaseAdminClient>);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(new ConnectionService().disconnectPage("page-record-1")).resolves.toEqual({ connectionStatus: "active", pages: [] });
+    await expect(new ConnectionService().disconnectPage("page-record-1")).resolves.toEqual({ connectionStatus: "active", pages: [], canManage: true });
 
     expect(updateBuilder.update).toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(expect.stringContaining("META_UNSUBSCRIBE_FAILED"));
@@ -279,7 +299,7 @@ describe("disconnectConnection", () => {
     vi.mocked(getSupabaseAdminClient).mockReturnValue({ from, rpc } as unknown as ReturnType<typeof getSupabaseAdminClient>);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(new ConnectionService().disconnectConnection("connection-a")).resolves.toEqual({ connectionStatus: "active", pages: [] });
+    await expect(new ConnectionService().disconnectConnection("connection-a")).resolves.toEqual({ connectionStatus: "active", pages: [], canManage: true });
 
     expect(rpc).toHaveBeenCalledWith("disconnect_meta_connection", { p_tenant_id: "tenant-a", p_connection_id: "connection-a" });
     expect(log).toHaveBeenCalledWith(expect.stringContaining("META_UNSUBSCRIBE_FAILED"));
@@ -340,6 +360,12 @@ describe("getOverview connection status", () => {
     // The mocked query builders only support reads, so any update or upsert would reject here.
     await expect(new ConnectionService().getOverview()).resolves.toMatchObject({ connectionStatus: "reauthorization_required" });
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([[true], [false]])("lets anyone view the connection and reports canManage=%s from ownership", async (isOwner) => {
+    vi.mocked(resolveTenantOwnership).mockResolvedValue({ tenantId: "tenant-a", isOwner });
+    mockConnections([{ connection_status: "active", user_token_expires_at: null }]);
+    await expect(new ConnectionService().getOverview()).resolves.toMatchObject({ connectionStatus: "active", canManage: isOwner });
   });
 });
 
