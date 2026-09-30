@@ -86,6 +86,26 @@ describe("WorkspacePickerClient", () => {
     expect(body.companyName).toBe("Ravi Realty");
   });
 
+  it("shows whose saved details the new company will use, and nothing when they are unknown", () => {
+    const { unmount } = render(
+      <WorkspacePickerClient
+        workspaces={EMPLOYEE_ONLY}
+        activeTenantId={null}
+        creator={{ fullName: "Ravi", phoneNumber: "919876543210", professionalRole: "Telecaller" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "+ Create new company" }));
+    expect(screen.getByText(/Creating as/)).toHaveTextContent("Creating as Ravi · +91 9876543210 · Telecaller");
+    expect(screen.getByText(/of this new company/)).toHaveTextContent(
+      "You will be the Owner of this new company. To change your name, phone or professional role, go to Settings → Profile.",
+    );
+    unmount();
+
+    render(<WorkspacePickerClient workspaces={EMPLOYEE_ONLY} activeTenantId={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Create new company" }));
+    expect(screen.queryByText(/Creating as/)).not.toBeInTheDocument();
+  });
+
   it("hides Create new company from someone who already owns one", () => {
     render(<WorkspacePickerClient workspaces={{ ...EMPLOYEE_ONLY, ownsCompany: true }} activeTenantId={null} />);
     expect(screen.queryByRole("button", { name: "+ Create new company" })).not.toBeInTheDocument();

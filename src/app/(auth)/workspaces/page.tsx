@@ -4,6 +4,7 @@ import { WorkspacePickerClient } from "@/features/workspaces/workspace-picker-cl
 import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { verifySession } from "@/lib/server/auth/session";
+import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
 import { listUserWorkspaces } from "@/lib/server/workspace-service";
 
 export const metadata: Metadata = {
@@ -34,5 +35,21 @@ export default async function WorkspacesPage() {
   const workspaces = await listUserWorkspaces(session.userId);
   const activeTenantId = state.status === "ready" ? state.tenantId : activeTenantHint;
 
-  return <WorkspacePickerClient workspaces={workspaces} activeTenantId={activeTenantId} />;
+  // Shown on "Create new company" so the person sees their saved details are reused. Read through
+  // the signed-in user's own client (profiles_select_own RLS); if it fails the line is simply hidden.
+  const supabase = await createAuthClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, phone_number, professional_role")
+    .eq("user_id", session.userId)
+    .maybeSingle();
+  const creator = profile
+    ? {
+        fullName: profile.full_name as string,
+        phoneNumber: profile.phone_number as string,
+        professionalRole: profile.professional_role as string,
+      }
+    : null;
+
+  return <WorkspacePickerClient workspaces={workspaces} activeTenantId={activeTenantId} creator={creator} />;
 }
