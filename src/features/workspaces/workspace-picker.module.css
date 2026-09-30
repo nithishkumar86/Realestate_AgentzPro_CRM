@@ -129,3 +129,144 @@
 .creator strong {
   color: var(--text);
 }
+
+/* Header: title on the left, close (X) on the top right. */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.close:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.close:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Company choice: one radio per company, only one can be selected. */
+.group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.option:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.optionSelected,
+.optionSelected:hover {
+  border-color: var(--primary);
+  background: var(--nav-active-bg);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.optionPaused,
+.optionPaused:hover {
+  border-color: var(--border);
+  background: var(--surface);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.option:has(.radio:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.radio {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--primary);
+  cursor: inherit;
+}
+
+.avatar {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--nav-active-bg);
+  color: var(--primary-strong);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.option .identity {
+  flex: 1;
+}
+
+/* Cancel and Apply, bottom right. */
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+@media (max-width: 480px) {
+  .footer > * {
+    flex: 1;
+  }
+}
+
+/* On the selected row the row itself is tinted, so avatar and badge switch to the plain surface to stay visible. */
+.optionSelected .avatar,
+.optionSelected .badge {
+  background: var(--surface);
+}
+
+.header > div {
+  text-align: left;
+}
+
+.header > div :is(h1, p) {
+  text-align: left;
+}

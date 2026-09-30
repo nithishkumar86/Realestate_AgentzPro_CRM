@@ -4,7 +4,8 @@ import type { UserWorkspaces } from "@/lib/server/workspace-service";
 
 const replace = vi.fn();
 const refresh = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh }) }));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh, push }) }));
 
 const { WorkspacePickerClient } = await import("@/features/workspaces/workspace-picker-client");
 
@@ -37,16 +38,18 @@ describe("WorkspacePickerClient", () => {
 
     expect(screen.getByText("Agency B")).toBeInTheDocument();
     expect(screen.getByText("Invited you as Employee")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Agency A/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("radio", { name: /Agency A/ })).toBeChecked();
+    expect(screen.getByText("Current")).toBeInTheDocument();
   });
 
   it("opens a company through the server, which verifies the membership", async () => {
     const fetchMock = stubFetch(200, { tenantId: TENANT_A, redirectTo: "/" });
     render(<WorkspacePickerClient workspaces={EMPLOYEE_ONLY} activeTenantId={null} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Agency A/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Agency A/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
     expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/active", expect.objectContaining({ method: "POST" }));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({ tenantId: TENANT_A });
   });
@@ -109,5 +112,68 @@ describe("WorkspacePickerClient", () => {
   it("hides Create new company from someone who already owns one", () => {
     render(<WorkspacePickerClient workspaces={{ ...EMPLOYEE_ONLY, ownsCompany: true }} activeTenantId={null} />);
     expect(screen.queryByRole("button", { name: "+ Create new company" })).not.toBeInTheDocument();
+  });
+
+  describe("company radio group", () => {
+    const MANY: UserWorkspaces = {
+      companies: [
+        { tenantId: TENANT_A, tenantName: "Agency A", role: "employee", membershipStatus: "active" },
+        { tenantId: TENANT_B, tenantName: "Agency B", role: "owner", membershipStatus: "active" },
+        { tenantId: "10000000-0000-4000-8000-00000000000c", tenantName: "Agency C", role: "employee", membershipStatus: "paused" },
+      ],
+      invitations: [],
+      ownsCompany: true,
+    };
+
+    it("lets only one company be selected at a time", () => {
+      render(<WorkspacePickerClient workspaces={MANY} activeTenantId={null} />);
+
+      fireEvent.click(screen.getByRole("radio", { name: /Agency A/ }));
+      fireEvent.click(screen.getByRole("radio", { name: /Agency B/ }));
+
+      expect(screen.getByRole("radio", { name: /Agency A/ })).not.toBeChecked();
+      expect(screen.getByRole("radio", { name: /Agency B/ })).toBeChecked();
+      expect(screen.getAllByRole("radio").filter((radio) => (radio as HTMLInputElement).checked)).toHaveLength(1);
+    });
+
+    it("keeps Apply disabled until a company is chosen, then opens only that one", async () => {
+      const fetchMock = stubFetch(200, { tenantId: TENANT_B, redirectTo: "/" });
+      render(<WorkspacePickerClient workspaces={MANY} activeTenantId={null} />);
+      expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+
+      fireEvent.click(screen.getByRole("radio", { name: /Agency B/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+      await waitFor(() => expect(replace).toHaveBeenCalledWith("/dashboard"));
+      // The button must not flash back to "Apply" while the next page loads.
+      expect(screen.getByRole("button", { name: "Opening…" })).toBeDisabled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({ tenantId: TENANT_B });
+    });
+
+    it("cannot select a company whose access is paused", () => {
+      render(<WorkspacePickerClient workspaces={MANY} activeTenantId={null} />);
+      expect(screen.getByRole("radio", { name: /Agency C/ })).toBeDisabled();
+      expect(screen.getByText("Access paused")).toBeInTheDocument();
+    });
+
+    it("goes back to the dashboard from Cancel or X without changing company", () => {
+      const fetchMock = stubFetch(200, {});
+      render(<WorkspacePickerClient workspaces={MANY} activeTenantId={TENANT_A} canDismiss />);
+
+      fireEvent.click(screen.getByRole("radio", { name: /Agency B/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+      expect(push).toHaveBeenCalledTimes(2);
+      expect(push).toHaveBeenCalledWith("/dashboard");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("hides Cancel and X when no company is open yet, so they cannot loop back here", () => {
+      render(<WorkspacePickerClient workspaces={MANY} activeTenantId={null} />);
+      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    });
   });
 });
