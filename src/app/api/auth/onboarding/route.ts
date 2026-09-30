@@ -2,6 +2,7 @@ import { createSuccessResponse, createErrorResponse } from "@/app/api/meta/_lib/
 import { AppError } from "@/lib/server/app-error";
 import { verifySession } from "@/lib/server/auth/session";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
+import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { completeOwnerOnboarding } from "@/lib/server/auth/onboarding-service";
 import { findPendingInvitationForUser, findWithdrawnInvitationForUser } from "@/lib/server/member-invitation-service";
 
@@ -24,6 +25,13 @@ export async function POST(request: Request): Promise<Response> {
         status: 401,
         code: "UNAUTHENTICATED",
       });
+    }
+
+    // This creates a person's first account and company. Anyone who already has a profile or a
+    // membership must use "Create new company" (/api/workspaces), which keeps their saved details.
+    const loginState = await resolveLoginState(session.userId);
+    if (loginState.status !== "needs_onboarding") {
+      throw new AppError("Your account is already set up.", { status: 409, code: "ALREADY_ONBOARDED" });
     }
 
     // An invited person joins the inviting company's tenant through
