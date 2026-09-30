@@ -8,7 +8,7 @@ vi.mock("@/services/crm-api-client", async (importOriginal) => ({
   // ApiError is a real class the component branches on with instanceof, so it must come from the
   // actual module rather than be stubbed away.
   ApiError: (await importOriginal<typeof import("@/services/crm-api-client")>()).ApiError,
-  getConnectionOverview: vi.fn().mockResolvedValue({ connectionStatus: "not_connected", pages: [] }),
+  getConnectionOverview: vi.fn().mockResolvedValue({ connectionStatus: "not_connected", pages: [], canManage: true }),
   connectSelectedPages: vi.fn(),
   disconnectFacebookPage: vi.fn(),
   disconnectMetaConnection: vi.fn(),
@@ -70,10 +70,30 @@ describe("ConnectionPageClient Facebook SDK readiness", () => {
     ["active", false],
   ] as const)("shows the reconnect prompt only when the connection status is %s", async (connectionStatus, shown) => {
     loadFacebookSdk.mockResolvedValue(undefined);
-    vi.mocked(getConnectionOverview).mockResolvedValueOnce({ connectionStatus, pages: [] });
+    vi.mocked(getConnectionOverview).mockResolvedValueOnce({ connectionStatus, pages: [], canManage: true });
     render(<ConnectionPageClient />);
     await screen.findByText("Connection summary");
     expect(screen.queryByText("Facebook authorization needs to be renewed.") !== null).toBe(shown);
+  });
+
+  it("keeps every connect and disconnect button disabled for an employee and says only the owner can", async () => {
+    loadFacebookSdk.mockResolvedValue(undefined);
+    vi.mocked(getConnectionOverview).mockResolvedValueOnce({
+      connectionStatus: "reauthorization_required",
+      canManage: false,
+      pages: [
+        { id: "page-a", connectionId: "connection-1", pageName: "Page A", category: null, pageIdLastFour: "1111", status: "active", lastConnectedAt: "2026-09-01T00:00:00.000Z" },
+        { id: "page-b", connectionId: "connection-1", pageName: "Page B", category: null, pageIdLastFour: "2222", status: "reauthorization_required", lastConnectedAt: "2026-09-01T00:00:00.000Z" },
+      ],
+    });
+    render(<ConnectionPageClient />);
+
+    expect(await screen.findByText("Only the company owner can connect or disconnect Facebook Pages.")).toBeInTheDocument();
+    await waitFor(() => expect(loadFacebookSdk).toHaveBeenCalled());
+    const actions = screen.getAllByRole("button", { name: /Connect Facebook|Disconnect all|^Disconnect$|Reconnect/ }) as HTMLButtonElement[];
+    expect(actions.length).toBeGreaterThanOrEqual(4);
+    expect(actions.every((button) => button.disabled)).toBe(true);
+    expect(screen.getByText(/Ask the company owner to reconnect Facebook/)).toBeInTheDocument();
   });
 
   describe("Facebook login response", () => {

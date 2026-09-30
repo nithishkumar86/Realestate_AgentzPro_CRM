@@ -13,6 +13,8 @@ export interface FacebookPageConnection {
 export interface ConnectionOverview {
   connectionStatus: ConnectionStatus | "not_connected";
   pages: FacebookPageConnection[];
+  /** Only the company owner may connect or disconnect Facebook; employees see the Pages read-only. */
+  canManage: boolean;
 }
 
 export interface EligibleFacebookPage {
