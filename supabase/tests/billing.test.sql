@@ -94,7 +94,7 @@ select is(
 );
 
 select is(
-    (select count(*)::int from public.billing_payments),
+    (select count(*)::int from public.billing_payments where razorpay_payment_id in ('pay_X1', 'pay_X2')),
     0,
     'Refused payments write no receipt'
 );

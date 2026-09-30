@@ -9,7 +9,6 @@ import styles from "./workspace-picker.module.css";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
-  admin: "Admin",
   employee: "Employee",
 };
 
