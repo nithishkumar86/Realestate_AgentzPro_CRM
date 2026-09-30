@@ -1,5 +1,10 @@
 -- Regression for supabase/migrations/20260922120000_invitation_member.sql as changed by
--- 20260924120000_multi_membership.sql (one person, many companies).
+-- 20260924120000_multi_membership.sql (one person, many companies), 20260926120000_billing_razorpay.sql
+-- (invitations need a paid plan and a free seat) and 20260929130000_invitations_employee_only.sql
+-- (invitations grant 'employee' only).
+--
+-- Fixture companies are on an ACTIVE paid plan with plenty of seats, so the multi-membership steps
+-- reach the code they test; steps 20-23 cover the role and billing gates explicitly.
 --
 -- Runs entirely inside one DO block that ALWAYS ends by raising, so every fixture row (auth users,
 -- tenants, memberships, invitations) is rolled back. A passing run raises
@@ -21,6 +26,9 @@ declare
     v_outsider_invitation_id uuid;
     v_first_owned uuid;
     v_failed boolean;
+    v_plan uuid;
+    v_sub uuid;
+    v_other_sub uuid;
 
 begin
     insert into auth.users (id, instance_id, aud, role, email)
@@ -35,6 +43,33 @@ begin
     insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_tenant, v_owner, 'owner');
     insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_other_tenant, v_other_owner, 'owner');
     insert into public.tenants_subscriptions (tenant_id) values (v_tenant), (v_other_tenant);
+
+    -- Both fixture companies pay for 50 seats (the owner, the invitees and pending invitations all count).
+    insert into public.billing_plans (plan_code, plan_name, tier, billing_period, razorpay_plan_id, price_per_seat_paise, total_count)
+    values ('regr_plan', 'Regression Plan', 'pro', 'monthly', 'plan_REGRPLAN', 49900, 12)
+    returning billing_plan_id into v_plan;
+    insert into public.billing_subscriptions (
+        tenant_id, billing_plan_id, razorpay_subscription_id, seat_quantity, razorpay_status,
+        current_period_start, current_period_end, created_by_user_id
+    ) values (v_tenant, v_plan, 'sub_REGRSUB1', 50, 'active', now(), now() + interval '30 days', v_owner)
+    returning billing_subscription_id into v_sub;
+    insert into public.billing_subscriptions (
+        tenant_id, billing_plan_id, razorpay_subscription_id, seat_quantity, razorpay_status,
+        current_period_start, current_period_end, created_by_user_id
+    ) values (v_other_tenant, v_plan, 'sub_REGRSUB2', 50, 'active', now(), now() + interval '30 days', v_other_owner)
+    returning billing_subscription_id into v_other_sub;
+    update public.tenants_subscriptions
+    set subscription_status = 'active',
+        current_period_started_at = now(),
+        current_period_ends_at = now() + interval '30 days',
+        active_billing_subscription_id = v_sub
+    where tenant_id = v_tenant;
+    update public.tenants_subscriptions
+    set subscription_status = 'active',
+        current_period_started_at = now(),
+        current_period_ends_at = now() + interval '30 days',
+        active_billing_subscription_id = v_other_sub
+    where tenant_id = v_other_tenant;
     insert into public.profiles (user_id, full_name, phone_number, professional_role)
     values (v_other_owner, 'Other Owner', '919876543210', 'Director');
 
@@ -225,6 +260,35 @@ begin
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'regr-invitee@invite.test', 'employee');
     if v_row.outcome <> 'CREATED' then raise exception 'ASSERTION FAILED: removed member cannot be re-invited (%)', v_row.outcome; end if;
 
-    raise exception 'MEMBER_INVITATION_REGRESSION_PASSED (19 checks; all fixtures rolled back)';
+    -- 20. Invitations grant 'employee' only: 'admin' (and 'owner') is refused by the RPC itself.
+    select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'admin-target@invite.test', 'admin');
+    if v_row.outcome <> 'INVALID_ROLE' then raise exception 'ASSERTION FAILED: admin invitation not refused (%)', v_row.outcome; end if;
+    if exists (select 1 from public.invitation_member where email = 'admin-target@invite.test') then
+        raise exception 'ASSERTION FAILED: a refused admin invitation left a row behind';
+    end if;
+
+    -- 21. ...and the table cannot hold one even when written directly (it could never be accepted:
+    --     tenant_memberships only allows owner and employee).
+    v_failed := false;
+    begin
+        insert into public.invitation_member (tenant_id, email, membership_role, invited_by)
+        values (v_tenant, 'direct-admin@invite.test', 'admin', v_owner);
+    exception when check_violation then
+        v_failed := true;
+    end;
+    if not v_failed then raise exception 'ASSERTION FAILED: admin-role row inserted directly'; end if;
+
+    -- 22. A company still on its free trial cannot invite (the invitee's own company from step 15).
+    select * into v_row from public.create_member_invitation(v_first_owned, v_invitee, 'trial-target@invite.test', 'employee');
+    if v_row.outcome <> 'PLAN_REQUIRED' then raise exception 'ASSERTION FAILED: trial company could invite (%)', v_row.outcome; end if;
+
+    -- 23. A paid company with no free seat cannot invite: shrink 'Other Co' to exactly its current members.
+    update public.billing_subscriptions
+    set seat_quantity = (select count(*) from public.tenant_memberships where tenant_id = v_other_tenant and membership_status = 'active')
+    where billing_subscription_id = v_other_sub;
+    select * into v_row from public.create_member_invitation(v_other_tenant, v_other_owner, 'full-target@invite.test', 'employee');
+    if v_row.outcome <> 'SEAT_LIMIT_REACHED' then raise exception 'ASSERTION FAILED: invited with no free seat (%)', v_row.outcome; end if;
+
+    raise exception 'MEMBER_INVITATION_REGRESSION_PASSED (23 checks; all fixtures rolled back)';
 end;
 $$;

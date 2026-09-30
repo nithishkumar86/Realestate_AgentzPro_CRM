@@ -16,7 +16,9 @@ import { sendExistingAccountInvitationEmail } from "@/lib/server/workspace-invit
  * inviter always come from the owner's verified session (CrmAccessGranted), never from the body.
  */
 
-export type InvitableRole = "admin" | "employee";
+// Owners are created only by onboarding, and tenant_memberships allows just owner and employee, so an
+// invitation can only ever grant employee.
+export type InvitableRole = "employee";
 
 export const MAX_INVITATIONS_PER_REQUEST = 10;
 
@@ -28,7 +30,7 @@ const sendInvitationsSchema = z.object({
     .array(
       z.object({
         email: z.string().trim().min(1).max(320),
-        role: z.enum(["admin", "employee"]),
+        role: z.enum(["employee"]),
       }),
     )
     .min(1)
@@ -280,7 +282,7 @@ export interface TenantMember {
   userId: string;
   fullName: string;
   email: string;
-  role: "owner" | "admin" | "employee";
+  role: "owner" | "employee";
   status: string;
   joinedAt: string;
 }

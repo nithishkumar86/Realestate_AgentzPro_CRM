@@ -46,11 +46,10 @@ import {
 } from "@/services/profile-api-client";
 
 // Mirrors the tenant_memberships.membership_role check constraint.
-type MembershipRole = "owner" | "admin" | "employee";
+type MembershipRole = "owner" | "employee";
 
 const ROLE_LABELS: Record<MembershipRole, string> = {
   owner: "Owner",
-  admin: "Admin",
   employee: "Employee",
 };
 

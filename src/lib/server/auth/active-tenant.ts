@@ -1,7 +1,8 @@
 import "server-only";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { NextResponse } from "next/server";
+import { ACTIVE_TENANT_HEADER } from "@/lib/active-tenant-header";
 
 /**
  * The company a person is currently working in, when they belong to more than one.
@@ -28,6 +29,16 @@ export function isTenantId(value: unknown): value is string {
 /** The active-tenant hint from this request's cookies, or null when absent or malformed. */
 export async function readActiveTenantHint(): Promise<string | null> {
   const value = (await cookies()).get(ACTIVE_TENANT_COOKIE)?.value;
+  return isTenantId(value) ? value.toLowerCase() : null;
+}
+
+/**
+ * The company the calling page says it was rendered for (x-active-tenant), or null when the request
+ * carries none or a malformed one. Like the cookie it is only a claim: requireCrmAccess compares it
+ * with the verified active company and refuses on a mismatch, and never uses it to pick a company.
+ */
+export async function readClientTenantClaim(): Promise<string | null> {
+  const value = (await headers()).get(ACTIVE_TENANT_HEADER);
   return isTenantId(value) ? value.toLowerCase() : null;
 }
 

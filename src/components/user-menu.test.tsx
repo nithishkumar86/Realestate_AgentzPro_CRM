@@ -325,7 +325,7 @@ describe("UserMenu settings dialog", () => {
     getTenantMembers.mockResolvedValue({
       ...OVERVIEW,
       invitations: [
-        { invitationId: "inv-1", email: "ravi@example.com", role: "admin", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
+        { invitationId: "inv-1", email: "ravi@example.com", role: "employee", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
       ],
     });
     const { dialog } = openSettings();
@@ -334,7 +334,7 @@ describe("UserMenu settings dialog", () => {
     fireEvent.click(within(dialog).getByRole("tab", { name: "Pending Invitations" }));
     expect(within(dialog).getByText("1", { selector: ".mvp-members__index" })).toBeInTheDocument();
     expect(within(dialog).getByText("ravi@example.com")).toBeInTheDocument();
-    expect(within(dialog).getByText("Admin", { selector: ".mvp-members__role" })).toBeInTheDocument();
+    expect(within(dialog).getByText("Employee", { selector: ".mvp-members__role" })).toBeInTheDocument();
     expect(within(dialog).getByText("Pending")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Remove invitation for ravi@example.com" })).toBeInTheDocument();
   });
@@ -343,7 +343,7 @@ describe("UserMenu settings dialog", () => {
     getTenantMembers.mockResolvedValueOnce({
       ...OVERVIEW,
       invitations: [
-        { invitationId: "inv-1", email: "ravi@example.com", role: "admin", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
+        { invitationId: "inv-1", email: "ravi@example.com", role: "employee", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
       ],
     });
     getTenantMembers.mockResolvedValueOnce({ ...OVERVIEW, invitations: [] });
@@ -376,7 +376,7 @@ describe("UserMenu settings dialog", () => {
         },
       ],
       invitations: [
-        { invitationId: "inv-1", email: "ravi@example.com", role: "admin", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
+        { invitationId: "inv-1", email: "ravi@example.com", role: "employee", invitedAt: "2026-09-22T00:00:00Z", expiresAt: "2026-09-29T00:00:00Z" },
       ],
     });
     const { dialog } = openSettings();

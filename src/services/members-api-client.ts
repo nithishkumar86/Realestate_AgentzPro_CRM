@@ -1,5 +1,5 @@
-export type MemberRole = "owner" | "admin" | "employee";
-export type InvitableRole = "admin" | "employee";
+export type MemberRole = "owner" | "employee";
+export type InvitableRole = "employee";
 
 export interface TenantMember {
   userId: string;

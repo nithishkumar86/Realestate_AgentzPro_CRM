@@ -91,17 +91,27 @@ describe("sendMemberInvitations", () => {
     adminRpc.mockResolvedValue(created());
     inviteUserByEmail.mockResolvedValue({ data: { user: { id: "new-user" } }, error: null });
 
-    const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "  Ravi@Example.com ", role: "admin" }] }, REDIRECT);
+    const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "  Ravi@Example.com ", role: "employee" }] }, REDIRECT);
 
     expect(adminRpc).toHaveBeenCalledWith("create_member_invitation", {
       p_tenant_id: "tenant-1",
       p_invited_by: "owner-1",
       p_email: "ravi@example.com",
-      p_membership_role: "admin",
+      p_membership_role: "employee",
     });
     expect(inviteUserByEmail).toHaveBeenCalledWith("ravi@example.com", { redirectTo: `${REDIRECT}?invitation=inv-1` });
     expect(tableUpdateEq).toHaveBeenCalledWith({ user_id: "new-user" }, "invitation_id", "inv-1");
     expect(results).toEqual([{ email: "ravi@example.com", status: "sent", message: "Invitation sent." }]);
+  });
+
+  it("rejects an admin (or owner) invitation before touching the database", async () => {
+    await expect(
+      sendMemberInvitations(OWNER, { invitations: [{ email: "ravi@example.com", role: "admin" }] }, REDIRECT),
+    ).rejects.toMatchObject({ status: 400, code: "INVALID_INVITATION_INPUT" });
+    await expect(
+      sendMemberInvitations(OWNER, { invitations: [{ email: "ravi@example.com", role: "owner" }] }, REDIRECT),
+    ).rejects.toMatchObject({ status: 400, code: "INVALID_INVITATION_INPUT" });
+    expect(adminRpc).not.toHaveBeenCalled();
   });
 
   it("reports existing members and duplicate invitations without sending email", async () => {
@@ -111,7 +121,7 @@ describe("sendMemberInvitations", () => {
 
     const results = await sendMemberInvitations(
       OWNER,
-      { invitations: [{ email: "a@b.co", role: "employee" }, { email: "c@d.co", role: "employee" }, { email: "A@b.co", role: "admin" }] },
+      { invitations: [{ email: "a@b.co", role: "employee" }, { email: "c@d.co", role: "employee" }, { email: "A@b.co", role: "employee" }] },
       REDIRECT,
     );
 
@@ -210,11 +220,11 @@ describe("acceptMemberInvitation", () => {
   const VALID = { invitationId: INVITATION_ID, fullName: "Ravi", phoneNumber: "9876543210", professionalRole: "Sales" };
 
   it("sends the invitation id and personal details — never a tenant or role — to the accept RPC", async () => {
-    authRpc.mockResolvedValue({ data: [{ tenant_id: "tenant-1", membership_role: "admin" }], error: null });
+    authRpc.mockResolvedValue({ data: [{ tenant_id: "tenant-1", membership_role: "employee" }], error: null });
 
     await expect(acceptMemberInvitation({ ...VALID, tenantId: "evil", role: "owner" })).resolves.toEqual({
       tenantId: "tenant-1",
-      role: "admin",
+      role: "employee",
     });
     expect(authRpc).toHaveBeenCalledWith("accept_member_invitation", {
       p_invitation_id: INVITATION_ID,
