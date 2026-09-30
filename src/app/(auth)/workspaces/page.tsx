@@ -51,5 +51,12 @@ export default async function WorkspacesPage() {
       }
     : null;
 
-  return <WorkspacePickerClient workspaces={workspaces} activeTenantId={activeTenantId} creator={creator} />;
+  return (
+    <WorkspacePickerClient
+      workspaces={workspaces}
+      activeTenantId={activeTenantId}
+      creator={creator}
+      canDismiss={state.status === "ready"}
+    />
+  );
 }
