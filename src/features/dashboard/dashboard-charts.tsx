@@ -2,11 +2,9 @@
 
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { DashboardStats } from "@/lib/server/dashboard-service";
-import { formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
+import { CHART_COLORS, formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
 import { LEAD_STATUSES, type LeadStatus } from "@/features/leads/lead-options";
 
-/** Theme colours live in globals.css (--chart-*) so light and dark each get a tuned palette. */
-export const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)", "var(--chart-7)", "var(--chart-8)"];
 const LABEL_COLORS: Record<string, string> = { Hot: "var(--chart-hot)", Warm: "var(--chart-warm)", Cold: "var(--chart-cold)", "Not Interested": "var(--chart-muted)" };
 
 const tooltipStyle = { background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--text)", fontSize: 13 } as const;
@@ -126,7 +124,8 @@ export function StatusRankChart({ data, ariaLabel }: { data: DashboardStats["byS
   </div>;
 }
 
-export interface BarDatum { name: string; count: number }
+/** `color` paints this row's bar; rows without one use the chart's `color` prop. */
+export interface BarDatum { name: string; count: number; color?: string }
 
 export function HorizontalBarChart({ data, ariaLabel, color = "var(--chart-1)", rowHeight = 34 }: { data: BarDatum[]; ariaLabel: string; color?: string; rowHeight?: number }) {
   return <div className="dash-chart" style={{ height: Math.max(data.length * rowHeight + 24, 120) }} role="img" aria-label={`${ariaLabel}: ${data.map((item) => `${item.name} ${item.count}`).join(", ")}.`}>
@@ -136,7 +135,9 @@ export function HorizontalBarChart({ data, ariaLabel, color = "var(--chart-1)", 
         <XAxis type="number" allowDecimals={false} tick={axisTick} tickLine={false} axisLine={false} />
         <YAxis type="category" dataKey="name" width={150} tick={axisTick} tickLine={false} axisLine={false} interval={0} />
         <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--surface-muted)" }} formatter={(value) => [formatCount(Number(value)), "Leads"]} />
-        <Bar dataKey="count" fill={color} radius={[0, 6, 6, 0]} barSize={18} isAnimationActive />
+        <Bar dataKey="count" fill={color} radius={[0, 6, 6, 0]} barSize={18} isAnimationActive>
+          {data.map((item, index) => <Cell key={index} fill={item.color ?? color} />)}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   </div>;

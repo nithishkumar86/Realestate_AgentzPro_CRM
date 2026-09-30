@@ -1,5 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { adLabel, describeDelta, formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
+import { adBarData, adLabel, CHART_COLORS, describeDelta, formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
+
+describe("adBarData", () => {
+  const ads = (count: number) => Array.from({ length: count }, (_, i) => ({ adId: `630${i}-ad${i}`, name: `Ad ${i}`, count: 10 - i }));
+
+  it("gives every ranked ad its own colour, in rank order, with the same label as the Ad filter", () => {
+    const bars = adBarData(ads(5));
+    expect(bars.map((bar) => bar.color)).toEqual(CHART_COLORS.slice(0, 5));
+    expect(new Set(bars.map((bar) => bar.color)).size).toBe(5);
+    expect(bars[0]).toEqual({ name: adLabel(ads(1)[0]!), count: 10, color: CHART_COLORS[0] });
+  });
+
+  it("colours the Other and Unattributed catch-all rows grey and never spends a palette colour on them", () => {
+    const bars = adBarData([
+      { adId: "6301-a", name: "A", count: 5 },
+      { adId: "other", name: "Other", count: 4 },
+      { adId: "6302-b", name: "B", count: 3 },
+      { adId: "unattributed", name: "Unattributed", count: 2 },
+    ]);
+    expect(bars.map((bar) => bar.color)).toEqual([CHART_COLORS[0], "var(--chart-muted)", CHART_COLORS[1], "var(--chart-muted)"]);
+  });
+
+  it("keeps all 8 possible ranked ads distinct and never grey, and handles no ads", () => {
+    const bars = adBarData(ads(8));
+    expect(new Set(bars.map((bar) => bar.color)).size).toBe(8);
+    expect(bars.map((bar) => bar.color)).not.toContain("var(--chart-8)");
+    expect(bars.map((bar) => bar.color)).not.toContain("var(--chart-muted)");
+    expect(adBarData([])).toEqual([]);
+  });
+});
 
 describe("rankStatuses", () => {
   it("keeps every status, biggest first, zero statuses last, with whole-number shares of all leads in view", () => {
