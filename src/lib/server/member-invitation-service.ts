@@ -376,9 +376,12 @@ export async function listTenantMembers(access: CrmAccessGranted): Promise<Tenan
     paidSeats: seatRow?.paid_seats ?? null,
     usedSeats: (seatRow?.active_members ?? 0) + (seatRow?.pending_invitations ?? 0),
   };
+  // PAUSED while payments are not working: any owner can invite. Restore the paid-plan line below
+  // together with supabase/manual/20261001130000_resume_invite_plan_check.sql.
   // Invites are a paid feature (trial companies cannot invite) and each one holds a seat.
-  const canInvite =
-    access.membershipRole === "owner" && seats.isPaid && seats.paidSeats !== null && seats.usedSeats < seats.paidSeats;
+  // const canInvite =
+  //   access.membershipRole === "owner" && seats.isPaid && seats.paidSeats !== null && seats.usedSeats < seats.paidSeats;
+  const canInvite = access.membershipRole === "owner";
 
   return { currentUserId: access.userId, canInvite, seats, members, invitations };
 }
