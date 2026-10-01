@@ -44,6 +44,18 @@ export default async function BillingPage() {
     );
   }
 
+  // The owner blocked this employee. Nothing was deleted, so the owner can enable them again.
+  if (state.status === "ready" && state.membershipStatus === "blocked") {
+    return (
+      <div className="auth-card">
+        <h1 className="auth-card__title">Your access is disabled</h1>
+        <p className="auth-card__subtitle">
+          Your company owner has disabled your access. Contact your owner to get it enabled again.
+        </p>
+      </div>
+    );
+  }
+
   if (state.status === "integrity_error") {
     return (
       <div className="auth-card">
