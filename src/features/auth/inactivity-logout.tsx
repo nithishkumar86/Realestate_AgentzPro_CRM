@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { startInactivityTracking } from "@/features/auth/inactivity";
 
 /** Pages in the (auth) group that are only reachable with a session; /login and /auth/confirm are not. */
-export const SIGNED_IN_AUTH_PATHS = ["/billing", "/onboarding", "/workspaces"];
+export const SIGNED_IN_AUTH_PATHS = ["/billing", "/onboarding"];
 
 export function SignedInInactivityLogout() {
   const pathname = usePathname();

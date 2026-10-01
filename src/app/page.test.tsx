@@ -38,7 +38,7 @@ it("shows the public landing page with a Login button to signed-out visitors", a
 });
 
 it.each([
-  ["WORKSPACE_SELECTION_REQUIRED", "/workspaces"],
+  ["NO_COMPANY", "/billing"],
   ["ONBOARDING_REQUIRED", "/onboarding"],
   ["CRM_ACCESS_DENIED", "/billing"],
   ["ACCOUNT_INTEGRITY_ERROR", "/billing"],

@@ -22,10 +22,7 @@ export default async function HomePage() {
       if (error.code === "ONBOARDING_REQUIRED") {
         redirect("/onboarding");
       }
-      if (error.code === "WORKSPACE_SELECTION_REQUIRED") {
-        redirect("/workspaces");
-      }
-      if (error.code === "CRM_ACCESS_DENIED" || error.code === "ACCOUNT_INTEGRITY_ERROR") {
+      if (error.code === "NO_COMPANY" || error.code === "CRM_ACCESS_DENIED" || error.code === "ACCOUNT_INTEGRITY_ERROR") {
         redirect("/billing");
       }
     }

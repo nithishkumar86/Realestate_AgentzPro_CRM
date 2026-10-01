@@ -10,9 +10,9 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
  */
 export type LoginState =
   | { status: "needs_onboarding" }
-  // The person has a profile but no company is chosen: they belong to none (e.g. removed from
-  // their only one), or to several and no valid active-tenant hint picks one.
-  | { status: "needs_workspace_selection" }
+  // The person finished account setup but no longer belongs to a company: the owner removed them.
+  // One login belongs to one company, so they cannot join or create another.
+  | { status: "no_company" }
   | {
       status: "ready";
       tenantId: string;
@@ -37,18 +37,17 @@ function logIntegrityError(userId: string, reason: string): void {
  * service-role client (bypassing RLS, since this check itself determines
  * what the user is authorized to see).
  *
- * A person may belong to several tenants. `preferredTenantId` is the
- * active-tenant cookie hint (src/lib/server/auth/active-tenant.ts); it is only
- * used when it matches one of this user's own membership rows, so a tampered
- * or stale value can never reach another company's data.
+ * One login belongs to exactly one company: tenant_memberships is unique on
+ * user_id, so there is at most one membership row to read.
  */
-export async function resolveLoginState(userId: string, preferredTenantId: string | null = null): Promise<LoginState> {
+export async function resolveLoginState(userId: string): Promise<LoginState> {
   const db = getSupabaseAdminClient();
 
-  const { data: memberships, error: membershipError } = await db
+  const { data: membership, error: membershipError } = await db
     .from("tenant_memberships")
     .select("tenant_id, membership_role, membership_status")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .maybeSingle();
 
   if (membershipError) {
     logIntegrityError(userId, "MEMBERSHIP_QUERY_FAILED");
@@ -66,9 +65,7 @@ export async function resolveLoginState(userId: string, preferredTenantId: strin
     return { status: "integrity_error", reason: "PROFILE_QUERY_FAILED" };
   }
 
-  const membershipRows = memberships ?? [];
-
-  if (membershipRows.length === 0 && !profile) {
+  if (!membership && !profile) {
     return { status: "needs_onboarding" };
   }
 
@@ -79,14 +76,10 @@ export async function resolveLoginState(userId: string, preferredTenantId: strin
     return { status: "integrity_error", reason: "PARTIAL_ONBOARDING_STATE" };
   }
 
-  // A profile with no membership is a valid state now: the person was removed
-  // from their only company, and can accept another invitation or create one.
-  const membership =
-    membershipRows.find((row) => preferredTenantId !== null && row.tenant_id === preferredTenantId) ??
-    (membershipRows.length === 1 ? membershipRows[0] : undefined);
-
+  // A profile with no membership: the owner removed this person from their company. The profile is
+  // kept (remove_tenant_member deletes only the membership), so this is a known state, not an error.
   if (!membership) {
-    return { status: "needs_workspace_selection" };
+    return { status: "no_company" };
   }
 
   const { data: tenant, error: tenantError } = await db

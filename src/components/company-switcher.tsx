@@ -1,19 +1,13 @@
-import Link from "next/link";
-import { Building2, ChevronsUpDown } from "lucide-react";
+import { Building2 } from "lucide-react";
 
 export interface CompanySwitcherProps {
   tenantName: string;
 }
 
-/** Top-of-sidebar company switcher: always shows the active company, opens the company picker. */
+/** Top-of-sidebar company label. One login belongs to one company, so there is nothing to switch to. */
 export function CompanySwitcher({ tenantName }: Readonly<CompanySwitcherProps>) {
   return (
-    <Link
-      className="mvp-company-switcher"
-      href="/workspaces"
-      aria-label={`Switch company (current: ${tenantName})`}
-      title="Switch company"
-    >
+    <div className="mvp-company-switcher" title={tenantName}>
       <span className="mvp-company-switcher__icon" aria-hidden="true">
         <Building2 size={16} />
       </span>
@@ -21,7 +15,6 @@ export function CompanySwitcher({ tenantName }: Readonly<CompanySwitcherProps>) 
         <span className="mvp-company-switcher__label">Company</span>
         <strong className="mvp-company-switcher__name">{tenantName}</strong>
       </span>
-      <ChevronsUpDown className="mvp-company-switcher__chevron" size={16} aria-hidden="true" />
-    </Link>
+    </div>
   );
 }

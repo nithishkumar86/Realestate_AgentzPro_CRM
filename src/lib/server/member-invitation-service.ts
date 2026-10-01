@@ -6,7 +6,6 @@ import type { CrmAccessGranted } from "@/lib/server/auth/access";
 import { requireValidAccountDetails } from "@/lib/server/auth/account-details-guard";
 import { createAuthClient } from "@/lib/server/auth/supabase-auth-client";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
-import { sendExistingAccountInvitationEmail } from "@/lib/server/workspace-invitation-email";
 
 /**
  * Member invitation pipeline (supabase/migrations/20260922120000_invitation_member.sql).
@@ -14,6 +13,9 @@ import { sendExistingAccountInvitationEmail } from "@/lib/server/workspace-invit
  * An owner invites people into THEIR tenant. The invitee later joins that same tenant with the
  * role the owner chose — they never create a tenant and are never asked for a role. The tenant and
  * inviter always come from the owner's verified session (CrmAccessGranted), never from the body.
+ *
+ * One login belongs to one company: an email that already has an account (owner or employee
+ * anywhere) cannot be invited — create_member_invitation answers HAS_ACCOUNT.
  */
 
 // Owners are created only by onboarding, and tenant_memberships allows just owner and employee, so an
@@ -41,6 +43,7 @@ export type InvitationSendStatus =
   | "sent"
   | "saved_existing_account"
   | "already_member"
+  | "has_account"
   | "already_invited"
   | "invalid_email"
   | "plan_required"
@@ -55,8 +58,9 @@ export interface InvitationSendResult {
 
 const RESULT_MESSAGES: Record<InvitationSendStatus, string> = {
   sent: "Invitation sent.",
-  saved_existing_account: "This person already has an account. They will see your invitation when they next sign in.",
+  saved_existing_account: "This person has started signing up. They will see your invitation when they next sign in.",
   already_member: "This person is already a member of your organization.",
+  has_account: "This person already belongs to an organization. One account can belong to only one organization.",
   already_invited: "This person already has a pending invitation.",
   invalid_email: "Enter a valid email address.",
   plan_required: "Inviting members needs a paid plan. Subscribe on the Billing page first.",
@@ -70,6 +74,7 @@ type CreateInvitationOutcome =
   | "INVALID_ROLE"
   | "NOT_OWNER"
   | "ALREADY_MEMBER"
+  | "HAS_ACCOUNT"
   | "ALREADY_INVITED"
   | "PLAN_REQUIRED"
   | "SEAT_LIMIT_REACHED";
@@ -146,6 +151,10 @@ export async function sendMemberInvitations(
       results.push(result(email, "already_member"));
       continue;
     }
+    if (row.outcome === "HAS_ACCOUNT") {
+      results.push(result(email, "has_account"));
+      continue;
+    }
     if (row.outcome === "ALREADY_INVITED") {
       results.push(result(email, "already_invited"));
       continue;
@@ -163,7 +172,7 @@ export async function sendMemberInvitations(
       continue;
     }
 
-    results.push(await deliverInvitation(row.invitation_id, email, row.user_id, redirectTo, access.tenantName));
+    results.push(await deliverInvitation(row.invitation_id, email, row.user_id, redirectTo));
   }
 
   return results;
@@ -174,7 +183,6 @@ async function deliverInvitation(
   email: string,
   existingUserId: string | null,
   redirectTo: string,
-  companyName: string,
 ): Promise<InvitationSendResult> {
   const db = getSupabaseAdminClient();
   // The invitation id rides on the link so /auth/confirm can say "withdrawn" even after Supabase's
@@ -197,18 +205,10 @@ async function deliverInvitation(
   }
 
   if (existingUserId && error?.code === "email_exists") {
-    // Already has a login (usually a member of another company). Supabase will not send an invite
-    // email to a confirmed address, so the app sends its own notice; they accept on /workspaces
-    // after signing in. The invitation stays pending either way, so a failed send loses nothing.
-    const emailed = await sendExistingAccountInvitationEmail({
-      email,
-      companyName,
-      loginUrl: new URL("/login", redirectTo).toString(),
-    });
-    if (!emailed) {
-      logInvitationEvent("EXISTING_ACCOUNT_EMAIL_NOT_SENT");
-    }
-    return result(email, emailed ? "sent" : "saved_existing_account");
+    // A login without a finished account (create_member_invitation already refused anyone with a
+    // profile). Supabase will not email a confirmed address; the invitation stays pending and they
+    // get the invitation setup form on /onboarding when they next sign in.
+    return result(email, "saved_existing_account");
   }
 
   logInvitationEvent("INVITE_EMAIL_FAILED", { providerStatus: error?.status, providerCode: error?.code });
@@ -376,9 +376,12 @@ export async function listTenantMembers(access: CrmAccessGranted): Promise<Tenan
     paidSeats: seatRow?.paid_seats ?? null,
     usedSeats: (seatRow?.active_members ?? 0) + (seatRow?.pending_invitations ?? 0),
   };
+  // PAUSED while payments are not working: any owner can invite. Restore the paid-plan line below
+  // together with supabase/manual/20261001130000_resume_invite_plan_check.sql.
   // Invites are a paid feature (trial companies cannot invite) and each one holds a seat.
-  const canInvite =
-    access.membershipRole === "owner" && seats.isPaid && seats.paidSeats !== null && seats.usedSeats < seats.paidSeats;
+  // const canInvite =
+  //   access.membershipRole === "owner" && seats.isPaid && seats.paidSeats !== null && seats.usedSeats < seats.paidSeats;
+  const canInvite = access.membershipRole === "owner";
 
   return { currentUserId: access.userId, canInvite, seats, members, invitations };
 }
@@ -614,123 +617,4 @@ export async function acceptMemberInvitation(rawInput: unknown): Promise<AcceptI
   }
 
   return { tenantId: row.tenant_id, role: row.membership_role };
-}
-
-// ---------------------------------------------------------------------------
-// Invitations for someone who already has an account (multi-membership)
-// ---------------------------------------------------------------------------
-
-export interface PendingInvitationForUser {
-  invitationId: string;
-  tenantId: string;
-  tenantName: string;
-  role: InvitableRole;
-}
-
-/**
- * Every open invitation addressed to this user, from any company: by user_id, and by their verified
- * sign-in email for rows whose user_id was never written back. The company name is read from
- * tenants — the invitee never supplies it.
- */
-export async function listPendingInvitationsForUser(userId: string): Promise<PendingInvitationForUser[]> {
-  const db = getSupabaseAdminClient();
-  const nowIso = new Date().toISOString();
-  const columns = "invitation_id,tenant_id,membership_role,created_at";
-  type Row = { invitation_id: string; tenant_id: string; membership_role: InvitableRole; created_at: string };
-
-  const { data: userData, error: userError } = await db.auth.admin.getUserById(userId);
-  if (userError) {
-    throw new AppError("Invitations could not be checked.", { status: 500, code: "INVITATION_LOOKUP_FAILED", retryable: true });
-  }
-  const email = userData.user?.email?.trim().toLowerCase();
-
-  const [byUser, byEmail] = await Promise.all([
-    db.from("invitation_member").select(columns).eq("user_id", userId).eq("status", "pending").gt("expires_at", nowIso),
-    email
-      ? db.from("invitation_member").select(columns).eq("email", email).is("user_id", null).eq("status", "pending").gt("expires_at", nowIso)
-      : Promise.resolve({ data: [] as Row[], error: null }),
-  ]);
-
-  if (byUser.error || byEmail.error) {
-    throw new AppError("Invitations could not be checked.", { status: 500, code: "INVITATION_LOOKUP_FAILED", retryable: true });
-  }
-
-  const rows = new Map<string, Row>();
-  for (const row of [...((byUser.data ?? []) as Row[]), ...((byEmail.data ?? []) as Row[])]) {
-    rows.set(row.invitation_id, row);
-  }
-  if (rows.size === 0) {
-    return [];
-  }
-
-  const tenantIds = [...new Set([...rows.values()].map((row) => row.tenant_id))];
-  const { data: tenants, error: tenantError } = await db.from("tenants").select("tenant_id,tenant_name").in("tenant_id", tenantIds);
-  if (tenantError) {
-    throw new AppError("Invitations could not be checked.", { status: 500, code: "INVITATION_LOOKUP_FAILED", retryable: true });
-  }
-  const names = new Map(((tenants ?? []) as { tenant_id: string; tenant_name: string }[]).map((t) => [t.tenant_id, t.tenant_name]));
-
-  return [...rows.values()]
-    .filter((row) => names.has(row.tenant_id))
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-    .map((row) => ({
-      invitationId: row.invitation_id,
-      tenantId: row.tenant_id,
-      tenantName: names.get(row.tenant_id) as string,
-      role: row.membership_role,
-    }));
-}
-
-const invitationIdSchema = z.string().uuid();
-
-/**
- * One-click accept for a person who already has a profile: their name, phone, and job title are
- * reused, and the company and role come from the invitation. The RPC derives the user from
- * auth.uid() and only matches an invitation addressed to that user.
- */
-export async function joinInvitedWorkspace(invitationId: string): Promise<AcceptInvitationResult> {
-  if (!invitationIdSchema.safeParse(invitationId).success) {
-    throw new AppError("This invitation is no longer valid.", { status: 404, code: "INVITATION_NOT_FOUND" });
-  }
-
-  const supabase = await createAuthClient();
-  const { data, error } = await supabase.rpc("join_invited_workspace", { p_invitation_id: invitationId });
-
-  if (error) {
-    if (error.code === "P0002") {
-      throw new AppError("This invitation is no longer valid. Ask the organization owner to invite you again.", {
-        status: 404,
-        code: "INVITATION_NOT_FOUND",
-      });
-    }
-    throwIfSeatUnavailable(error.code);
-    if (error.code === "P0001") {
-      throw new AppError("Complete your account setup first.", { status: 409, code: "ONBOARDING_REQUIRED" });
-    }
-    throw new AppError("The invitation could not be accepted.", { status: 500, code: "INVITATION_ACCEPT_FAILED", retryable: true });
-  }
-
-  const row: { tenant_id: string; membership_role: string } | undefined = Array.isArray(data) ? data[0] : data;
-  if (!row?.tenant_id) {
-    throw new AppError("The invitation could not be accepted.", { status: 500, code: "INVITATION_ACCEPT_FAILED", retryable: true });
-  }
-
-  return { tenantId: row.tenant_id, role: row.membership_role };
-}
-
-/** The invitee turns down one of their own pending invitations. */
-export async function declineInvitation(invitationId: string): Promise<void> {
-  if (!invitationIdSchema.safeParse(invitationId).success) {
-    throw new AppError("This invitation is no longer pending.", { status: 404, code: "INVITATION_NOT_FOUND" });
-  }
-
-  const supabase = await createAuthClient();
-  const { data, error } = await supabase.rpc("decline_member_invitation", { p_invitation_id: invitationId });
-
-  if (error) {
-    throw new AppError("The invitation could not be declined.", { status: 500, code: "INVITATION_DECLINE_FAILED", retryable: true });
-  }
-  if (data !== true) {
-    throw new AppError("This invitation is no longer pending.", { status: 404, code: "INVITATION_NOT_FOUND" });
-  }
 }

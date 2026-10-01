@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BillingPageClient } from "@/features/billing/billing-page-client";
 import { isAppError } from "@/lib/server/app-error";
 import { requireBillingMember } from "@/lib/server/auth/access";
-import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
 import { verifySession } from "@/lib/server/auth/session";
 import { getBillingOverview } from "@/lib/server/billing-service";
@@ -27,14 +25,23 @@ export default async function BillingPage() {
     redirect("/login");
   }
 
-  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
+  const state = await resolveLoginState(session.userId);
 
   if (state.status === "needs_onboarding") {
     redirect("/onboarding");
   }
 
-  if (state.status === "needs_workspace_selection") {
-    redirect("/workspaces");
+  // The owner removed this person from their company. One login belongs to one company, so there is
+  // nothing to pay for or switch to here.
+  if (state.status === "no_company") {
+    return (
+      <div className="auth-card">
+        <h1 className="auth-card__title">You are no longer part of a company</h1>
+        <p className="auth-card__subtitle">
+          The company owner removed your access. Contact the company owner or support if you believe this is a mistake.
+        </p>
+      </div>
+    );
   }
 
   if (state.status === "integrity_error") {
@@ -57,9 +64,6 @@ export default async function BillingPage() {
         <h1 className="auth-card__title">CRM access is not currently available</h1>
         <p className="auth-card__subtitle">
           This may be due to your membership or account status. Contact support if you believe this is a mistake.
-        </p>
-        <p className="auth-card__subtitle">
-          <Link href="/workspaces">Switch company</Link>
         </p>
       </div>
     );

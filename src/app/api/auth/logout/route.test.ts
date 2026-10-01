@@ -14,6 +14,5 @@ it("retains the origin check and signs out this device only", async () => {
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ signedOut: true });
   expect(response.headers.get("cache-control")).toContain("no-store");
-  expect(response.headers.get("set-cookie")).toMatch(/agentz_active_tenant=;.*Max-Age=0/i);
   expect(response.headers.get("set-cookie")).toMatch(/agentz_last_activity=;.*Max-Age=0/i);
 });

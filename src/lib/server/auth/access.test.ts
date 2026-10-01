@@ -22,15 +22,10 @@ vi.mock("@/lib/server/auth/session", () => ({
 vi.mock("@/lib/server/auth/login-state", () => ({
   resolveLoginState: vi.fn(),
 }));
-vi.mock("@/lib/server/auth/active-tenant", () => ({
-  readActiveTenantHint: vi.fn(async () => null),
-  readClientTenantClaim: vi.fn(async () => null),
-}));
 
 const { evaluateCrmAccess, requireCrmAccess, requireBillingMember, requireBillingOwner } = await import("@/lib/server/auth/access");
 const { verifySession } = await import("@/lib/server/auth/session");
 const { resolveLoginState } = await import("@/lib/server/auth/login-state");
-const { readActiveTenantHint, readClientTenantClaim } = await import("@/lib/server/auth/active-tenant");
 
 describe("evaluateCrmAccess", () => {
   it("grants access for a valid trial before trial_ends_at", () => {
@@ -72,8 +67,8 @@ describe("evaluateCrmAccess", () => {
     expect(evaluateCrmAccess({ status: "needs_onboarding" })).toBe(false);
   });
 
-  it("denies access when no company is chosen", () => {
-    expect(evaluateCrmAccess({ status: "needs_workspace_selection" })).toBe(false);
+  it("denies access when the person no longer belongs to a company", () => {
+    expect(evaluateCrmAccess({ status: "no_company" })).toBe(false);
   });
 
   it("denies access when the login state is integrity_error", () => {
@@ -95,21 +90,20 @@ describe("requireCrmAccess", () => {
     await expect(requireCrmAccess()).rejects.toMatchObject({ status: 403, code: "ONBOARDING_REQUIRED" });
   });
 
-  it("throws WORKSPACE_SELECTION_REQUIRED (403) when no company is chosen", async () => {
+  it("throws NO_COMPANY (403) when the owner removed the person from their company", async () => {
     vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
-    vi.mocked(resolveLoginState).mockResolvedValue({ status: "needs_workspace_selection" });
+    vi.mocked(resolveLoginState).mockResolvedValue({ status: "no_company" });
 
-    await expect(requireCrmAccess()).rejects.toMatchObject({ status: 403, code: "WORKSPACE_SELECTION_REQUIRED" });
+    await expect(requireCrmAccess()).rejects.toMatchObject({ status: 403, code: "NO_COMPANY" });
   });
 
-  it("resolves access for the active-company hint, which login-state re-verifies", async () => {
+  it("resolves the company only from the verified session's user", async () => {
     vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
-    vi.mocked(readActiveTenantHint).mockResolvedValueOnce(READY_BASE.tenantId);
     vi.mocked(resolveLoginState).mockResolvedValue({ ...READY_BASE, subscriptionStatus: "trialing", trialEndsAt: future(ONE_HOUR_MS) });
 
     await requireCrmAccess();
 
-    expect(resolveLoginState).toHaveBeenCalledWith("user-1", READY_BASE.tenantId);
+    expect(resolveLoginState).toHaveBeenLastCalledWith("user-1");
   });
 
   it("throws ACCOUNT_INTEGRITY_ERROR (403) on a partial/contradictory record set", async () => {
@@ -140,46 +134,6 @@ describe("requireCrmAccess", () => {
   });
 });
 
-describe("stale-tab guard (another tab switched company)", () => {
-  const OTHER_TENANT = "10000000-0000-0000-0000-000000000002";
-  const trial = () => ({ ...READY_BASE, subscriptionStatus: "trialing", trialEndsAt: future(ONE_HOUR_MS) });
-
-  it("refuses with WORKSPACE_CHANGED (409) when the page's company is not the active one", async () => {
-    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
-    vi.mocked(resolveLoginState).mockResolvedValue(trial());
-    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(OTHER_TENANT);
-
-    await expect(requireCrmAccess()).rejects.toMatchObject({ status: 409, code: "WORKSPACE_CHANGED" });
-  });
-
-  it("refuses billing the same way", async () => {
-    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
-    vi.mocked(resolveLoginState).mockResolvedValue(trial());
-    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(OTHER_TENANT);
-
-    await expect(requireBillingMember()).rejects.toMatchObject({ status: 409, code: "WORKSPACE_CHANGED" });
-  });
-
-  it("allows a matching claim (any letter case) and a request with no claim", async () => {
-    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
-    vi.mocked(resolveLoginState).mockResolvedValue(trial());
-
-    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(READY_BASE.tenantId.toLowerCase());
-    await expect(requireCrmAccess()).resolves.toMatchObject({ tenantId: READY_BASE.tenantId });
-    await expect(requireCrmAccess()).resolves.toMatchObject({ tenantId: READY_BASE.tenantId });
-  });
-
-  it("never lets the claim choose the company", async () => {
-    vi.mocked(verifySession).mockResolvedValue({ userId: "user-1" });
-    vi.mocked(resolveLoginState).mockResolvedValue(trial());
-    vi.mocked(readActiveTenantHint).mockResolvedValueOnce(null);
-    vi.mocked(readClientTenantClaim).mockResolvedValueOnce(OTHER_TENANT);
-
-    await expect(requireCrmAccess()).rejects.toMatchObject({ code: "WORKSPACE_CHANGED" });
-    expect(resolveLoginState).toHaveBeenLastCalledWith("user-1", null);
-  });
-});
-
 describe("billing access", () => {
   it("lets the owner of a BLOCKED company reach billing, because that is who needs to pay", async () => {
     vi.mocked(verifySession).mockResolvedValue({ userId: "owner-a" });
@@ -205,22 +159,21 @@ describe("billing access", () => {
     await expect(requireBillingMember()).resolves.toMatchObject({ membershipRole: "employee", hasCrmAccess: true });
   });
 
-  it("resolves the tenant only from the verified active-tenant hint", async () => {
+  it("resolves the tenant only from the verified session's user", async () => {
     vi.mocked(verifySession).mockResolvedValue({ userId: "owner-a" });
-    vi.mocked(readActiveTenantHint).mockResolvedValueOnce("10000000-0000-0000-0000-000000000002");
     vi.mocked(resolveLoginState).mockResolvedValue({ ...READY_BASE, subscriptionStatus: "trialing", trialEndsAt: future(ONE_HOUR_MS) });
 
     await requireBillingOwner();
-    expect(resolveLoginState).toHaveBeenLastCalledWith("owner-a", "10000000-0000-0000-0000-000000000002");
+    expect(resolveLoginState).toHaveBeenLastCalledWith("owner-a");
   });
 
-  it("refuses when no company is chosen or the session is missing", async () => {
+  it("refuses a removed person or a missing session", async () => {
     vi.mocked(verifySession).mockResolvedValue(null);
     await expect(requireBillingMember()).rejects.toMatchObject({ status: 401 });
 
-    vi.mocked(verifySession).mockResolvedValue({ userId: "multi" });
-    vi.mocked(resolveLoginState).mockResolvedValue({ status: "needs_workspace_selection" });
-    await expect(requireBillingMember()).rejects.toMatchObject({ code: "WORKSPACE_SELECTION_REQUIRED" });
+    vi.mocked(verifySession).mockResolvedValue({ userId: "removed" });
+    vi.mocked(resolveLoginState).mockResolvedValue({ status: "no_company" });
+    await expect(requireBillingMember()).rejects.toMatchObject({ code: "NO_COMPANY" });
   });
 
   it("refuses a suspended tenant", async () => {

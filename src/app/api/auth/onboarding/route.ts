@@ -27,8 +27,8 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    // This creates a person's first account and company. Anyone who already has a profile or a
-    // membership must use "Create new company" (/api/workspaces), which keeps their saved details.
+    // This creates a person's one account and company. Anyone who already has a profile or a
+    // membership is refused: one login belongs to one company.
     const loginState = await resolveLoginState(session.userId);
     if (loginState.status !== "needs_onboarding") {
       throw new AppError("Your account is already set up.", { status: 409, code: "ALREADY_ONBOARDED" });

@@ -1076,7 +1076,7 @@ button:disabled {
 /* Company switcher: top of the sidebar, always shows which company you are working in. */
 .mvp-company-switcher {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
@@ -1087,8 +1087,6 @@ button:disabled {
   color: var(--text);
   transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
-.mvp-company-switcher:hover { border-color: var(--border-strong); box-shadow: 0 3px 8px rgba(15, 23, 42, .1); }
-.mvp-company-switcher:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .mvp-company-switcher__icon {
   display: grid;
   place-items: center;
@@ -1102,10 +1100,7 @@ button:disabled {
 .mvp-company-switcher__text { display: grid; gap: 1px; min-width: 0; }
 .mvp-company-switcher__label { color: var(--text-muted); font-size: 0.68rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .mvp-company-switcher__name { overflow: hidden; font-size: 0.86rem; white-space: nowrap; text-overflow: ellipsis; }
-.mvp-company-switcher__chevron { color: var(--text-muted); transition: color 150ms ease; }
-.mvp-company-switcher:hover .mvp-company-switcher__chevron { color: var(--text); }
 :root[data-theme="dark"] .mvp-company-switcher { box-shadow: 0 1px 2px rgba(0, 0, 0, .3); }
-:root[data-theme="dark"] .mvp-company-switcher:hover { box-shadow: 0 3px 8px rgba(0, 0, 0, .38); }
 
 .mvp-user-menu {
   position: relative;

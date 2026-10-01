@@ -1,10 +1,11 @@
 -- Regression for supabase/migrations/20260922120000_invitation_member.sql as changed by
--- 20260924120000_multi_membership.sql (one person, many companies), 20260926120000_billing_razorpay.sql
--- (invitations need a paid plan and a free seat) and 20260929130000_invitations_employee_only.sql
--- (invitations grant 'employee' only).
+-- 20260926120000_billing_razorpay.sql (invitations need a paid plan and a free seat),
+-- 20260929130000_invitations_employee_only.sql (invitations grant 'employee' only) and
+-- 20261001100000_one_to_one_membership.sql (one login belongs to exactly one company; an email that
+-- already has an account cannot be invited).
 --
--- Fixture companies are on an ACTIVE paid plan with plenty of seats, so the multi-membership steps
--- reach the code they test; steps 20-23 cover the role and billing gates explicitly.
+-- The two main fixture companies are on an ACTIVE paid plan with plenty of seats, so the membership
+-- steps reach the code they test; steps 17-20 cover the role and billing gates explicitly.
 --
 -- Runs entirely inside one DO block that ALWAYS ends by raising, so every fixture row (auth users,
 -- tenants, memberships, invitations) is rolled back. A passing run raises
@@ -16,15 +17,14 @@ declare
     v_invitee uuid := gen_random_uuid();
     v_outsider uuid := gen_random_uuid();
     v_other_owner uuid := gen_random_uuid();
+    v_trial_owner uuid := gen_random_uuid();
     v_tenant uuid;
     v_other_tenant uuid;
+    v_trial_tenant uuid;
     v_row record;
     v_tenants_before bigint;
     v_subscriptions_before bigint;
     v_invitation_id uuid;
-    v_other_invitation_id uuid;
-    v_outsider_invitation_id uuid;
-    v_first_owned uuid;
     v_failed boolean;
     v_plan uuid;
     v_sub uuid;
@@ -36,15 +36,19 @@ begin
         (v_owner, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'regr-owner@invite.test'),
         (v_invitee, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'regr-invitee@invite.test'),
         (v_outsider, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'regr-outsider@invite.test'),
-        (v_other_owner, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'regr-other-owner@invite.test');
+        (v_other_owner, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'regr-other-owner@invite.test'),
+        (v_trial_owner, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'regr-trial-owner@invite.test');
 
     insert into public.tenants (tenant_name, timezone) values ('Regression Co', 'Asia/Kolkata') returning tenant_id into v_tenant;
     insert into public.tenants (tenant_name, timezone) values ('Other Co', 'Asia/Kolkata') returning tenant_id into v_other_tenant;
+    insert into public.tenants (tenant_name, timezone) values ('Trial Co', 'Asia/Kolkata') returning tenant_id into v_trial_tenant;
     insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_tenant, v_owner, 'owner');
     insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_other_tenant, v_other_owner, 'owner');
-    insert into public.tenants_subscriptions (tenant_id) values (v_tenant), (v_other_tenant);
+    insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_trial_tenant, v_trial_owner, 'owner');
+    insert into public.tenants_subscriptions (tenant_id) values (v_tenant), (v_other_tenant), (v_trial_tenant);
 
-    -- Both fixture companies pay for 50 seats (the owner, the invitees and pending invitations all count).
+    -- Regression Co and Other Co pay for 50 seats (the owner, the invitees and pending invitations all
+    -- count). Trial Co stays on its free trial.
     insert into public.billing_plans (plan_code, plan_name, tier, billing_period, razorpay_plan_id, price_per_seat_paise, total_count)
     values ('regr_plan', 'Regression Plan', 'pro', 'monthly', 'plan_REGRPLAN', 49900, 12)
     returning billing_plan_id into v_plan;
@@ -71,7 +75,10 @@ begin
         active_billing_subscription_id = v_other_sub
     where tenant_id = v_other_tenant;
     insert into public.profiles (user_id, full_name, phone_number, professional_role)
-    values (v_other_owner, 'Other Owner', '919876543210', 'Director');
+    values
+        (v_owner, 'Owner', '919876543210', 'Director'),
+        (v_other_owner, 'Other Owner', '919876543210', 'Director'),
+        (v_trial_owner, 'Trial Owner', '919876543210', 'Director');
 
     -- 1. The owner role can never be granted by invitation.
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'x@invite.test', 'owner');
@@ -81,29 +88,31 @@ begin
     select * into v_row from public.create_member_invitation(v_tenant, v_other_owner, 'x@invite.test', 'employee');
     if v_row.outcome <> 'NOT_OWNER' then raise exception 'ASSERTION FAILED: non-owner could invite (%)', v_row.outcome; end if;
 
-    -- 3. A member of ANOTHER company can be invited (multi-membership) and carries their user id.
+    -- 3. One login, one company: the owner of ANOTHER company cannot be invited (any letter case).
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'REGR-other-owner@invite.test', 'employee');
-    if v_row.outcome <> 'CREATED' or v_row.user_id is distinct from v_other_owner then
-        raise exception 'ASSERTION FAILED: member of another company not invitable (%, %)', v_row.outcome, v_row.user_id;
+    if v_row.outcome <> 'HAS_ACCOUNT' then
+        raise exception 'ASSERTION FAILED: member of another company was invitable (%)', v_row.outcome;
     end if;
-    v_other_invitation_id := v_row.invitation_id;
+    if exists (select 1 from public.invitation_member where email = 'regr-other-owner@invite.test') then
+        raise exception 'ASSERTION FAILED: a refused HAS_ACCOUNT invitation left a row behind';
+    end if;
 
     -- 4. A member of THIS company cannot be invited again.
     select * into v_row from public.create_member_invitation(v_other_tenant, v_other_owner, 'regr-other-owner@invite.test', 'employee');
     if v_row.outcome <> 'ALREADY_MEMBER' then raise exception 'ASSERTION FAILED: same-tenant member invited (%)', v_row.outcome; end if;
 
-    -- 5. A valid invitation is recorded with the existing auth user id and the chosen role.
+    -- 5. A login that never finished setup (no profile) can be invited, carrying its auth user id.
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, '  Regr-Invitee@Invite.test ', 'employee');
     if v_row.outcome <> 'CREATED' or v_row.user_id is distinct from v_invitee then
         raise exception 'ASSERTION FAILED: invitation not created correctly (%, %)', v_row.outcome, v_row.user_id;
     end if;
     v_invitation_id := v_row.invitation_id;
 
-    -- 6. One open invitation per email PER COMPANY; a second company may invite the same person.
+    -- 6. One open invitation per email across ALL companies.
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'regr-invitee@invite.test', 'employee');
     if v_row.outcome <> 'ALREADY_INVITED' then raise exception 'ASSERTION FAILED: duplicate invite (%)', v_row.outcome; end if;
     select * into v_row from public.create_member_invitation(v_other_tenant, v_other_owner, 'regr-invitee@invite.test', 'employee');
-    if v_row.outcome <> 'CREATED' then raise exception 'ASSERTION FAILED: cross-tenant invite blocked (%)', v_row.outcome; end if;
+    if v_row.outcome <> 'ALREADY_INVITED' then raise exception 'ASSERTION FAILED: second company invited the same email (%)', v_row.outcome; end if;
 
     -- 7. A user cannot accept an invitation addressed to someone else.
     perform set_config('request.jwt.claims', json_build_object('sub', v_outsider, 'email', 'regr-outsider@invite.test', 'role', 'authenticated')::text, true);
@@ -115,7 +124,7 @@ begin
     end;
     if not v_failed then raise exception 'ASSERTION FAILED: outsider accepted someone else''s invitation'; end if;
 
-    -- 8. The invitee joins the OWNER'S tenant with the OWNER'S role; no tenant or subscription is created.
+    -- 8. The invitee joins the OWNER'S tenant as employee; no tenant or subscription is created.
     select count(*) into v_tenants_before from public.tenants;
     select count(*) into v_subscriptions_before from public.tenants_subscriptions;
 
@@ -136,49 +145,39 @@ begin
         raise exception 'ASSERTION FAILED: invitation not marked accepted';
     end if;
 
-    -- 9. Accepting twice is idempotent: same tenant, still exactly one membership there.
+    -- 9. Accepting twice is idempotent: same tenant, still exactly one membership.
     select * into v_row from public.accept_member_invitation(v_invitation_id, 'Ravi Invitee', '919876543210', 'Sales Executive');
     if v_row.tenant_id <> v_tenant or (select count(*) from public.tenant_memberships where user_id = v_invitee) <> 1 then
         raise exception 'ASSERTION FAILED: second accept was not idempotent';
     end if;
 
-    -- 10. One-click join of the second company: SAME user id, two memberships, one profile untouched.
-    select invitation_id into v_row from public.invitation_member
-    where tenant_id = v_other_tenant and email = 'regr-invitee@invite.test' and status = 'pending';
-    select * into v_row from public.join_invited_workspace(v_row.invitation_id);
-    if v_row.tenant_id <> v_other_tenant then raise exception 'ASSERTION FAILED: join went to wrong tenant'; end if;
-    if (select count(*) from public.tenant_memberships where user_id = v_invitee) <> 2 then
-        raise exception 'ASSERTION FAILED: expected 2 memberships for one user';
-    end if;
-    if (select count(*) from public.profiles where user_id = v_invitee) <> 1
-        or (select professional_role from public.profiles where user_id = v_invitee) <> 'Sales Executive' then
-        raise exception 'ASSERTION FAILED: join changed the shared profile';
-    end if;
+    -- 10. Now that the invitee has an account, another company cannot invite them.
+    select * into v_row from public.create_member_invitation(v_other_tenant, v_other_owner, 'regr-invitee@invite.test', 'employee');
+    if v_row.outcome <> 'HAS_ACCOUNT' then raise exception 'ASSERTION FAILED: employee of another company invitable (%)', v_row.outcome; end if;
 
-    -- 11. join_invited_workspace refuses someone with no profile (they must use the setup form).
-    perform set_config('request.jwt.claims', json_build_object('sub', v_outsider, 'email', 'regr-outsider@invite.test', 'role', 'authenticated')::text, true);
-    select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'regr-outsider@invite.test', 'employee');
-    v_outsider_invitation_id := v_row.invitation_id;
+    -- 11. The DB itself refuses a second membership for one person, whatever the role.
     v_failed := false;
     begin
-        perform public.join_invited_workspace(v_outsider_invitation_id);
-    exception when sqlstate 'P0001' then
+        insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_other_tenant, v_invitee, 'employee');
+    exception when unique_violation then
         v_failed := true;
     end;
-    if not v_failed then raise exception 'ASSERTION FAILED: profile-less user joined with one click'; end if;
+    if not v_failed then raise exception 'ASSERTION FAILED: person joined a second company'; end if;
 
-    -- 12. Decline: only the invitee's own pending invitation, and it leaves the owner's pending list.
-    if not public.decline_member_invitation(v_outsider_invitation_id) then
-        raise exception 'ASSERTION FAILED: decline did not apply';
-    end if;
-    if (select status from public.invitation_member where invitation_id = v_outsider_invitation_id) <> 'declined' then
-        raise exception 'ASSERTION FAILED: invitation not marked declined';
-    end if;
-    if public.decline_member_invitation(v_other_invitation_id) then
-        raise exception 'ASSERTION FAILED: declined someone else''s invitation';
+    -- 12. Owner onboarding by an employee cannot create a second company for them.
+    select count(*) into v_tenants_before from public.tenants;
+    v_failed := false;
+    begin
+        perform public.complete_owner_onboarding('Ravi Invitee', '919876543210', 'Ravi Realty', 'Sales Executive', 'Asia/Kolkata');
+    exception when unique_violation then
+        v_failed := true;
+    end;
+    if not v_failed or (select count(*) from public.tenants) <> v_tenants_before then
+        raise exception 'ASSERTION FAILED: an employee created their own company';
     end if;
 
     -- 13. An expired invitation cannot be accepted, and does not block a fresh one.
+    perform set_config('request.jwt.claims', json_build_object('sub', v_outsider, 'email', 'regr-outsider@invite.test', 'role', 'authenticated')::text, true);
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'regr-outsider@invite.test', 'employee');
     update public.invitation_member set expires_at = now() - interval '1 minute' where invitation_id = v_row.invitation_id;
     v_failed := false;
@@ -188,7 +187,7 @@ begin
         v_failed := true;
     end;
     if not v_failed then raise exception 'ASSERTION FAILED: expired invitation accepted'; end if;
-    select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'regr-outsider@invite.test', 'employee');
+    select * into v_row from public.create_member_invitation(v_other_tenant, v_other_owner, 'regr-outsider@invite.test', 'employee');
     if v_row.outcome <> 'CREATED' then raise exception 'ASSERTION FAILED: expired invite blocked a new one (%)', v_row.outcome; end if;
 
     -- 14. The table can't hold an owner-role invitation even when written directly.
@@ -201,50 +200,19 @@ begin
     end;
     if not v_failed then raise exception 'ASSERTION FAILED: owner-role row inserted directly'; end if;
 
-    -- 15. Create new company: an employee-only person gets one owned company; a second call returns it.
-    perform set_config('request.jwt.claims', json_build_object('sub', v_invitee, 'email', 'regr-invitee@invite.test', 'role', 'authenticated')::text, true);
-    select count(*) into v_tenants_before from public.tenants;
-    select * into v_row from public.create_owned_workspace('Ravi Realty', 'Asia/Kolkata');
-    if v_row.subscription_status <> 'trialing'
-        or not exists (select 1 from public.tenant_memberships where tenant_id = v_row.tenant_id and user_id = v_invitee and membership_role = 'owner')
-    then
-        raise exception 'ASSERTION FAILED: create_owned_workspace did not make the caller owner';
+    -- 15. Removal deletes only that membership and that company's invitation rows, keeps the
+    --     profile, and writes an audit row. The owner can never be removed.
+    if public.remove_tenant_member(v_tenant, v_owner, v_owner) then
+        raise exception 'ASSERTION FAILED: the owner removed themselves';
     end if;
-    v_first_owned := v_row.tenant_id;
-    select * into v_row from public.create_owned_workspace('Ravi Realty Two', 'Asia/Kolkata');
-    if v_row.tenant_id <> v_first_owned or (select count(*) from public.tenants) <> v_tenants_before + 1 then
-        raise exception 'ASSERTION FAILED: a second owned company was created';
-    end if;
-
-    -- 16. The DB itself refuses a second owner membership for one person.
-    v_failed := false;
-    begin
-        insert into public.tenant_memberships (tenant_id, user_id, membership_role) values (v_tenant, v_other_owner, 'owner');
-    exception when unique_violation then
-        v_failed := true;
-    end;
-    if not v_failed then raise exception 'ASSERTION FAILED: person owns two tenants'; end if;
-
-    -- 17. First-time onboarding by someone who is only an employee elsewhere must not return the
-    --     employer's tenant as their own (it returns the tenant they OWN, from step 15).
-    select * into v_row from public.complete_owner_onboarding('Ravi Invitee', '919876543210', 'Ignored Co', 'Sales Executive', 'Asia/Kolkata');
-    if v_row.tenant_id in (v_tenant, v_other_tenant) then
-        raise exception 'ASSERTION FAILED: onboarding returned an employer tenant';
-    end if;
-
-    -- 18. Removal from one company keeps the profile and the other memberships, deletes that
-    --     company's invitation rows, and writes an audit row.
     if not public.remove_tenant_member(v_tenant, v_owner, v_invitee) then
         raise exception 'ASSERTION FAILED: removal did not apply';
     end if;
-    if exists (select 1 from public.tenant_memberships where tenant_id = v_tenant and user_id = v_invitee) then
+    if exists (select 1 from public.tenant_memberships where user_id = v_invitee) then
         raise exception 'ASSERTION FAILED: membership still present after removal';
     end if;
-    if (select count(*) from public.tenant_memberships where user_id = v_invitee) <> 2 then
-        raise exception 'ASSERTION FAILED: removal touched other companies';
-    end if;
     if not exists (select 1 from public.profiles where user_id = v_invitee) then
-        raise exception 'ASSERTION FAILED: removal deleted the shared profile';
+        raise exception 'ASSERTION FAILED: removal deleted the profile';
     end if;
     if exists (select 1 from public.invitation_member where tenant_id = v_tenant and email = 'regr-invitee@invite.test') then
         raise exception 'ASSERTION FAILED: removed member''s invitation rows remain';
@@ -256,19 +224,18 @@ begin
         raise exception 'ASSERTION FAILED: removal audit row missing';
     end if;
 
-    -- 19. The removed person can be invited back.
+    -- 16. A removed person still has an account, so no company can invite them again.
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'regr-invitee@invite.test', 'employee');
-    if v_row.outcome <> 'CREATED' then raise exception 'ASSERTION FAILED: removed member cannot be re-invited (%)', v_row.outcome; end if;
+    if v_row.outcome <> 'HAS_ACCOUNT' then raise exception 'ASSERTION FAILED: removed member re-invitable (%)', v_row.outcome; end if;
 
-    -- 20. Invitations grant 'employee' only: 'admin' (and 'owner') is refused by the RPC itself.
+    -- 17. Invitations grant 'employee' only: 'admin' is refused by the RPC itself.
     select * into v_row from public.create_member_invitation(v_tenant, v_owner, 'admin-target@invite.test', 'admin');
     if v_row.outcome <> 'INVALID_ROLE' then raise exception 'ASSERTION FAILED: admin invitation not refused (%)', v_row.outcome; end if;
     if exists (select 1 from public.invitation_member where email = 'admin-target@invite.test') then
         raise exception 'ASSERTION FAILED: a refused admin invitation left a row behind';
     end if;
 
-    -- 21. ...and the table cannot hold one even when written directly (it could never be accepted:
-    --     tenant_memberships only allows owner and employee).
+    -- 18. ...and the table cannot hold one even when written directly.
     v_failed := false;
     begin
         insert into public.invitation_member (tenant_id, email, membership_role, invited_by)
@@ -278,17 +245,19 @@ begin
     end;
     if not v_failed then raise exception 'ASSERTION FAILED: admin-role row inserted directly'; end if;
 
-    -- 22. A company still on its free trial cannot invite (the invitee's own company from step 15).
-    select * into v_row from public.create_member_invitation(v_first_owned, v_invitee, 'trial-target@invite.test', 'employee');
+    -- 19. A company still on its free trial cannot invite.
+    select * into v_row from public.create_member_invitation(v_trial_tenant, v_trial_owner, 'trial-target@invite.test', 'employee');
     if v_row.outcome <> 'PLAN_REQUIRED' then raise exception 'ASSERTION FAILED: trial company could invite (%)', v_row.outcome; end if;
 
-    -- 23. A paid company with no free seat cannot invite: shrink 'Other Co' to exactly its current members.
+    -- 20. A paid company with no free seat cannot invite: shrink 'Other Co' to exactly its seats in use
+    --     (active members plus the pending invitation from step 13).
     update public.billing_subscriptions
     set seat_quantity = (select count(*) from public.tenant_memberships where tenant_id = v_other_tenant and membership_status = 'active')
+        + (select count(*) from public.invitation_member where tenant_id = v_other_tenant and status = 'pending' and expires_at > now())
     where billing_subscription_id = v_other_sub;
     select * into v_row from public.create_member_invitation(v_other_tenant, v_other_owner, 'full-target@invite.test', 'employee');
     if v_row.outcome <> 'SEAT_LIMIT_REACHED' then raise exception 'ASSERTION FAILED: invited with no free seat (%)', v_row.outcome; end if;
 
-    raise exception 'MEMBER_INVITATION_REGRESSION_PASSED (23 checks; all fixtures rolled back)';
+    raise exception 'MEMBER_INVITATION_REGRESSION_PASSED (20 checks; all fixtures rolled back)';
 end;
 $$;

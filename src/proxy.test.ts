@@ -16,7 +16,6 @@ const SESSION = "sb-project-auth-token";
 const signedIn = {
   [`${SESSION}.0`]: "chunk0",
   [`${SESSION}.1`]: "chunk1",
-  agentz_active_tenant: "10000000-0000-4000-8000-000000000001",
 };
 
 function requestTo(path: string, cookies: Record<string, string>): NextRequest {
@@ -55,7 +54,7 @@ describe("proxy idle enforcement", () => {
     expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(response.headers.get("location")).toBe("https://crm.example.com/login");
     const setCookie = response.headers.get("set-cookie") ?? "";
-    for (const name of [`${SESSION}\\.0`, `${SESSION}\\.1`, "agentz_last_activity", "agentz_active_tenant"]) {
+    for (const name of [`${SESSION}\\.0`, `${SESSION}\\.1`, "agentz_last_activity"]) {
       expect(setCookie).toMatch(new RegExp(`${name}=;[^,]*Max-Age=0`, "i"));
     }
     expect(response.headers.get("cache-control")).toContain("no-store");
@@ -66,7 +65,6 @@ describe("proxy idle enforcement", () => {
     const response = await proxy(requestTo("/api/leads", signedIn));
     expect(response.headers.get("location")).toBeNull();
     expect(forwardedCookies(response)).not.toContain("sb-");
-    expect(forwardedCookies(response)).not.toContain("agentz_active_tenant");
     expect(response.headers.get("set-cookie")).toMatch(/sb-project-auth-token\.0=;/);
   });
 

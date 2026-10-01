@@ -496,7 +496,9 @@ function InviteMembersCard({
         {!sendError && !isLoading && membershipRole === "employee" ? (
           <span className="mvp-invite-card__footer-note">Only the Owner can invite members</span>
         ) : null}
-        {!sendError && !isLoading && membershipRole === "owner" && seats ? (
+        {/* PAUSED while payments are not working: only show the seat count for a paid plan, not the
+            "Inviting members needs a paid plan" note. Restore by removing `seats.isPaid &&` below. */}
+        {!sendError && !isLoading && membershipRole === "owner" && seats && seats.isPaid ? (
           <span className="mvp-invite-card__footer-note">
             {seats.isPaid && seats.paidSeats !== null ? (
               `${seats.usedSeats} of ${seats.paidSeats} seats used`

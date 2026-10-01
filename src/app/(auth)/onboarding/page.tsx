@@ -6,7 +6,6 @@ import { InvitationWithdrawnClient } from "@/features/auth/invitation-withdrawn-
 import { findPendingInvitationForUser, findWithdrawnInvitationForUser } from "@/lib/server/member-invitation-service";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState } from "@/lib/server/auth/login-state";
-import { readActiveTenantHint } from "@/lib/server/auth/active-tenant";
 import { evaluateCrmAccess } from "@/lib/server/auth/access";
 
 export const metadata: Metadata = {
@@ -25,7 +24,7 @@ export default async function OnboardingPage() {
     redirect("/login");
   }
 
-  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
+  const state = await resolveLoginState(session.userId);
 
   if (state.status === "needs_onboarding") {
     // An invited member joins the inviting company's existing tenant with the role the owner
@@ -48,12 +47,8 @@ export default async function OnboardingPage() {
     return <OnboardingFormClient />;
   }
 
-  // Already has a profile: further companies are joined or created from /workspaces, never here.
-  if (state.status === "needs_workspace_selection") {
-    redirect("/workspaces");
-  }
-
-  if (state.status === "integrity_error") {
+  // Already has an account (removed from their company, or a record problem): never a second company.
+  if (state.status === "no_company" || state.status === "integrity_error") {
     redirect("/billing");
   }
 

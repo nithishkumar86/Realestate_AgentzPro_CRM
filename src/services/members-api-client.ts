@@ -36,6 +36,7 @@ export type InvitationSendStatus =
   | "sent"
   | "saved_existing_account"
   | "already_member"
+  | "has_account"
   | "already_invited"
   | "invalid_email"
   | "plan_required"
