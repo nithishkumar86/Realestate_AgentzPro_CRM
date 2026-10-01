@@ -1,8 +1,6 @@
 import "server-only";
 
 import { AppError } from "@/lib/server/app-error";
-import { WORKSPACE_CHANGED_CODE } from "@/lib/active-tenant-header";
-import { readActiveTenantHint, readClientTenantClaim } from "@/lib/server/auth/active-tenant";
 import { verifySession } from "@/lib/server/auth/session";
 import { resolveLoginState, type LoginState } from "@/lib/server/auth/login-state";
 
@@ -54,21 +52,6 @@ export function evaluateCrmAccess(state: LoginState): boolean {
 }
 
 /**
- * The active company is one cookie shared by every tab of this browser. A page rendered for
- * company A sends A's id with each request; if another tab has since switched to B, answering would
- * show or change B's data under A's name. Refuse instead, so the page can reload into B.
- */
-async function assertClientTenantMatches(activeTenantId: string): Promise<void> {
-  const claimed = await readClientTenantClaim();
-  if (claimed !== null && claimed !== activeTenantId.toLowerCase()) {
-    throw new AppError("You switched company in another tab. This page will reload.", {
-      status: 409,
-      code: WORKSPACE_CHANGED_CODE,
-    });
-  }
-}
-
-/**
  * Composes session verification, login-state resolution, and the access
  * predicate into the one check every tenant-scoped server operation must
  * pass. Throws a typed AppError rather than returning a boolean so callers
@@ -80,9 +63,7 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
     throw new AppError("Authentication is required.", { status: 401, code: "UNAUTHENTICATED" });
   }
 
-  // The active-tenant cookie only picks among this user's own memberships; resolveLoginState
-  // re-verifies it against tenant_memberships on every call.
-  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
+  const state = await resolveLoginState(session.userId);
 
   if (state.status === "needs_onboarding") {
     throw new AppError("Onboarding must be completed before accessing the CRM.", {
@@ -91,10 +72,10 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
     });
   }
 
-  if (state.status === "needs_workspace_selection") {
-    throw new AppError("Choose a company to continue.", {
+  if (state.status === "no_company") {
+    throw new AppError("You are no longer a member of a company.", {
       status: 403,
-      code: "WORKSPACE_SELECTION_REQUIRED",
+      code: "NO_COMPANY",
     });
   }
 
@@ -104,8 +85,6 @@ export async function requireCrmAccess(): Promise<CrmAccessGranted> {
       code: "ACCOUNT_INTEGRITY_ERROR",
     });
   }
-
-  await assertClientTenantMatches(state.tenantId);
 
   if (!evaluateCrmAccess(state)) {
     throw new AppError("CRM access is not currently available for this account.", {
@@ -139,9 +118,8 @@ export interface BillingAccess {
  * ended is exactly the company that needs to pay. So this does not call evaluateCrmAccess(); it only
  * requires a verified session and an active membership in an active tenant.
  *
- * The tenant is the active tenant resolved by resolveLoginState (the cookie hint re-verified against
- * this user's own memberships), never anything from the request. With many memberships per user,
- * that is what keeps "pay for company A" from ever touching company B.
+ * The tenant is the caller's own (single) company resolved by resolveLoginState, never anything from
+ * the request.
  */
 export async function requireBillingMember(): Promise<BillingAccess> {
   const session = await verifySession();
@@ -149,18 +127,17 @@ export async function requireBillingMember(): Promise<BillingAccess> {
     throw new AppError("Authentication is required.", { status: 401, code: "UNAUTHENTICATED" });
   }
 
-  const state = await resolveLoginState(session.userId, await readActiveTenantHint());
+  const state = await resolveLoginState(session.userId);
 
   if (state.status === "needs_onboarding") {
     throw new AppError("Onboarding must be completed first.", { status: 403, code: "ONBOARDING_REQUIRED" });
   }
-  if (state.status === "needs_workspace_selection") {
-    throw new AppError("Choose a company to continue.", { status: 403, code: "WORKSPACE_SELECTION_REQUIRED" });
+  if (state.status === "no_company") {
+    throw new AppError("You are no longer a member of a company.", { status: 403, code: "NO_COMPANY" });
   }
   if (state.status === "integrity_error") {
     throw new AppError("Account access could not be verified.", { status: 403, code: "ACCOUNT_INTEGRITY_ERROR" });
   }
-  await assertClientTenantMatches(state.tenantId);
   if (state.tenantStatus !== "active" || state.membershipStatus !== "active") {
     throw new AppError("Billing is not available for this account.", { status: 403, code: "BILLING_NOT_ALLOWED" });
   }

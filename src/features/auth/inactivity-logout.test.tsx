@@ -44,7 +44,7 @@ it("keeps one tracker through Strict Mode and route navigation, then redirects t
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it.each(["/billing", "/onboarding", "/workspaces"])("runs the idle logout on the signed-in page %s", async (pathname) => {
+it.each(["/billing", "/onboarding"])("runs the idle logout on the signed-in page %s", async (pathname) => {
   navigation.pathname = pathname;
   render(<SignedInInactivityLogout />);
   await act(() => vi.advanceTimersByTimeAsync(INACTIVITY_TIMEOUT_MS));

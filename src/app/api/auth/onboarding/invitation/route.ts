@@ -1,6 +1,5 @@
 import { createErrorResponse, createSuccessResponse } from "@/app/api/meta/_lib/route-utils";
 import { AppError } from "@/lib/server/app-error";
-import { setActiveTenant } from "@/lib/server/auth/active-tenant";
 import { assertSameOrigin } from "@/lib/server/auth/same-origin";
 import { verifySession } from "@/lib/server/auth/session";
 import { acceptMemberInvitation } from "@/lib/server/member-invitation-service";
@@ -21,10 +20,7 @@ export async function POST(request: Request): Promise<Response> {
 
     const rawBody = await request.json().catch(() => null);
     const result = await acceptMemberInvitation(rawBody);
-    // The person may already hold invitations from other companies; open the one they just joined.
-    const response = createSuccessResponse(result, 201);
-    setActiveTenant(response, result.tenantId);
-    return response;
+    return createSuccessResponse(result, 201);
   } catch (error) {
     return createErrorResponse(error, request);
   }

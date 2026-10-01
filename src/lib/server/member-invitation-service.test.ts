@@ -35,9 +35,6 @@ vi.mock("@/lib/server/supabase-admin", () => ({
   }),
 }));
 
-const sendExistingAccountInvitationEmail = vi.fn();
-vi.mock("@/lib/server/workspace-invitation-email", () => ({ sendExistingAccountInvitationEmail }));
-
 vi.mock("@/lib/server/auth/supabase-auth-client", () => ({
   createAuthClient: async () => ({ rpc: authRpc }),
 }));
@@ -48,8 +45,6 @@ const {
   findWithdrawnInvitationForUser,
   findWithdrawnInvitationById,
   removeTenantMember,
-  joinInvitedWorkspace,
-  declineInvitation,
 } = await import("@/lib/server/member-invitation-service");
 
 const OWNER = {
@@ -114,6 +109,20 @@ describe("sendMemberInvitations", () => {
     expect(adminRpc).not.toHaveBeenCalled();
   });
 
+  it("blocks an email that already has an account in any organization, without sending email", async () => {
+    adminRpc.mockResolvedValue({ data: [{ outcome: "HAS_ACCOUNT", invitation_id: null, user_id: "other-company-user" }], error: null });
+
+    const [only] = await sendMemberInvitations(OWNER, { invitations: [{ email: "taken@b.co", role: "employee" }] }, REDIRECT);
+
+    expect(only).toEqual({
+      email: "taken@b.co",
+      status: "has_account",
+      message: "This person already belongs to an organization. One account can belong to only one organization.",
+    });
+    expect(inviteUserByEmail).not.toHaveBeenCalled();
+    expect(tableDeleteEq).not.toHaveBeenCalled();
+  });
+
   it("reports existing members and duplicate invitations without sending email", async () => {
     adminRpc
       .mockResolvedValueOnce({ data: [{ outcome: "ALREADY_MEMBER", invitation_id: null, user_id: "u" }], error: null })
@@ -140,26 +149,9 @@ describe("sendMemberInvitations", () => {
     expect(tableDeleteEq).toHaveBeenCalledWith("invitation_id", "inv-1");
   });
 
-  it("emails an existing account itself, naming the inviting company and linking to sign-in", async () => {
+  it("keeps the invitation for a login that never finished setup (Supabase will not email it)", async () => {
     adminRpc.mockResolvedValue(created("existing-user"));
     inviteUserByEmail.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "email_exists" } });
-    sendExistingAccountInvitationEmail.mockResolvedValue(true);
-
-    const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "a@b.co", role: "employee" }] }, REDIRECT);
-
-    expect(sendExistingAccountInvitationEmail).toHaveBeenCalledWith({
-      email: "a@b.co",
-      companyName: OWNER.tenantName,
-      loginUrl: new URL("/login", REDIRECT).toString(),
-    });
-    expect(results[0].status).toBe("sent");
-    expect(tableDeleteEq).not.toHaveBeenCalled();
-  });
-
-  it("keeps the invitation for an existing account when its email cannot be sent", async () => {
-    adminRpc.mockResolvedValue(created("existing-user"));
-    inviteUserByEmail.mockResolvedValue({ data: { user: null }, error: { status: 422, code: "email_exists" } });
-    sendExistingAccountInvitationEmail.mockResolvedValue(false);
 
     const results = await sendMemberInvitations(OWNER, { invitations: [{ email: "a@b.co", role: "employee" }] }, REDIRECT);
 
@@ -259,49 +251,6 @@ describe("acceptMemberInvitation", () => {
       details: { fieldErrors: { fullName: expect.any(String) } },
     });
     expect(authRpc).not.toHaveBeenCalled();
-  });
-});
-
-describe("joinInvitedWorkspace", () => {
-  beforeEach(() => vi.clearAllMocks());
-  const INVITATION_ID = "20000000-0000-4000-8000-000000000002";
-
-  it("sends only the invitation id; the tenant and role come back from the invitation", async () => {
-    authRpc.mockResolvedValue({ data: [{ tenant_id: "tenant-b", membership_role: "employee" }], error: null });
-
-    await expect(joinInvitedWorkspace(INVITATION_ID)).resolves.toEqual({ tenantId: "tenant-b", role: "employee" });
-    expect(authRpc).toHaveBeenCalledWith("join_invited_workspace", { p_invitation_id: INVITATION_ID });
-  });
-
-  it("maps a missing, expired, or someone else's invitation to a 404", async () => {
-    authRpc.mockResolvedValue({ data: null, error: { code: "P0002" } });
-    await expect(joinInvitedWorkspace(INVITATION_ID)).rejects.toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
-  });
-
-  it("sends a person without a profile back to setup", async () => {
-    authRpc.mockResolvedValue({ data: null, error: { code: "P0001" } });
-    await expect(joinInvitedWorkspace(INVITATION_ID)).rejects.toMatchObject({ status: 409, code: "ONBOARDING_REQUIRED" });
-  });
-
-  it("rejects a malformed id without calling the database", async () => {
-    await expect(joinInvitedWorkspace("inv-1")).rejects.toMatchObject({ status: 404 });
-    expect(authRpc).not.toHaveBeenCalled();
-  });
-});
-
-describe("declineInvitation", () => {
-  beforeEach(() => vi.clearAllMocks());
-  const INVITATION_ID = "20000000-0000-4000-8000-000000000003";
-
-  it("declines the caller's own pending invitation", async () => {
-    authRpc.mockResolvedValue({ data: true, error: null });
-    await expect(declineInvitation(INVITATION_ID)).resolves.toBeUndefined();
-    expect(authRpc).toHaveBeenCalledWith("decline_member_invitation", { p_invitation_id: INVITATION_ID });
-  });
-
-  it("reports 404 when nothing was declined", async () => {
-    authRpc.mockResolvedValue({ data: false, error: null });
-    await expect(declineInvitation(INVITATION_ID)).rejects.toMatchObject({ status: 404, code: "INVITATION_NOT_FOUND" });
   });
 });
 
@@ -414,7 +363,7 @@ describe("seat and plan limits", () => {
     expect(inviteUserByEmail).not.toHaveBeenCalled();
   });
 
-  it("maps the join-time plan and seat checks on both accept paths", async () => {
+  it("maps the join-time plan and seat checks on accept", async () => {
     const VALID = {
       invitationId: "20000000-0000-4000-8000-000000000003",
       fullName: "Ravi",
@@ -424,10 +373,8 @@ describe("seat and plan limits", () => {
 
     authRpc.mockResolvedValue({ data: null, error: { code: "BL001" } });
     await expect(acceptMemberInvitation(VALID)).rejects.toMatchObject({ status: 409, code: "COMPANY_PLAN_REQUIRED" });
-    await expect(joinInvitedWorkspace(VALID.invitationId)).rejects.toMatchObject({ status: 409, code: "COMPANY_PLAN_REQUIRED" });
 
     authRpc.mockResolvedValue({ data: null, error: { code: "BL002" } });
     await expect(acceptMemberInvitation(VALID)).rejects.toMatchObject({ status: 409, code: "COMPANY_SEAT_LIMIT_REACHED" });
-    await expect(joinInvitedWorkspace(VALID.invitationId)).rejects.toMatchObject({ status: 409, code: "COMPANY_SEAT_LIMIT_REACHED" });
   });
 });

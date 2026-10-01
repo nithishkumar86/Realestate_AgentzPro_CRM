@@ -2,7 +2,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv } from "@/lib/server/env";
 import { AUTH_COOKIE_OPTIONS } from "@/lib/server/auth/cookie-options";
-import { ACTIVE_TENANT_COOKIE, clearActiveTenant } from "@/lib/server/auth/active-tenant";
 import { clearSessionActivity, IDLE_ACTIVITY_COOKIE, isSessionActive } from "@/lib/server/auth/idle-session";
 
 /**
@@ -111,7 +110,7 @@ async function endIdleSession(request: NextRequest, revoke: () => Promise<unknow
   }
 
   const sessionCookies = request.cookies.getAll().map(({ name }) => name).filter(isSupabaseAuthCookie);
-  for (const name of [...sessionCookies, IDLE_ACTIVITY_COOKIE, ACTIVE_TENANT_COOKIE]) {
+  for (const name of [...sessionCookies, IDLE_ACTIVITY_COOKIE]) {
     request.cookies.delete(name);
   }
 
@@ -121,7 +120,6 @@ async function endIdleSession(request: NextRequest, revoke: () => Promise<unknow
     response.cookies.set(name, "", { ...AUTH_COOKIE_OPTIONS, maxAge: 0 });
   }
   clearSessionActivity(response);
-  clearActiveTenant(response);
   response.headers.set("Cache-Control", "private, no-cache, no-store, must-revalidate, max-age=0");
   return response;
 }

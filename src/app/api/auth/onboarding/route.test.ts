@@ -37,7 +37,7 @@ it("creates the first account and company for a brand-new person", async () => {
   expect(mocks.completeOwnerOnboarding).toHaveBeenCalledTimes(1);
 });
 
-it.each(["ready", "needs_workspace_selection"])("refuses someone whose account is already set up (%s) and creates nothing", async (status) => {
+it.each(["ready", "no_company"])("refuses someone whose account is already set up (%s) and creates nothing", async (status) => {
   mocks.resolveLoginState.mockResolvedValue({ status });
   const response = await POST(request());
   expect(response.status).toBe(409);

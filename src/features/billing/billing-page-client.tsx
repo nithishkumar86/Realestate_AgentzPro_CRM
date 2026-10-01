@@ -433,11 +433,9 @@ export function BillingPageClient({ overview, embedded = false, onChanged }: Rea
         </section>
       ) : null}
 
-      {embedded ? null : (
+      {embedded || !overview.hasCrmAccess ? null : (
         <p className="auth-card__subtitle billing-links">
-          {overview.hasCrmAccess ? <Link href="/leads">Back to CRM</Link> : null}
-          {/* Access is decided per company: one company's billing never locks the others. */}
-          <Link href="/workspaces">Switch company</Link>
+          <Link href="/leads">Back to CRM</Link>
         </p>
       )}
     </div>
