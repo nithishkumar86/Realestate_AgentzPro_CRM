@@ -29,7 +29,7 @@ import { BillingOwnerOnlyError, getBillingOverview, getInvoices, type BillingInv
 import {
   cancelInvitation,
   getTenantMembers,
-  removeTenantMember,
+  setMemberAccess,
   sendInvitations,
   type InvitableRole,
   type InvitationSendResult,
@@ -319,7 +319,7 @@ function MembersSection({ fullName, onOpenBilling }: Readonly<{ fullName: string
             fullName={fullName}
             membershipRole={membershipRole}
             state={membersState}
-            onMemberRemoved={refresh}
+            onMemberAccessChanged={refresh}
             onRetry={retry}
           />
         </div>
@@ -635,21 +635,21 @@ function TeamMembersPanel({
   fullName,
   membershipRole,
   state,
-  onMemberRemoved,
+  onMemberAccessChanged,
   onRetry,
 }: Readonly<{
   fullName: string;
   membershipRole: MembershipRole | null;
   state: MembersState;
-  onMemberRemoved: () => void;
+  onMemberAccessChanged: () => void;
   onRetry: () => void;
 }>) {
   const filterRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<MembershipRole | "all">("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
-  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
-  const [removeMemberError, setRemoveMemberError] = useState<string | null>(null);
+  const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null);
+  const [memberAccessError, setMemberAccessError] = useState<string | null>(null);
 
   // "/" jumps to the filter box, matching the keyboard hint shown inside it.
   useEffect(() => {
@@ -674,6 +674,7 @@ function TeamMembersPanel({
           name: member.fullName || (member.userId === state.overview.currentUserId ? fullName : member.email),
           email: member.email,
           role: member.role,
+          blocked: member.status === "blocked",
           joinedAt: member.joinedAt,
         }))
       : [];
@@ -691,23 +692,26 @@ function TeamMembersPanel({
       return sortOrder === "newest" ? -difference : difference;
     });
 
-  async function handleRemoveMember(memberUserId: string): Promise<void> {
-    const confirmed = window.confirm(
-      "Are you sure you want to remove this member? They will need to be invited again to rejoin.",
-    );
-    if (!confirmed) {
-      return;
+  // Block and Enable only change the member's status; nothing is deleted, so either can be undone.
+  async function handleMemberAccess(memberUserId: string, block: boolean): Promise<void> {
+    if (block) {
+      const confirmed = window.confirm(
+        "Block this member? They will lose access to the CRM until you enable them again.",
+      );
+      if (!confirmed) {
+        return;
+      }
     }
 
-    setRemoveMemberError(null);
-    setRemovingMemberId(memberUserId);
+    setMemberAccessError(null);
+    setUpdatingMemberId(memberUserId);
     try {
-      await removeTenantMember(memberUserId);
-      onMemberRemoved();
+      await setMemberAccess(memberUserId, block ? "blocked" : "active");
+      onMemberAccessChanged();
     } catch (error) {
-      setRemoveMemberError(error instanceof Error ? error.message : "The member could not be removed.");
+      setMemberAccessError(error instanceof Error ? error.message : "The member's access could not be changed.");
     } finally {
-      setRemovingMemberId(null);
+      setUpdatingMemberId(null);
     }
   }
 
@@ -747,10 +751,10 @@ function TeamMembersPanel({
         </div>
       </div>
 
-      {removeMemberError ? (
+      {memberAccessError ? (
         <div className="mvp-members__state mvp-members__state--error" role="alert">
           <CircleAlert size={20} aria-hidden="true" />
-          <span>{removeMemberError}</span>
+          <span>{memberAccessError}</span>
         </div>
       ) : null}
 
@@ -762,7 +766,7 @@ function TeamMembersPanel({
               <th scope="col">Name</th>
               <th scope="col">Email</th>
               <th scope="col">Role</th>
-              <th scope="col">Remove</th>
+              <th scope="col">Access</th>
             </tr>
           </thead>
           <tbody>
@@ -776,16 +780,26 @@ function TeamMembersPanel({
                   </div>
                 </td>
                 <td className="mvp-members__email">{member.email}</td>
-                <td className="mvp-members__role">{ROLE_LABELS[member.role]}</td>
+                <td className="mvp-members__role">
+                  {ROLE_LABELS[member.role]}
+                  {member.blocked ? <span className="mvp-members__blocked-badge">Blocked</span> : null}
+                </td>
                 <td className="mvp-members__remove-cell">
                   {membershipRole === "owner" && member.role === "employee" ? (
                     <button
                       type="button"
-                      className="mvp-members__remove"
-                      disabled={removingMemberId === member.key}
-                      onClick={() => void handleRemoveMember(member.key)}
+                      className={member.blocked ? "mvp-members__enable" : "mvp-members__remove"}
+                      aria-label={`${member.blocked ? "Enable" : "Block"} ${member.name}`}
+                      disabled={updatingMemberId === member.key}
+                      onClick={() => void handleMemberAccess(member.key, !member.blocked)}
                     >
-                      {removingMemberId === member.key ? "Removing…" : "Remove"}
+                      {updatingMemberId === member.key
+                        ? member.blocked
+                          ? "Enabling…"
+                          : "Blocking…"
+                        : member.blocked
+                          ? "Enable"
+                          : "Block"}
                     </button>
                   ) : null}
                 </td>

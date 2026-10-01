@@ -44,7 +44,7 @@ const {
   acceptMemberInvitation,
   findWithdrawnInvitationForUser,
   findWithdrawnInvitationById,
-  removeTenantMember,
+  setTenantMemberAccess,
 } = await import("@/lib/server/member-invitation-service");
 
 const OWNER = {
@@ -166,42 +166,58 @@ describe("sendMemberInvitations", () => {
   });
 });
 
-describe("removeTenantMember", () => {
+describe("setTenantMemberAccess", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("refuses non-owners before touching the database", async () => {
-    await expect(removeTenantMember({ ...OWNER, membershipRole: "employee" }, "member-1")).rejects.toMatchObject({
-      status: 403,
-      code: "MEMBER_REMOVE_NOT_ALLOWED",
-    });
+    await expect(
+      setTenantMemberAccess({ ...OWNER, membershipRole: "employee" }, "member-1", "blocked"),
+    ).rejects.toMatchObject({ status: 403, code: "MEMBER_ACCESS_NOT_ALLOWED" });
     expect(adminRpc).not.toHaveBeenCalled();
   });
 
-  it("passes only session-derived tenant and owner ids with the selected member id", async () => {
-    adminRpc.mockResolvedValue({ data: true, error: null });
+  it.each(["blocked", "active"] as const)(
+    "passes only session-derived tenant and owner ids with the member id and status %s",
+    async (membershipStatus) => {
+      adminRpc.mockResolvedValue({ data: "UPDATED", error: null });
 
-    await expect(removeTenantMember(OWNER, "member-1")).resolves.toBeUndefined();
-    expect(adminRpc).toHaveBeenCalledWith("remove_tenant_member", {
-      p_tenant_id: "tenant-1",
-      p_owner_user_id: "owner-1",
-      p_member_user_id: "member-1",
-    });
-  });
+      await expect(setTenantMemberAccess(OWNER, "member-1", membershipStatus)).resolves.toBeUndefined();
+      expect(adminRpc).toHaveBeenCalledWith("set_tenant_member_access", {
+        p_tenant_id: "tenant-1",
+        p_owner_user_id: "owner-1",
+        p_member_user_id: "member-1",
+        p_membership_status: membershipStatus,
+      });
+    },
+  );
 
-  it("does not report success when no employee membership was removed", async () => {
-    adminRpc.mockResolvedValue({ data: false, error: null });
-    await expect(removeTenantMember(OWNER, "member-1")).rejects.toMatchObject({
+  it("reports a missing employee as not found", async () => {
+    adminRpc.mockResolvedValue({ data: "NOT_FOUND", error: null });
+    await expect(setTenantMemberAccess(OWNER, "member-1", "blocked")).rejects.toMatchObject({
       status: 404,
       code: "MEMBER_NOT_FOUND",
     });
   });
 
+  it("refuses to enable a member when no paid seat is free", async () => {
+    adminRpc.mockResolvedValue({ data: "NO_SEAT", error: null });
+    await expect(setTenantMemberAccess(OWNER, "member-1", "active")).rejects.toMatchObject({
+      status: 409,
+      code: "SEAT_LIMIT_REACHED",
+    });
+  });
+
   it("maps a database authorization failure to forbidden", async () => {
     adminRpc.mockResolvedValue({ data: null, error: { code: "42501" } });
-    await expect(removeTenantMember(OWNER, "member-1")).rejects.toMatchObject({
+    await expect(setTenantMemberAccess(OWNER, "member-1", "blocked")).rejects.toMatchObject({
       status: 403,
-      code: "MEMBER_REMOVE_NOT_ALLOWED",
+      code: "MEMBER_ACCESS_NOT_ALLOWED",
     });
+  });
+
+  it("never reports success for an unexpected database answer", async () => {
+    adminRpc.mockResolvedValue({ data: "INVALID_STATUS", error: null });
+    await expect(setTenantMemberAccess(OWNER, "member-1", "blocked")).rejects.toMatchObject({ status: 500 });
   });
 });
 

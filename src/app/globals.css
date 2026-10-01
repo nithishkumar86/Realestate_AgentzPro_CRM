@@ -1870,7 +1870,8 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   text-align: left;
 }
 
-.mvp-members__remove {
+.mvp-members__remove,
+.mvp-members__enable {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1885,9 +1886,25 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
   cursor: pointer;
 }
 
+.mvp-members__enable { color: var(--success); }
+
 .mvp-members__remove:hover,
-.mvp-members__remove:focus-visible { background: var(--surface-muted); }
-.mvp-members__remove:disabled { opacity: .6; cursor: default; }
+.mvp-members__remove:focus-visible,
+.mvp-members__enable:hover,
+.mvp-members__enable:focus-visible { background: var(--surface-muted); }
+.mvp-members__remove:disabled,
+.mvp-members__enable:disabled { opacity: .6; cursor: default; }
+
+.mvp-members__blocked-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: .75rem;
+  font-weight: 700;
+}
 
 /* Pending invitations table: header and rows share one column template so every cell lines up. */
 .mvp-invites__header,

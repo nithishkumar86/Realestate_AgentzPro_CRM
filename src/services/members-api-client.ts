@@ -104,15 +104,18 @@ export async function cancelInvitation(invitationId: string): Promise<void> {
   }
 }
 
-export async function removeTenantMember(memberUserId: string): Promise<void> {
+export type MemberAccess = "active" | "blocked";
+
+export async function setMemberAccess(memberUserId: string, access: MemberAccess): Promise<void> {
   const response = await fetch(`/api/settings/members/${encodeURIComponent(memberUserId)}`, {
-    method: "DELETE",
+    method: "PATCH",
     credentials: "same-origin",
-    headers: { accept: "application/json" },
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ access }),
   });
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
-    throw new Error(payload?.error?.message ?? "The member could not be removed.");
+    throw new Error(payload?.error?.message ?? "The member's access could not be changed.");
   }
 }

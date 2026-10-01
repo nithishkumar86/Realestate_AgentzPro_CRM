@@ -247,30 +247,50 @@ export async function cancelMemberInvitation(access: CrmAccessGranted, invitatio
   }
 }
 
-/** Owner-only: removes one employee from the caller's tenant. */
-export async function removeTenantMember(access: CrmAccessGranted, memberUserId: string): Promise<void> {
+export type MemberAccess = "active" | "blocked";
+
+/**
+ * Owner-only: blocks or enables one employee of the caller's tenant. Nothing is deleted — only
+ * membership_status changes (set_tenant_member_access). A blocked employee keeps their account but
+ * loses CRM access and frees their seat; enabling needs a free seat again.
+ */
+export async function setTenantMemberAccess(
+  access: CrmAccessGranted,
+  memberUserId: string,
+  membershipStatus: MemberAccess,
+): Promise<void> {
   if (access.membershipRole !== "owner") {
-    throw new AppError("Only the owner can remove members.", { status: 403, code: "MEMBER_REMOVE_NOT_ALLOWED" });
+    throw new AppError("Only the owner can block or enable members.", { status: 403, code: "MEMBER_ACCESS_NOT_ALLOWED" });
   }
 
-  const { data, error } = await getSupabaseAdminClient().rpc("remove_tenant_member", {
+  const { data, error } = await getSupabaseAdminClient().rpc("set_tenant_member_access", {
     p_tenant_id: access.tenantId,
     p_owner_user_id: access.userId,
     p_member_user_id: memberUserId,
+    p_membership_status: membershipStatus,
   });
 
   if (error) {
     if (error.code === "42501") {
-      throw new AppError("Only the owner can remove members.", { status: 403, code: "MEMBER_REMOVE_NOT_ALLOWED" });
+      throw new AppError("Only the owner can block or enable members.", { status: 403, code: "MEMBER_ACCESS_NOT_ALLOWED" });
     }
-    throw new AppError("The member could not be removed.", {
+    throw new AppError("The member's access could not be changed.", {
       status: 500,
-      code: "MEMBER_REMOVE_FAILED",
+      code: "MEMBER_ACCESS_FAILED",
       retryable: true,
     });
   }
-  if (data !== true) {
+  if (data === "NOT_FOUND") {
     throw new AppError("This employee is no longer a member.", { status: 404, code: "MEMBER_NOT_FOUND" });
+  }
+  if (data === "NO_SEAT") {
+    throw new AppError("All paid seats are in use. Add a seat on the Billing page before enabling this member.", {
+      status: 409,
+      code: "SEAT_LIMIT_REACHED",
+    });
+  }
+  if (data !== "UPDATED") {
+    throw new AppError("The member's access could not be changed.", { status: 500, code: "MEMBER_ACCESS_FAILED" });
   }
 }
 
