@@ -10,7 +10,7 @@ import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
-type Lead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; hasOpenTask?: boolean };
+type Lead = { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; hasOpenTask?: boolean };
 
 export function LeadsPageClient() {
   const [leads, setLeads] = useState<Lead[]>([]);

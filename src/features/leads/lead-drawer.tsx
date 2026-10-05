@@ -1,15 +1,29 @@
 "use client";
 
-import { X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { BookOpen, Mail, Megaphone, Phone, X, type LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_TITLE_MAX_LENGTH, isFinalLeadStatus, type LeadStatus } from "@/features/leads/lead-options";
-import { LeadRequestError, fetchOpenTask, formatTaskDate, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
+import { LeadRequestError, fetchOpenTask, formatActivityTime, formatTaskDate, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
 import { LeadTimeline, type LeadTimelineHandle } from "@/features/leads/lead-timeline";
 import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError } from "@/features/leads/use-lead-filters";
 import type { LeadTask } from "@/lib/server/lead-timeline-service";
 
-export interface DrawerLead { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; status: LeadStatus }
+export interface DrawerLead { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate?: string; label?: string; status: LeadStatus }
+
+const LABEL_PILLS: Record<string, string> = { Hot: "red", Warm: "yellow", Cold: "blue", "Not Interested": "gray" };
+
+function initialsOf(name: string | null): string {
+  const letters = (name ?? "").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
+  return letters || "?";
+}
+
+function FactTile({ icon: Icon, label, children, wide }: { icon: LucideIcon; label: string; children: ReactNode; wide?: boolean }) {
+  return <div className={wide ? "mvp-lead-fact mvp-lead-fact--wide" : "mvp-lead-fact"}>
+    <span className="mvp-lead-fact__icon" aria-hidden="true"><Icon size={16} /></span>
+    <div className="mvp-lead-fact__text"><dt>{label}</dt><dd>{children}</dd></div>
+  </div>;
+}
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -91,15 +105,27 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
       </header>
       <div className="mvp-detail-panel__body">
         {error ? <div className="mvp-inline-error" role="alert">{error}</div> : null}
-        <dl className="mvp-lead-drawer__facts">
-          <div className="mvp-detail"><dt>Phone</dt><dd>{lead.phone ?? "-"}</dd></div>
-          <div className="mvp-detail"><dt>Page</dt><dd>{lead.facebookPage}</dd></div>
-          <div className="mvp-detail"><dt>Ad</dt><dd>{lead.adName}</dd></div>
-          <div className="mvp-detail"><dt>Status</dt><dd>
+        <section className="mvp-lead-profile" aria-label="Lead details">
+          <div className="mvp-lead-profile__head">
+            <span className="mvp-lead-profile__avatar" aria-hidden="true">{initialsOf(lead.leadName)}</span>
+            <div className="mvp-lead-profile__who">
+              <strong>{lead.leadDate ? "Lead received" : "Lead details"}</strong>
+              {lead.leadDate ? <span>{formatActivityTime(lead.leadDate, timezone)}</span> : null}
+            </div>
+            {lead.label ? <span className={`mvp-pill mvp-pill--${LABEL_PILLS[lead.label] ?? "gray"}`}>{lead.label}</span> : null}
+          </div>
+          <dl className="mvp-lead-profile__grid">
+            <FactTile icon={Phone} label="Phone">{lead.phone ? <a href={`tel:${lead.phone}`}>{lead.phone}</a> : "-"}</FactTile>
+            <FactTile icon={BookOpen} label="Page">{lead.facebookPage}</FactTile>
+            <FactTile icon={Mail} label="Email" wide>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}</FactTile>
+            <FactTile icon={Megaphone} label="Ad" wide>{lead.adName}</FactTile>
+          </dl>
+          <div className="mvp-lead-profile__status">
+            <span>Status</span>
             <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={220}
               open={statusOpen} onOpenChange={setStatusOpen} onChange={(next) => void changeStatus(next)} />
-          </dd></div>
-        </dl>
+          </div>
+        </section>
 
         <TaskCard leadId={lead.id} timezone={timezone} tasks={tasks} />
         <NoteForm leadId={lead.id} onSaved={refreshTimeline} />
