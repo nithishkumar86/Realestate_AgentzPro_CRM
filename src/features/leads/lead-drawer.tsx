@@ -11,6 +11,15 @@ import type { LeadTask } from "@/lib/server/lead-timeline-service";
 
 export interface DrawerLead { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate?: string; label?: string; status: LeadStatus }
 
+/** Colour of the status banner: where the lead is in the pipeline at a glance (UI only). */
+const STATUS_TONES: Partial<Record<LeadStatus, "blue" | "green" | "yellow" | "red" | "gray">> = {
+  "New Lead": "blue",
+  Working: "yellow", "Details send via WhatsApp": "yellow", "Site visit pending": "yellow", "Final call": "yellow", "Next project": "yellow",
+  Sale: "green", "Site visit done": "green",
+  "Not reachable": "red", "Didn't pick the call": "red", Disqualified: "red",
+  Closed: "gray", Archived: "gray",
+};
+
 const LABEL_PILLS: Record<string, string> = { Hot: "red", Warm: "yellow", Cold: "blue", "Not Interested": "gray" };
 
 function initialsOf(name: string | null): string {
@@ -120,10 +129,14 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
             <FactTile icon={Mail} label="Email" wide>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}</FactTile>
             <FactTile icon={Megaphone} label="Ad" wide>{lead.adName}</FactTile>
           </dl>
-          <div className="mvp-lead-profile__status">
-            <span>Status</span>
+          <div className="mvp-lead-status" data-tone={STATUS_TONES[lead.status] ?? "gray"}>
+            <div className="mvp-lead-status__head">
+              <span className="mvp-lead-status__dot" aria-hidden="true" />
+              <span className="mvp-lead-status__title">Current status</span>
+            </div>
             <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={220}
               open={statusOpen} onOpenChange={setStatusOpen} onChange={(next) => void changeStatus(next)} />
+            <p className="mvp-lead-status__hint">Update it after every call, then add the next task and a note.</p>
           </div>
         </section>
 

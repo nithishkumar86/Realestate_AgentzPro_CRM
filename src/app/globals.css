@@ -3250,9 +3250,16 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-lead-fact__text dd { margin: 0; font-size: .88rem; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
 .mvp-lead-fact__text dd a { color: var(--primary); text-decoration: none; }
 .mvp-lead-fact__text dd a:hover { text-decoration: underline; }
-.mvp-lead-profile__status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; border-top: 1px solid var(--border); }
-.mvp-lead-profile__status > span { color: var(--text-muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
-.mvp-lead-profile__status .mvp-row-dropdown { width: min(220px, 100%) !important; min-width: 0; }
+.mvp-lead-status { --tone: #2563eb; display: grid; gap: 10px; padding: 14px; border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border)); border-left: 4px solid var(--tone); border-radius: 10px; background: color-mix(in srgb, var(--tone) 9%, var(--surface)); }
+.mvp-lead-status[data-tone="green"] { --tone: #12a150; }
+.mvp-lead-status[data-tone="yellow"] { --tone: #d99100; }
+.mvp-lead-status[data-tone="red"] { --tone: #d92d20; }
+.mvp-lead-status[data-tone="gray"] { --tone: #667085; }
+.mvp-lead-status__head { display: flex; align-items: center; gap: 8px; }
+.mvp-lead-status__dot { flex: none; width: 10px; height: 10px; border-radius: 999px; background: var(--tone); box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 22%, transparent); }
+.mvp-lead-status__title { color: var(--text-muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.mvp-lead-status .mvp-row-dropdown { width: 100% !important; min-width: 0; min-height: 42px; border-color: color-mix(in srgb, var(--tone) 45%, var(--border)); background: var(--surface); font-size: .95rem; font-weight: 700; }
+.mvp-lead-status__hint { margin: 0; color: var(--text-muted); font-size: .78rem; line-height: 1.4; }
 .mvp-lead-drawer__textarea { min-height: 84px; resize: vertical; line-height: 1.45; }
 .mvp-lead-drawer .mvp-settings-input { font-size: .9rem; font-weight: 500; }
 .mvp-lead-drawer .mvp-settings-input::placeholder { font-weight: 400; }
