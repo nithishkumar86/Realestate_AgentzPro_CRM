@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRightLeft, CalendarClock, CircleCheck, CircleX, ListTodo, StickyNote, UserPlus, type LucideIcon } from "lucide-react";
-import { useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
+import { Fragment, useEffect, useId,useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { Notice, SkeletonRows } from "@/components/ui";
 import { TIMELINE_FILTERS, type LeadActivityType, type TimelineFilter } from "@/features/leads/lead-options";
 import { formatActivityTime } from "@/features/leads/lead-task-client";
@@ -28,6 +28,19 @@ const TYPE_ICONS: Record<LeadActivityType, { icon: LucideIcon; tone: string }> =
 
 export interface LeadTimelineHandle { refresh: () => Promise<void> }
 
+/** The calendar day of a timestamp in the tenant's timezone, as YYYY-MM-DD (sortable and comparable). */
+function dayKey(value: string | number | Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+}
+
+/** "Today", "Yesterday", or the date, for the separator above each day's entries. */
+function dayLabel(value: string, timezone: string): string {
+  const key = dayKey(value, timezone);
+  if (key === dayKey(Date.now(), timezone)) return "Today";
+  if (key === dayKey(Date.now() - 86_400_000, timezone)) return "Yesterday";
+  return new Intl.DateTimeFormat("en-IN", { timeZone: timezone, day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+}
+
 /**
  * The lead's history, oldest at the top and the latest entry at the bottom (the story of the lead reads
  * top to bottom), with All / Status / Notes / Tasks tabs. Rows are written only by the
@@ -51,10 +64,12 @@ export function LeadTimeline({ leadId, timezone, ref, scrollToLatest }: { leadId
   const chronological = useMemo(() => [...timeline.items].reverse(), [timeline.items]);
 
   return <section className="mvp-timeline" aria-labelledby={`${tabsId}-title`}>
-    <h3 id={`${tabsId}-title`} className="mvp-lead-drawer__section-title">Timeline</h3>
-    <div className="mvp-members__tabs" role="tablist" aria-label="Timeline filter">
-      {TIMELINE_FILTERS.map((value) => <button key={value} type="button" role="tab" id={`${tabsId}-${value}`} aria-selected={filter === value}
-        aria-controls={`${tabsId}-panel`} className="mvp-members__tab" onClick={() => setFilter(value)}>{TAB_LABELS[value]}</button>)}
+    <div className="mvp-timeline__head">
+      <h3 id={`${tabsId}-title`} className="mvp-lead-drawer__section-title">Timeline</h3>
+      <div className="mvp-members__tabs" role="tablist" aria-label="Timeline filter">
+        {TIMELINE_FILTERS.map((value) => <button key={value} type="button" role="tab" id={`${tabsId}-${value}`} aria-selected={filter === value}
+          aria-controls={`${tabsId}-panel`} className="mvp-members__tab" onClick={() => setFilter(value)}>{TAB_LABELS[value]}</button>)}
+      </div>
     </div>
     <div role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${filter}`} className="mvp-timeline__panel">
       {timeline.error ? <Notice tone="danger" title="Timeline unavailable" action={<button type="button" className="mvp-timeline__more" onClick={() => void timeline.retry()}>Retry</button>}>{timeline.error}</Notice> : null}
@@ -64,17 +79,22 @@ export function LeadTimeline({ leadId, timezone, ref, scrollToLatest }: { leadId
         {timeline.loadingMore ? "Loading..." : "Load more"}
       </button> : null}
       {!timeline.loading && timeline.items.length > 0 ? <ol ref={listRef} className="mvp-timeline__list">
-        {chronological.map((item) => {
+        {chronological.map((item, index) => {
           const { icon: Icon, tone } = TYPE_ICONS[item.type] ?? TYPE_ICONS.status_change;
-          return <li key={item.id} className="mvp-timeline__item">
-            <span className={`mvp-timeline__icon mvp-timeline__icon--${tone}`} aria-hidden="true"><Icon size={16} /></span>
-            <div className="mvp-timeline__content">
-              <p className="mvp-timeline__summary">{item.type === "note_added" ? "Note added" : item.summary}</p>
-              {item.type === "note_added" ? <p className="mvp-timeline__note">{item.noteBody ?? item.summary}</p> : null}
-              <p className="mvp-timeline__meta"><span>{item.actorName}</span><span aria-hidden="true">·</span><time dateTime={item.createdAt}>{formatActivityTime(item.createdAt, timezone)}</time></p>
-              {item.backfilled ? <p className="mvp-timeline__hint">Earlier history wasn&apos;t recorded.</p> : null}
-            </div>
-          </li>;
+          const isLatest = index === chronological.length - 1;
+          const newDay = index === 0 || dayKey(item.createdAt, timezone) !== dayKey(chronological[index - 1].createdAt, timezone);
+          return <Fragment key={item.id}>
+            {newDay ? <li role="presentation" className="mvp-timeline__day">{dayLabel(item.createdAt, timezone)}</li> : null}
+            <li className={isLatest && scrollToLatest ? "mvp-timeline__item mvp-timeline__item--flash" : "mvp-timeline__item"}>
+              <span className={`mvp-timeline__icon mvp-timeline__icon--${tone}`} aria-hidden="true"><Icon size={16} /></span>
+              <div className="mvp-timeline__content">
+                <p className="mvp-timeline__summary">{item.type === "note_added" ? "Note added" : item.summary}{isLatest ? <span className="mvp-timeline__latest">Latest</span> : null}</p>
+                {item.type === "note_added" ? <p className="mvp-timeline__note">{item.noteBody ?? item.summary}</p> : null}
+                <p className="mvp-timeline__meta"><span>{item.actorName}</span><span aria-hidden="true">·</span><time dateTime={item.createdAt}>{formatActivityTime(item.createdAt, timezone)}</time></p>
+                {item.backfilled ? <p className="mvp-timeline__hint">Earlier history wasn&apos;t recorded.</p> : null}
+              </div>
+            </li>
+          </Fragment>;
         })}
       </ol> : null}
     </div>

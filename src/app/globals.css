@@ -3341,3 +3341,12 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-confirm__button { padding: 9px 16px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-muted); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
 .mvp-confirm__button--primary { border-color: var(--primary); background: var(--primary); color: #fff; }
 .mvp-confirm__button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }
+
+/* Timeline: sticky title + tabs, day separators, and the "Latest" marker */
+.mvp-timeline__head { position: sticky; top: var(--drawer-header-h, 96px); z-index: 1; padding-top: 8px; background: var(--surface); }
+.mvp-timeline__day { position: relative; display: flex; align-items: center; gap: 10px; margin: 2px 0 12px; color: var(--text-muted); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; list-style: none; }
+.mvp-timeline__day::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.mvp-timeline__latest { margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 14%, var(--surface)); color: var(--primary); font-size: .66rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; }
+.mvp-timeline__item--flash .mvp-timeline__content { margin: -4px -8px -4px -8px; padding: 9px 8px 4px; border-radius: 10px; animation: mvp-timeline-flash 2.4s ease-out 300ms both; }
+@keyframes mvp-timeline-flash { 0% { background: color-mix(in srgb, var(--primary) 22%, transparent); } 100% { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .mvp-timeline__item--flash .mvp-timeline__content { animation: none; } }

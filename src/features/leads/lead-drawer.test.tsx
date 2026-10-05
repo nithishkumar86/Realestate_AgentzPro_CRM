@@ -121,10 +121,31 @@ describe("lead drawer timeline", () => {
     const drawer = await openDrawer();
     await within(drawer).findByText("Status: New Lead → Working");
     const items = within(drawer).getAllByRole("listitem");
-    expect(items.map((item) => item.querySelector(".mvp-timeline__summary")?.textContent)).toEqual(["Lead created · Status: New Lead", "Status: New Lead → Working", "Note added"]);
+    expect(items.map((item) => item.querySelector(".mvp-timeline__summary")?.textContent)).toEqual(["Lead created · Status: New Lead", "Status: New Lead → Working", "Note addedLatest"]);
+    expect(within(items[2]).getByText("Latest")).toBeInTheDocument();
+    expect(within(drawer).getAllByText("Latest")).toHaveLength(1);
     expect(within(drawer).getByText("Will visit Sunday with family")).toBeInTheDocument();
     expect(within(items[0]).getByText("System")).toBeInTheDocument();
     expect(within(drawer).getByText("Earlier history wasn't recorded.")).toBeInTheDocument();
+  });
+
+  it("groups entries under a date separator, once per day", async () => {
+    stubApi({
+      leads: [lead(LEAD_1, "Kumar")],
+      openTask: null,
+      pages: { "all:": { nextCursor: null, items: [
+        act("a3", "status_change", "Status: Working → Sale", { createdAt: "2020-03-04T09:00:00+00:00" }),
+        act("a2", "status_change", "Status: New Lead → Working", { createdAt: "2020-03-04T06:00:00+00:00" }),
+        act("a1", "lead_created", "Lead created · Status: New Lead", { createdAt: "2020-03-03T06:00:00+00:00" }),
+      ] } },
+    });
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByText("Status: Working → Sale");
+    const days = [...drawer.querySelectorAll(".mvp-timeline__day")].map((day) => day.textContent);
+    expect(days).toEqual(["03 Mar 2020", "04 Mar 2020"]);
+    // The separators are decoration: they are not list items, so the entries still count as three.
+    expect(within(drawer).getAllByRole("listitem")).toHaveLength(3);
   });
 
   it("filters by tab and shows an empty state for a tab with no entries", async () => {

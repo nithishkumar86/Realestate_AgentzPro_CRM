@@ -58,8 +58,22 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const timelineRef = useRef<LeadTimelineHandle>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const [statusOpen, setStatusOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The timeline's title and tabs stick just under this drawer's own sticky header, whatever height that is.
+  useEffect(() => {
+    const header = headerRef.current;
+    const panel = panelRef.current;
+    if (!header || !panel) return;
+    const sync = () => panel.style.setProperty("--drawer-header-h", `${header.offsetHeight}px`);
+    sync();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   // Escape closes the drawer (unless the status list is open — it closes itself first); Tab stays inside.
   useEffect(() => {
@@ -106,7 +120,7 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
   return <>
     <div className="mvp-lead-drawer-backdrop" onPointerDown={onClose} />
     <aside ref={panelRef} className="mvp-detail-panel mvp-lead-drawer" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <header className="mvp-detail-panel__header">
+      <header ref={headerRef} className="mvp-detail-panel__header">
         <div>
           <span className="mvp-lead-drawer__eyebrow">Lead</span>
           <h2 id={titleId}>{lead.leadName ?? "Unnamed Lead"}</h2>
