@@ -15,11 +15,16 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
  * A stream can only ever attach to the tenant id it was authenticated for.
  */
 
-export type RelayEvent = "change" | "degraded" | "live";
+export type RelayEvent = "change" | "degraded" | "live" | "activity";
+/** Set only for "activity": the lead whose timeline gained a row (a UUID, no PII). */
+export interface RelayPayload { leadId: string }
+export type RelayListener = (event: RelayEvent, payload?: RelayPayload) => void;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface TenantChannel {
   channel: RealtimeChannel;
-  listeners: Set<(event: RelayEvent) => void>;
+  listeners: Set<RelayListener>;
   state: "connecting" | "live" | "degraded";
   degradedTimer: ReturnType<typeof setTimeout> | undefined;
   hasBeenLive: boolean;
@@ -31,10 +36,11 @@ const DEGRADED_AFTER_MS = 10_000;
 
 const tenantChannels = new Map<string, TenantChannel>();
 
-function emit(entry: TenantChannel, event: RelayEvent): void {
+function emit(entry: TenantChannel, event: RelayEvent, payload?: RelayPayload): void {
   for (const listener of entry.listeners) {
     try {
-      listener(event);
+      if (payload) listener(event, payload);
+      else listener(event);
     } catch {
       // One broken stream must not stop the others receiving the event.
     }
@@ -46,6 +52,11 @@ function openTenantChannel(tenantId: string): TenantChannel {
   const entry: TenantChannel = { channel, listeners: new Set(), state: "connecting", degradedTimer: undefined, hasBeenLive: false };
 
   channel.on("broadcast", { event: "lead_change" }, () => emit(entry, "change"));
+  // A Lead Timeline row was written (migration 20261005120000). Only a well-formed lead id is passed on.
+  channel.on("broadcast", { event: "lead_activity" }, (message?: { payload?: { lead_id?: unknown } }) => {
+    const leadId = message?.payload?.lead_id;
+    if (typeof leadId === "string" && UUID_PATTERN.test(leadId)) emit(entry, "activity", { leadId });
+  });
   channel.subscribe((status) => {
     if (status === "SUBSCRIBED") {
       clearTimeout(entry.degradedTimer);
@@ -74,7 +85,7 @@ function openTenantChannel(tenantId: string): TenantChannel {
  * Attaches a listener to one tenant's change feed and returns its detach function. When the last
  * listener detaches the Realtime channel is torn down.
  */
-export function subscribeToTenantChanges(tenantId: string, listener: (event: RelayEvent) => void): () => void {
+export function subscribeToTenantChanges(tenantId: string, listener: RelayListener): () => void {
   let entry = tenantChannels.get(tenantId);
   if (!entry) {
     entry = openTenantChannel(tenantId);

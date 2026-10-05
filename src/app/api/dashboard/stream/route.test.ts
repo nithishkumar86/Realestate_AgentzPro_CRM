@@ -60,6 +60,20 @@ describe("GET /api/dashboard/stream", () => {
     await reader.cancel().catch(() => {});
   });
 
+  it("forwards a timeline activity as an activity event carrying only the lead id", async () => {
+    let emit: (event: "change" | "degraded" | "live" | "activity", payload?: { leadId: string }) => void = () => {};
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-activity" });
+    mocks.subscribe.mockImplementation((_tenant: string, listener: typeof emit) => { emit = listener; return vi.fn(); });
+    const abort = new AbortController();
+    const response = await GET(new Request("http://localhost/api/dashboard/stream", { signal: abort.signal }));
+    const reader = response.body!.getReader();
+    await readUntil(reader, "event: ready");
+    emit("activity", { leadId: "11111111-1111-4111-8111-111111111111" });
+    expect(await readUntil(reader, "event: activity")).toContain('event: activity\ndata: {"leadId":"11111111-1111-4111-8111-111111111111"}');
+    abort.abort();
+    await reader.cancel().catch(() => {});
+  });
+
   it("answers an unauthenticated request with 401 JSON (which makes EventSource stop) and never subscribes", async () => {
     mocks.context.mockRejectedValue(new AppError("Authentication is required.", { status: 401, code: "UNAUTHENTICATED" }));
     const response = await GET(new Request("http://localhost/api/dashboard/stream"));

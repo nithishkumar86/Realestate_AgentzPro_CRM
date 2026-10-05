@@ -26,6 +26,8 @@ export interface LeadRow {
   id: string; leadName: string | null; email: string | null; phone: string | null;
   adId: string | null; facebookPage: string; adName: string; leadDate: string;
   status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource;
+  /** Whether the lead has an open follow-up task. Only set for the paginated table, never for export. */
+  hasOpenTask?: boolean;
 }
 export interface PaginatedLeadRows { items: LeadRow[]; total: number; page: number; pageSize: number; totalPages: number; timezone: string; }
 
@@ -57,8 +59,25 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const { data, error, count } = await query;
   if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
   const items = (data ?? []).map((lead) => toLeadRow(lead as Record<string, unknown>));
+  if (!exportAll) await attachOpenTaskFlags(context, items);
   const total = exportAll ? items.length : count ?? 0;
   return { items, total, page: exportAll ? 1 : page, pageSize: exportAll ? items.length : pageSize, totalPages: exportAll ? 1 : Math.max(1, Math.ceil(total / pageSize)), timezone };
+}
+
+/**
+ * Marks which leads on this page have an open follow-up task (at most one per lead, enforced by
+ * lead_tasks_one_open_per_lead_idx), for the table's "no open task" marker. One indexed query per page.
+ */
+async function attachOpenTaskFlags(context: TenantRequestContext, items: LeadRow[]): Promise<void> {
+  if (items.length === 0) return;
+  const { data, error } = await getSupabaseAdminClient().from("lead_tasks")
+    .select("lead_id")
+    .eq("tenant_id", context.tenantId)
+    .eq("status", "open")
+    .in("lead_id", items.map((item) => item.id));
+  if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
+  const withOpenTask = new Set((data ?? []).map((row) => String(row.lead_id)));
+  for (const item of items) item.hasOpenTask = withOpenTask.has(item.id);
 }
 
 function toLeadRow(lead: Record<string, unknown>): LeadRow {
@@ -104,11 +123,26 @@ export async function getLeadFilterOptions(context: TenantRequestContext, pageRe
  * Updates a single lead's triage status or label. This is the only writer for
  * these columns — it must never be reachable from the leads-list filter UI,
  * which only ever reads status/label to narrow the query above.
+ *
+ * A status change goes through the update_lead_status RPC so the database records who made it: the RPC
+ * checks the actor is an active member of the tenant and hands it to the trigger that writes the Lead
+ * Timeline row in the same transaction. Label changes are not part of the timeline and stay a direct update.
  */
 export async function updateLeadTriage(context: TenantRequestContext, leadId: string, update: { status: LeadStatus } | { label: LeadLabel }): Promise<{ id: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource }> {
-  const patch = "status" in update ? { status: update.status } : { label: update.label };
+  if ("status" in update) {
+    const { data, error } = await getSupabaseAdminClient().rpc("update_lead_status", {
+      p_tenant_id: context.tenantId, p_lead_id: leadId, p_status: update.status, p_actor_user_id: context.userId,
+    });
+    if (error) {
+      if (error.code === "42501") throw new AppError("You are not allowed to update leads for this company.", { status: 403, code: "LEAD_UPDATE_FORBIDDEN" });
+      throw new AppError("The lead could not be updated.", { status: 500, code: "LEAD_UPDATE_FAILED" });
+    }
+    const row = (Array.isArray(data) ? data[0] : data) as { lead_id: string; lead_status: string; lead_label: string; lead_label_source: string | null } | null | undefined;
+    if (!row) throw new AppError("Lead not found for this tenant.", { status: 404, code: "LEAD_NOT_FOUND" });
+    return { id: String(row.lead_id), status: row.lead_status as LeadStatus, label: row.lead_label as LeadLabel, labelSource: (row.lead_label_source as LeadLabelSource) ?? "telecaller" };
+  }
   const { data, error } = await getSupabaseAdminClient().from("lead_data")
-    .update(patch)
+    .update({ label: update.label })
     .eq("tenant_id", context.tenantId)
     .eq("id", leadId)
     .select("id,status,label,label_source")
