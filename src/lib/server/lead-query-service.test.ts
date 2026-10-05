@@ -1,13 +1,13 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteLead, getLeadFilterOptions, queryLeads } from "@/lib/server/lead-query-service";
+import { deleteLead, getLeadFilterOptions, queryLeads, updateLeadTriage } from "@/lib/server/lead-query-service";
 
-const mocks = vi.hoisted(() => ({ from: vi.fn() }));
-vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: () => ({ from: mocks.from }) }));
+const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
+vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: () => ({ from: mocks.from, rpc: mocks.rpc }) }));
 
 function builder(result: { data: unknown; error: unknown; count?: number }) {
   const query: Record<string, ReturnType<typeof vi.fn>> = {};
-  for (const method of ["select", "eq", "is", "not", "or", "gte", "lt", "order", "range", "limit", "update", "delete"]) {
+  for (const method of ["select", "eq", "is", "not", "or", "gte", "lt", "order", "range", "limit", "update", "delete", "in"]) {
     query[method] = vi.fn(() => query);
   }
   query.single = vi.fn(() => Promise.resolve(result));
@@ -84,5 +84,54 @@ describe("deleteLead", () => {
     const leads = builder({ data: null, error: { code: "23503", message: "violates foreign key constraint" } });
     mocks.from.mockReturnValue(leads);
     await expect(deleteLead(context, "lead-1")).rejects.toMatchObject({ code: "LEAD_DELETE_BLOCKED", status: 409 });
+  });
+});
+
+describe("lead timeline hooks into the leads list", () => {
+  const leadRow = (id: string) => ({ id, lead_name: "Client", lead_email: null, lead_phone: null, ad_id: null, ad_name: null, lead_created_time: "2026-09-09T02:00:00Z", status: "New Lead", label: "Warm", label_source: "default", facebook_pages: { facebook_page_name: "Page A" } });
+
+  it("marks which leads on the page have an open task, with one tenant-scoped query", async () => {
+    const leads = builder({ data: [leadRow("lead-1"), leadRow("lead-2")], error: null, count: 2 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    const tasks = builder({ data: [{ lead_id: "lead-2" }], error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : table === "lead_tasks" ? tasks : leads);
+    const result = await queryLeads(context, {});
+    expect(result.items.map((item) => item.hasOpenTask)).toEqual([false, true]);
+    expect(tasks.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(tasks.eq).toHaveBeenCalledWith("status", "open");
+    expect(tasks.in).toHaveBeenCalledWith("lead_id", ["lead-1", "lead-2"]);
+  });
+
+  it("skips the open-task lookup in export mode", async () => {
+    const leads = builder({ data: [leadRow("lead-1")], error: null, count: 1 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    const result = await queryLeads(context, {}, true);
+    expect(mocks.from).not.toHaveBeenCalledWith("lead_tasks");
+    expect(result.items[0].hasOpenTask).toBeUndefined();
+  });
+
+  it("changes status through update_lead_status with the session's tenant and user as actor", async () => {
+    mocks.rpc.mockResolvedValue({ data: [{ lead_id: "lead-1", lead_status: "Working", lead_label: "Warm", lead_label_source: "default" }], error: null });
+    const result = await updateLeadTriage(context, "lead-1", { status: "Working" });
+    expect(mocks.rpc).toHaveBeenCalledWith("update_lead_status", { p_tenant_id: "tenant-a", p_lead_id: "lead-1", p_status: "Working", p_actor_user_id: "user-a" });
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: "lead-1", status: "Working", label: "Warm", labelSource: "default" });
+  });
+
+  it("maps a status change that matched no lead to 404, and a rejected actor to 403", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: [], error: null });
+    await expect(updateLeadTriage(context, "lead-x", { status: "Working" })).rejects.toMatchObject({ status: 404, code: "LEAD_NOT_FOUND" });
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { code: "42501" } });
+    await expect(updateLeadTriage(context, "lead-1", { status: "Working" })).rejects.toMatchObject({ status: 403, code: "LEAD_UPDATE_FORBIDDEN" });
+  });
+
+  it("keeps a label change as a direct tenant-scoped update (labels are not on the timeline)", async () => {
+    const leads = builder({ data: { id: "lead-1", status: "New Lead", label: "Hot", label_source: "telecaller" }, error: null });
+    mocks.from.mockReturnValue(leads);
+    await updateLeadTriage(context, "lead-1", { label: "Hot" });
+    expect(leads.update).toHaveBeenCalledWith({ label: "Hot" });
+    expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

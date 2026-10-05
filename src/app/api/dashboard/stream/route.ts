@@ -49,8 +49,9 @@ export async function GET(request: Request): Promise<Response> {
       };
       const sendEvent = (event: string, data: unknown) => send(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
-      const unsubscribe = subscribeToTenantChanges(tenantId, (event) => {
+      const unsubscribe = subscribeToTenantChanges(tenantId, (event, payload) => {
         if (event === "change") sendEvent("change", {});
+        else if (event === "activity") { if (payload) sendEvent("activity", { leadId: payload.leadId }); }
         else sendEvent("status", { state: event });
       });
       const heartbeat = setInterval(() => send(": ping\n\n"), HEARTBEAT_MS);

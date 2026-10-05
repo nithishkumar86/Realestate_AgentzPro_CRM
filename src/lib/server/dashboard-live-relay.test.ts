@@ -4,15 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type StatusCallback = (status: string) => void;
 
 const mocks = vi.hoisted(() => {
-  const channels: Array<{ topic: string; config: unknown; onBroadcast: () => void; status: (status: string) => void }> = [];
+  const channels: Array<{ topic: string; config: unknown; onBroadcast: () => void; handlers: Record<string, (message?: unknown) => void>; status: (status: string) => void }> = [];
   return {
     channels,
     removeChannel: vi.fn(() => Promise.resolve("ok")),
     channel: vi.fn((topic: string, config: unknown) => {
-      const record = { topic, config, onBroadcast: () => {}, status: (() => {}) as StatusCallback };
+      const record = { topic, config, onBroadcast: () => {}, handlers: {} as Record<string, (message?: unknown) => void>, status: (() => {}) as StatusCallback };
       channels.push(record);
       return {
-        on: vi.fn((_type: string, _filter: unknown, callback: () => void) => { record.onBroadcast = callback; }),
+        on: vi.fn((_type: string, filter: { event: string }, callback: (message?: unknown) => void) => {
+          record.handlers[filter.event] = callback;
+          if (filter.event === "lead_change") record.onBroadcast = callback;
+        }),
         subscribe: vi.fn((callback: StatusCallback) => { record.status = callback; }),
         record,
       };
@@ -86,6 +89,22 @@ describe("dashboard live relay", () => {
     status("SUBSCRIBED");
     expect(listener.mock.calls.map(([event]) => event)).toEqual(["degraded", "live", "change"]);
     stop();
+  });
+
+  it("relays a timeline activity with only a well-formed lead id, to that tenant only", () => {
+    const a = vi.fn(); const b = vi.fn();
+    const stopA = subscribeToTenantChanges("tenant-g", a);
+    const stopB = subscribeToTenantChanges("tenant-h", b);
+    const activity = mocks.channels[0].handlers.lead_activity;
+    activity({ payload: { lead_id: "11111111-1111-4111-8111-111111111111" } });
+    expect(a).toHaveBeenCalledWith("activity", { leadId: "11111111-1111-4111-8111-111111111111" });
+    expect(b).not.toHaveBeenCalled();
+    a.mockClear();
+    activity({ payload: { lead_id: "not-a-uuid" } });
+    activity({ payload: { lead_id: 42 } });
+    activity(undefined);
+    expect(a).not.toHaveBeenCalled();
+    stopA(); stopB();
   });
 
   it("gives a late joiner the current state and survives a throwing listener", () => {
