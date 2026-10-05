@@ -28,6 +28,8 @@ export interface LeadRow {
   status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource;
   /** Whether the lead has an open follow-up task. Only set for the paginated table, never for export. */
   hasOpenTask?: boolean;
+  /** Title of that open task, shown read-only under the client name. */
+  openTaskTitle?: string | null;
 }
 export interface PaginatedLeadRows { items: LeadRow[]; total: number; page: number; pageSize: number; totalPages: number; timezone: string; }
 
@@ -71,13 +73,13 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
 async function attachOpenTaskFlags(context: TenantRequestContext, items: LeadRow[]): Promise<void> {
   if (items.length === 0) return;
   const { data, error } = await getSupabaseAdminClient().from("lead_tasks")
-    .select("lead_id")
+    .select("lead_id,title")
     .eq("tenant_id", context.tenantId)
     .eq("status", "open")
     .in("lead_id", items.map((item) => item.id));
   if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
-  const withOpenTask = new Set((data ?? []).map((row) => String(row.lead_id)));
-  for (const item of items) item.hasOpenTask = withOpenTask.has(item.id);
+  const titles = new Map((data ?? []).map((row) => [String(row.lead_id), asNullableString(row.title)]));
+  for (const item of items) { item.hasOpenTask = titles.has(item.id); item.openTaskTitle = titles.get(item.id) ?? null; }
 }
 
 function toLeadRow(lead: Record<string, unknown>): LeadRow {

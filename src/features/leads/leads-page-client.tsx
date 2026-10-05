@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Trash2 } from "lucide-react";
+import { Download, ListTodo, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 import { LeadDrawer } from "@/features/leads/lead-drawer";
@@ -10,7 +10,7 @@ import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
-type Lead = { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; hasOpenTask?: boolean };
+type Lead = { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; hasOpenTask?: boolean; openTaskTitle?: string | null };
 
 export function LeadsPageClient() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -132,8 +132,8 @@ export function LeadsPageClient() {
   const applyStatus = useCallback((leadId: string, nextStatus: LeadStatus) => {
     setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, status: nextStatus } : existing));
   }, []);
-  const applyOpenTask = useCallback((leadId: string, hasOpenTask: boolean) => {
-    setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, hasOpenTask } : existing));
+  const applyOpenTask = useCallback((leadId: string, hasOpenTask: boolean, title?: string | null) => {
+    setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, hasOpenTask, openTaskTitle: hasOpenTask ? title ?? existing.openTaskTitle ?? null : null } : existing));
   }, []);
   const closeDrawer = useCallback(() => setDrawerLeadId(null), []);
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? null : null;
@@ -155,6 +155,7 @@ export function LeadsPageClient() {
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td><span className="mvp-lead-name-cell">
         <button type="button" className="mvp-lead-name-button" onClick={() => setDrawerLeadId(lead.id)} aria-label={`Open details for ${lead.leadName ?? "Unnamed Lead"}`}>{lead.leadName ?? "Unnamed Lead"}</button>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
+        {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
       </span></td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
         <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
           open={openRowDropdown === `${lead.id}:status`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:status` : null)}

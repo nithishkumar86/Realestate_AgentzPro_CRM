@@ -50,7 +50,7 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
   timezone: string;
   onClose: () => void;
   onStatusChange: (leadId: string, status: LeadStatus) => void;
-  onOpenTaskChange: (leadId: string, hasOpenTask: boolean) => void;
+  onOpenTaskChange: (leadId: string, hasOpenTask: boolean, title?: string | null) => void;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -80,7 +80,7 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
 
   const refreshTimeline = useCallback(() => { void timelineRef.current?.refresh(); }, []);
 
-  const tasks = useLeadTask(lead.id, (hasOpenTask) => onOpenTaskChange(lead.id, hasOpenTask), refreshTimeline);
+  const tasks = useLeadTask(lead.id, (hasOpenTask, title) => onOpenTaskChange(lead.id, hasOpenTask, title), refreshTimeline);
 
   /** Same confirm-then-save as the leads table; a final status then offers to cancel the open task. */
   async function changeStatus(next: LeadStatus): Promise<void> {
@@ -151,7 +151,7 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
 type LeadTaskState = ReturnType<typeof useLeadTask>;
 
 /** The lead's one open task: loading (undefined), none (null) or the task. */
-function useLeadTask(leadId: string, onOpenTaskChange: (hasOpenTask: boolean) => void, onChanged: () => void) {
+function useLeadTask(leadId: string, onOpenTaskChange: (hasOpenTask: boolean, title?: string | null) => void, onChanged: () => void) {
   const [openTask, setOpenTask] = useState<LeadTask | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Set right after a task is completed or cancelled: prompts the next step until a new task is added.
@@ -164,7 +164,7 @@ function useLeadTask(leadId: string, onOpenTaskChange: (hasOpenTask: boolean) =>
       const task = await fetchOpenTask(leadId);
       setOpenTask(task);
       setLoadError(null);
-      reportRef.current(task !== null);
+      reportRef.current(task !== null, task?.title ?? null);
     } catch (cause) {
       setLoadError(message(cause, "The task could not be loaded."));
     }
@@ -179,7 +179,7 @@ function useLeadTask(leadId: string, onOpenTaskChange: (hasOpenTask: boolean) =>
         if (!active) return;
         setOpenTask(task);
         setLoadError(null);
-        reportRef.current(task !== null);
+        reportRef.current(task !== null, task?.title ?? null);
       } catch (cause) {
         if (active) setLoadError(message(cause, "The task could not be loaded."));
       }
@@ -188,7 +188,7 @@ function useLeadTask(leadId: string, onOpenTaskChange: (hasOpenTask: boolean) =>
     return () => { active = false; };
   }, [leadId]);
 
-  return { openTask, loadError, justClosed, setJustClosed, setOpenTask, reload, onChanged, report: (hasOpenTask: boolean) => reportRef.current(hasOpenTask) };
+  return { openTask, loadError, justClosed, setJustClosed, setOpenTask, reload, onChanged, report: (hasOpenTask: boolean, title?: string | null) => reportRef.current(hasOpenTask, title) };
 }
 
 function TaskCard({ leadId, timezone, tasks }: { leadId: string; timezone: string; tasks: LeadTaskState }) {
@@ -296,7 +296,7 @@ function NewTaskForm({ leadId, timezone, tasks }: { leadId: string; timezone: st
       }
       tasks.setOpenTask(await response.json() as LeadTask);
       tasks.setJustClosed(false);
-      tasks.report(true);
+      tasks.report(true, title.trim());
       tasks.onChanged();
     } catch (cause) {
       setError(message(cause, "The task could not be saved."));
