@@ -275,11 +275,12 @@ describe("moving a lead to a final status with an open task", () => {
 
   it("from the table: keeps the task when the telecaller declines", async () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
     fireEvent.click(screen.getByRole("option", { name: "Closed" }));
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(2));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Change status" }));
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
     expect(confirmSpy).toHaveBeenLastCalledWith('This lead is now "Closed" but still has an open task "Call back". Cancel the task now?');
     expect(calls.some((call) => call.url.includes("/tasks/"))).toBe(false);
   });
@@ -290,8 +291,9 @@ describe("moving a lead to a final status with an open task", () => {
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
     fireEvent.click(screen.getByRole("option", { name: "Disqualified" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Change status" }));
     await waitFor(() => expect(calls.some((call) => call.method === "PATCH")).toBe(true));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(calls.some((call) => call.url.endsWith("/tasks"))).toBe(false);
   });
 });

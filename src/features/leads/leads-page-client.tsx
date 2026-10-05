@@ -3,6 +3,7 @@
 import { Download, ListTodo, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
+import { ConfirmDialog } from "@/features/leads/confirm-dialog";
 import { LeadDrawer } from "@/features/leads/lead-drawer";
 import { offerToCancelOpenTask } from "@/features/leads/lead-task-client";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
@@ -23,6 +24,10 @@ export function LeadsPageClient() {
   const [openRowDropdown, setOpenRowDropdown] = useState<string | null>(null);
   // The lead whose detail drawer (timeline, notes, task) is open.
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
+  // Set when the drawer was opened by a status change: it then scrolls to the newest timeline entry.
+  const [drawerShowsLatest, setDrawerShowsLatest] = useState(false);
+  // A status change waiting for the telecaller's OK in the in-app confirmation.
+  const [pendingStatus, setPendingStatus] = useState<{ leadId: string; leadName: string; current: LeadStatus; next: LeadStatus } | null>(null);
   // The leads page opens on the newest lead's ad; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: true, onError: setError });
   const { quick, status, label, from, to, pageRecordId, adId, search } = filters;
@@ -107,15 +112,17 @@ export function LeadsPageClient() {
   }
 
   /**
-   * Same confirm-then-save shape as updateLabel. Every lead starts as "New Lead" (database default);
-   * the team moves it through the 13 statuses here and the change is written straight to lead_data,
-   * so the filters, export and dashboard all see it. Only `status` is merged back into state — the
-   * label and its source are untouched by a status change.
+   * Asks first (in-app dialog), then saves. Every lead starts as "New Lead" (database default); the team
+   * moves it through the 13 statuses here and the change is written straight to lead_data, so the filters,
+   * export and dashboard all see it. Only `status` is merged back into state — the label and its source are
+   * untouched. Once saved, the lead's drawer opens at the newest timeline entry so the change is seen at once.
    */
-  async function updateStatus(leadId: string, currentStatus: LeadStatus, nextStatus: LeadStatus): Promise<void> {
-    if (nextStatus === currentStatus) return;
-    const warned = globalThis.confirm(`Change status from ${currentStatus} to ${nextStatus}? This will be saved and reflected in the CRM.`);
-    if (!warned) return;
+  function requestStatusChange(lead: Lead, nextStatus: LeadStatus): void {
+    if (nextStatus === lead.status) return;
+    setPendingStatus({ leadId: lead.id, leadName: lead.leadName ?? "Unnamed Lead", current: lead.status, next: nextStatus });
+  }
+
+  async function updateStatus(leadId: string, nextStatus: LeadStatus): Promise<void> {
     try {
       const response = await fetch(`/api/leads/${leadId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: nextStatus }) });
       if (!response.ok) throw new Error(await readError(response, "The status could not be updated."));
@@ -124,6 +131,8 @@ export function LeadsPageClient() {
       // A finished lead needs no follow-up: offer to cancel its open task (the telecaller may decline).
       const lead = leads.find((existing) => existing.id === leadId);
       if (isFinalLeadStatus(updated.status) && lead?.hasOpenTask) applyOpenTask(leadId, await offerToCancelOpenTask(leadId, updated.status));
+      setDrawerShowsLatest(true);
+      setDrawerLeadId(leadId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The status could not be updated.");
     }
@@ -135,7 +144,7 @@ export function LeadsPageClient() {
   const applyOpenTask = useCallback((leadId: string, hasOpenTask: boolean, title?: string | null) => {
     setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, hasOpenTask, openTaskTitle: hasOpenTask ? title ?? existing.openTaskTitle ?? null : null } : existing));
   }, []);
-  const closeDrawer = useCallback(() => setDrawerLeadId(null), []);
+  const closeDrawer = useCallback(() => { setDrawerLeadId(null); setDrawerShowsLatest(false); }, []);
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? null : null;
 
   return <div className="mvp-leads">
@@ -153,13 +162,13 @@ export function LeadsPageClient() {
       {loading ? <tr><td className="mvp-empty" colSpan={8}>Loading leads...</td></tr> : null}
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={8}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td><span className="mvp-lead-name-cell">
-        <button type="button" className="mvp-lead-name-button" onClick={() => setDrawerLeadId(lead.id)} aria-label={`Open details for ${lead.leadName ?? "Unnamed Lead"}`}>{lead.leadName ?? "Unnamed Lead"}</button>
+        <button type="button" className="mvp-lead-name-button" onClick={() => { setDrawerShowsLatest(false); setDrawerLeadId(lead.id); }} aria-label={`Open details for ${lead.leadName ?? "Unnamed Lead"}`}>{lead.leadName ?? "Unnamed Lead"}</button>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
       </span></td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
         <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
           open={openRowDropdown === `${lead.id}:status`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:status` : null)}
-          onChange={(next) => void updateStatus(lead.id, lead.status, next)} />
+          onChange={(next) => requestStatusChange(lead, next)} />
       </td><td className="mvp-label-cell">
         <RowDropdown ariaLabel={`Change label for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.label} options={LEAD_LABELS} width={140}
           open={openRowDropdown === `${lead.id}:label`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:label` : null)}
@@ -168,6 +177,8 @@ export function LeadsPageClient() {
         {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
       </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
     </tbody></table></section>
-    {drawerLead ? <LeadDrawer lead={drawerLead} timezone={timezone} onClose={closeDrawer} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
+    {drawerLead ? <LeadDrawer lead={drawerLead} timezone={timezone} onClose={closeDrawer} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} showLatest={drawerShowsLatest} /> : null}
+    {pendingStatus ? <ConfirmDialog title="Change status?" message={`${pendingStatus.leadName}: ${pendingStatus.current} → ${pendingStatus.next}. This will be saved and reflected in the CRM.`} confirmLabel="Change status"
+      onCancel={() => setPendingStatus(null)} onConfirm={() => { const { leadId, next } = pendingStatus; setPendingStatus(null); void updateStatus(leadId, next); }} /> : null}
   </div>;
 }

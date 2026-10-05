@@ -3331,3 +3331,13 @@ button.mvp-field-box__control:focus-visible { outline: none; }
   .mvp-lead-drawer .mvp-detail-panel__header, .mvp-lead-drawer .mvp-detail-panel__body { padding: 16px; }
   .mvp-lead-profile__grid, .mvp-task-card__dates-row { grid-template-columns: 1fr; }
 }
+
+/* In-app confirmation (status change from the leads table) */
+.mvp-confirm-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: var(--profile-backdrop); }
+.mvp-confirm { width: min(420px, 100%); padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); box-shadow: 0 24px 60px rgba(15, 23, 42, .3); }
+.mvp-confirm__title { margin: 0 0 8px; font-size: 1.1rem; }
+.mvp-confirm__message { margin: 0 0 18px; color: var(--text-muted); line-height: 1.5; overflow-wrap: anywhere; }
+.mvp-confirm__actions { display: flex; justify-content: flex-end; gap: 10px; }
+.mvp-confirm__button { padding: 9px 16px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-muted); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.mvp-confirm__button--primary { border-color: var(--primary); background: var(--primary); color: #fff; }
+.mvp-confirm__button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toReadableLabel } from "@/lib/date-utils";
 import { displayValue } from "@/components/ui";
@@ -511,51 +511,56 @@ describe("editing a lead's status", () => {
     expect(names).not.toContain("All statuses");
   });
 
-  it("warns before saving, and does not send a request when the warning is declined", async () => {
+  it("asks in an in-app dialog first, and sends nothing when it is cancelled", async () => {
     const sent = stubLeadApi(DUMMY_LEADS);
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    const confirmSpy = vi.spyOn(globalThis, "confirm");
     await renderLeadsPage(sent);
 
     const select = triggerFor("status");
     choose("status", "Site visit done");
 
-    expect(confirmSpy).toHaveBeenCalledWith("Change status from New Lead to Site visit done? This will be saved and reflected in the CRM.");
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText(/New Lead → Site visit done/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(sent.patches).toEqual([]);
     expect(select.textContent).toBe("New Lead");
   });
 
-  it("saves only the status once confirmed and leaves the label and its source alone", async () => {
+  it("saves only the status once confirmed, leaves the label alone, and opens the lead's drawer", async () => {
     const sent = stubLeadApi(DUMMY_LEADS);
-    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderLeadsPage(sent);
 
     const select = triggerFor("status");
     choose("status", "Site visit done");
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Change status" }));
 
     await waitFor(() => expect(sent.patches).toEqual([{ id: "lead-1", body: { status: "Site visit done" } }]));
     await waitFor(() => expect(select.textContent).toBe("Site visit done"));
     expect(triggerFor("label").textContent).toBe("Warm");
     expect(screen.queryByText("Telecaller")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
-  it("does not send a request when the same status is re-selected", async () => {
+  it("does not ask or send a request when the same status is re-selected", async () => {
     const sent = stubLeadApi(DUMMY_LEADS);
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderLeadsPage(sent);
 
     choose("status", "New Lead");
 
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(sent.patches).toEqual([]);
   });
 
   it("shows the server's error and leaves the status unchanged when the save fails", async () => {
     const sent = stubLeadApi(DUMMY_LEADS, { fail: true });
-    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderLeadsPage(sent);
 
     const select = triggerFor("status");
     choose("status", "Closed");
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Change status" }));
 
     await screen.findByText("The status could not be updated.");
     expect(select.textContent).toBe("New Lead");

@@ -45,12 +45,14 @@ function message(cause: unknown, fallback: string): string {
  * timeline. Every write goes through the tenant-scoped API routes; the timeline rows themselves are written
  * by the database, so after each change the drawer only asks the timeline to refresh.
  */
-export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTaskChange }: {
+export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTaskChange, showLatest }: {
   lead: DrawerLead;
   timezone: string;
   onClose: () => void;
   onStatusChange: (leadId: string, status: LeadStatus) => void;
   onOpenTaskChange: (leadId: string, hasOpenTask: boolean, title?: string | null) => void;
+  /** Scroll to the newest timeline entry once it loads (the drawer was opened by a status change). */
+  showLatest?: boolean;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -82,10 +84,9 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
 
   const tasks = useLeadTask(lead.id, (hasOpenTask, title) => onOpenTaskChange(lead.id, hasOpenTask, title), refreshTimeline);
 
-  /** Same confirm-then-save as the leads table; a final status then offers to cancel the open task. */
+  /** Saves at once (no confirmation: the new timeline entry is the visible record); a final status then offers to cancel the open task. */
   async function changeStatus(next: LeadStatus): Promise<void> {
     if (next === lead.status) return;
-    if (!globalThis.confirm(`Change status from ${lead.status} to ${next}? This will be saved and reflected in the CRM.`)) return;
     setError(null);
     try {
       const response = await fetch(`/api/leads/${lead.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next }) });
@@ -142,7 +143,7 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
 
         <TaskCard leadId={lead.id} timezone={timezone} tasks={tasks} />
         <NoteForm leadId={lead.id} onSaved={refreshTimeline} />
-        <LeadTimeline ref={timelineRef} leadId={lead.id} timezone={timezone} />
+        <LeadTimeline ref={timelineRef} leadId={lead.id} timezone={timezone} scrollToLatest={showLatest} />
       </div>
     </aside>
   </>;

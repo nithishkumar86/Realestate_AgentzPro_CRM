@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRightLeft, CalendarClock, CircleCheck, CircleX, ListTodo, StickyNote, UserPlus, type LucideIcon } from "lucide-react";
-import { useId, useImperativeHandle, useMemo, useState, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { Notice, SkeletonRows } from "@/components/ui";
 import { TIMELINE_FILTERS, type LeadActivityType, type TimelineFilter } from "@/features/leads/lead-options";
 import { formatActivityTime } from "@/features/leads/lead-task-client";
@@ -33,13 +33,21 @@ export interface LeadTimelineHandle { refresh: () => Promise<void> }
  * top to bottom), with All / Status / Notes / Tasks tabs. Rows are written only by the
  * database; this component just reads them. The parent drawer calls refresh() after its own changes.
  */
-export function LeadTimeline({ leadId, timezone, ref }: { leadId: string; timezone: string; ref?: Ref<LeadTimelineHandle> }) {
+export function LeadTimeline({ leadId, timezone, ref, scrollToLatest }: { leadId: string; timezone: string; ref?: Ref<LeadTimelineHandle>; scrollToLatest?: boolean }) {
   const [filter, setFilter] = useState<TimelineFilter>("all");
   const timeline = useLeadTimeline(leadId, filter);
   const tabsId = useId();
   useImperativeHandle(ref, () => ({ refresh: timeline.refresh }), [timeline.refresh]);
   // The hook keeps newest-first (that is how the server pages); only the display is flipped. "Load more"
   // fetches older entries, so it sits above the list.
+  const listRef = useRef<HTMLOListElement>(null);
+  const scrolledRef = useRef(false);
+  // Once, when asked (the drawer opened after a status change): bring the newest entry into view after it loads.
+  useEffect(() => {
+    if (!scrollToLatest || scrolledRef.current || timeline.loading || timeline.items.length === 0) return;
+    scrolledRef.current = true;
+    listRef.current?.lastElementChild?.scrollIntoView?.({ block: "end", behavior: "smooth" });
+  }, [scrollToLatest, timeline.loading, timeline.items.length]);
   const chronological = useMemo(() => [...timeline.items].reverse(), [timeline.items]);
 
   return <section className="mvp-timeline" aria-labelledby={`${tabsId}-title`}>
@@ -55,7 +63,7 @@ export function LeadTimeline({ leadId, timezone, ref }: { leadId: string; timezo
       {!timeline.loading && timeline.hasMore ? <button type="button" className="mvp-timeline__more" disabled={timeline.loadingMore} onClick={() => void timeline.loadMore()}>
         {timeline.loadingMore ? "Loading..." : "Load more"}
       </button> : null}
-      {!timeline.loading && timeline.items.length > 0 ? <ol className="mvp-timeline__list">
+      {!timeline.loading && timeline.items.length > 0 ? <ol ref={listRef} className="mvp-timeline__list">
         {chronological.map((item) => {
           const { icon: Icon, tone } = TYPE_ICONS[item.type] ?? TYPE_ICONS.status_change;
           return <li key={item.id} className="mvp-timeline__item">
