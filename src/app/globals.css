@@ -2483,7 +2483,10 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-table th:first-child, .mvp-table td:first-child { width: 20px; padding-right: 0; }
 .mvp-table td:first-child input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 .mvp-table td small { display: block; margin-top: 2px; color: var(--text-muted); }
-.mvp-label-cell { display: flex; align-items: center; gap: 6px; }
+.mvp-table td { vertical-align: middle; }
+.mvp-table td.mvp-label-cell { display: table-cell; }
+.mvp-table td.mvp-label-cell > * { vertical-align: middle; }
+.mvp-table td.mvp-label-cell > * + * { margin-left: 6px; }
 /* Per-row Status/Label trigger; its popover reuses the filter's .mvp-dropdown-panel/.mvp-dropdown-option rules. */
 .mvp-row-dropdown { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: .82rem; font-weight: 700; text-align: left; cursor: pointer; appearance: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .mvp-row-dropdown:hover { border-color: var(--primary); }
