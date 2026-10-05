@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, ListTodo, Trash2 } from "lucide-react";
+import { Download, History, ListTodo, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 import { ConfirmDialog } from "@/features/leads/confirm-dialog";
@@ -158,14 +158,16 @@ export function LeadsPageClient() {
     </>} />
     {error ? <div className="mvp-inline-error">{error}</div> : null}
     <LeadActiveFilters filters={filters} />
-    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
-      {loading ? <tr><td className="mvp-empty" colSpan={8}>Loading leads...</td></tr> : null}
-      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={8}>No leads match these filters.</td></tr> : null}
+    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Timeline", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading} className={heading === "Timeline" ? "mvp-timeline-cell" : undefined}>{heading}</th>)}</tr></thead><tbody>
+      {loading ? <tr><td className="mvp-empty" colSpan={9}>Loading leads...</td></tr> : null}
+      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={9}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td><span className="mvp-lead-name-cell">
         <button type="button" className="mvp-lead-name-button" onClick={() => { setDrawerShowsLatest(false); setDrawerLeadId(lead.id); }} aria-label={`Open details for ${lead.leadName ?? "Unnamed Lead"}`}>{lead.leadName ?? "Unnamed Lead"}</button>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
-      </span></td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
+      </span></td><td className="mvp-timeline-cell">
+        <button type="button" className="mvp-timeline-open" title="View timeline" aria-label={`View timeline for ${lead.leadName ?? "Unnamed Lead"}`} onClick={() => { setDrawerShowsLatest(true); setDrawerLeadId(lead.id); }}><History size={16} aria-hidden="true" /></button>
+      </td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
         <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
           open={openRowDropdown === `${lead.id}:status`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:status` : null)}
           onChange={(next) => requestStatusChange(lead, next)} />

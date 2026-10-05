@@ -56,10 +56,22 @@ export function LeadTimeline({ leadId, timezone, ref, scrollToLatest }: { leadId
   const listRef = useRef<HTMLOListElement>(null);
   const scrolledRef = useRef(false);
   // Once, when asked (the drawer opened after a status change): bring the newest entry into view after it loads.
+  // The drawer's other sections (the task panel) finish loading after this and push the list down, so the
+  // scroll follows those layout shifts for a few seconds, and stops the moment the user scrolls themselves.
   useEffect(() => {
-    if (!scrollToLatest || scrolledRef.current || timeline.loading || timeline.items.length === 0) return;
+    const list = listRef.current;
+    if (!scrollToLatest || scrolledRef.current || timeline.loading || timeline.items.length === 0 || !list) return;
     scrolledRef.current = true;
-    listRef.current?.lastElementChild?.scrollIntoView?.({ block: "end", behavior: "smooth" });
+    const toLatest = (behavior: ScrollBehavior) => list.lastElementChild?.scrollIntoView?.({ block: "end", behavior });
+    toLatest("smooth");
+    const container = list.closest<HTMLElement>(".mvp-lead-drawer");
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const stop = () => { observer.disconnect(); window.clearTimeout(timer); container.removeEventListener("wheel", stop); container.removeEventListener("touchstart", stop); container.removeEventListener("keydown", stop); container.removeEventListener("pointerdown", stop); };
+    const observer = new ResizeObserver(() => toLatest("auto"));
+    const timer = window.setTimeout(stop, 4000);
+    observer.observe(list);
+    for (const section of container.querySelectorAll(".mvp-detail-panel__body > *")) observer.observe(section);
+    for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) container.addEventListener(type, stop, { once: true });
   }, [scrollToLatest, timeline.loading, timeline.items.length]);
   const chronological = useMemo(() => [...timeline.items].reverse(), [timeline.items]);
 

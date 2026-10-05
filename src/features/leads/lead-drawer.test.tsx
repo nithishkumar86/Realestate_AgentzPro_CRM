@@ -129,6 +129,16 @@ describe("lead drawer timeline", () => {
     expect(within(drawer).getByText("Earlier history wasn't recorded.")).toBeInTheDocument();
   });
 
+  it("has a Timeline column whose button opens that lead's drawer", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar"), lead(LEAD_2, "Anitha")], openTask: null, pages: { "all:": { nextCursor: null, items: [act("a1", "lead_created", "Lead created · Status: New Lead")] } } });
+    await renderPage();
+    expect(screen.getByRole("columnheader", { name: "Timeline" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View timeline for Anitha" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("heading", { name: "Anitha" })).toBeInTheDocument();
+    await within(drawer).findByText("Lead created · Status: New Lead");
+  });
+
   it("groups entries under a date separator, once per day", async () => {
     stubApi({
       leads: [lead(LEAD_1, "Kumar")],

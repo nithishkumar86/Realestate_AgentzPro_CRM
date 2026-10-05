@@ -3350,3 +3350,11 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-timeline__item--flash .mvp-timeline__content { margin: -4px -8px -4px -8px; padding: 9px 8px 4px; border-radius: 10px; animation: mvp-timeline-flash 2.4s ease-out 300ms both; }
 @keyframes mvp-timeline-flash { 0% { background: color-mix(in srgb, var(--primary) 22%, transparent); } 100% { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .mvp-timeline__item--flash .mvp-timeline__content { animation: none; } }
+
+/* Leads table: the "view timeline" button */
+.mvp-table th.mvp-timeline-cell, .mvp-table td.mvp-timeline-cell { width: 1%; padding-right: 2px; padding-left: 2px; text-align: center; }
+.mvp-table th.mvp-timeline-cell { font-size: .7rem; }
+.mvp-table td:nth-child(2) { padding-right: 6px; }
+.mvp-timeline-open { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--primary); cursor: pointer; }
+.mvp-timeline-open:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); }
+.mvp-timeline-open:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }
