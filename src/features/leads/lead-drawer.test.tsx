@@ -107,7 +107,7 @@ describe("no open task marker in the leads table", () => {
 });
 
 describe("lead drawer timeline", () => {
-  it("opens from the lead name and shows entries newest first with actor, note text and the backfill hint", async () => {
+  it("opens from the lead name and shows entries oldest first (latest at the bottom) with actor, note text and the backfill hint", async () => {
     stubApi({
       leads: [lead(LEAD_1, "Kumar")],
       openTask: null,
@@ -121,9 +121,9 @@ describe("lead drawer timeline", () => {
     const drawer = await openDrawer();
     await within(drawer).findByText("Status: New Lead → Working");
     const items = within(drawer).getAllByRole("listitem");
-    expect(items.map((item) => item.querySelector(".mvp-timeline__summary")?.textContent)).toEqual(["Note added", "Status: New Lead → Working", "Lead created · Status: New Lead"]);
+    expect(items.map((item) => item.querySelector(".mvp-timeline__summary")?.textContent)).toEqual(["Lead created · Status: New Lead", "Status: New Lead → Working", "Note added"]);
     expect(within(drawer).getByText("Will visit Sunday with family")).toBeInTheDocument();
-    expect(within(items[2]).getByText("System")).toBeInTheDocument();
+    expect(within(items[0]).getByText("System")).toBeInTheDocument();
     expect(within(drawer).getByText("Earlier history wasn't recorded.")).toBeInTheDocument();
   });
 
