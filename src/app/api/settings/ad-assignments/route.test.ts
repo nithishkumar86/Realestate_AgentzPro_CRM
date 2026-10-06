@@ -33,12 +33,12 @@ beforeEach(() => {
 
 describe("GET /api/settings/ad-assignments", () => {
   it("returns the overview for the verified access, never cached", async () => {
-    mocks.listAdAssignments.mockResolvedValue({ ads: [], members: [] });
+    mocks.listAdAssignments.mockResolvedValue({ ads: [], members: [], isOwner: true });
     const response = await GET(new Request("https://crm.example.com/api/settings/ad-assignments"));
     expect(mocks.listAdAssignments).toHaveBeenCalledWith(OWNER);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toContain("no-store");
-    expect(await response.json()).toEqual({ ads: [], members: [] });
+    expect(await response.json()).toEqual({ ads: [], members: [], isOwner: true });
   });
 });
 

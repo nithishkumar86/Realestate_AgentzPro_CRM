@@ -25,7 +25,8 @@ export interface AdAssignment {
   unassignedLeads: number;
 }
 
-export interface AdAssignmentOverview { ads: AdAssignment[]; members: AssignableMember[]; }
+/** `isOwner` tells the page whether to offer the controls; every change is still checked owner-only on the server. */
+export interface AdAssignmentOverview { ads: AdAssignment[]; members: AssignableMember[]; isOwner: boolean; }
 
 const OWNER_ONLY = "Only the company owner can manage ad assignment.";
 
@@ -79,9 +80,8 @@ export async function assignLead(
   return { id: String(row.lead_id), assignedUserId, assigneeName };
 }
 
-/** Owner only: every known ad with its rule and how many of its leads are unassigned, plus who can be picked. */
+/** Any active member may view: every known ad with its rule and how many of its leads are unassigned, plus who can be picked. Only the owner may change it. */
 export async function listAdAssignments(access: CrmAccessGranted): Promise<AdAssignmentOverview> {
-  assertOwner(access);
   const [rules, members] = await Promise.all([
     getSupabaseAdminClient().rpc("list_lead_ad_assignments", { p_tenant_id: access.tenantId }),
     listAssignableMembers(access.tenantId),
@@ -94,7 +94,7 @@ export async function listAdAssignments(access: CrmAccessGranted): Promise<AdAss
     totalLeads: Number(row.total_leads ?? 0),
     unassignedLeads: Number(row.unassigned_leads ?? 0),
   }));
-  return { ads, members };
+  return { ads, members, isOwner: access.membershipRole === "owner" };
 }
 
 /** Owner only: sets (or, with null, clears) the one person who receives new leads from this ad. */

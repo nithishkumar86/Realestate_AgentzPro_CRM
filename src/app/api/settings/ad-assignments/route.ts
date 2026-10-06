@@ -4,7 +4,7 @@ import { listAdAssignments } from "@/lib/server/lead-assignment-service";
 
 export const runtime = "nodejs";
 
-/** Owner only: the company's ads with who receives each ad's leads. The tenant comes from the session only. */
+/** Any active member may view (the page is read-only for an employee): the company's ads with who receives each ad's leads. The tenant comes from the session only. */
 export async function GET(request: Request): Promise<Response> {
   try {
     return withNoStore(createSuccessResponse(await listAdAssignments(await requireCrmAccess())));

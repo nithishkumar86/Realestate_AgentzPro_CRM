@@ -8,7 +8,7 @@ export interface AdAssignment {
   unassignedLeads: number;
 }
 
-export interface AdAssignmentOverview { ads: AdAssignment[]; members: AdAssignmentMember[]; }
+export interface AdAssignmentOverview { ads: AdAssignment[]; members: AdAssignmentMember[]; isOwner: boolean; }
 
 /** Thrown for a 403: only the company owner manages ad assignment, and retrying can never succeed. */
 export class AdAssignmentOwnerOnlyError extends Error {
@@ -39,7 +39,8 @@ export async function getAdAssignments(signal?: AbortSignal): Promise<AdAssignme
   if (!payload || !Array.isArray(payload.ads) || !Array.isArray(payload.members)) {
     throw new Error("The ad assignments response was invalid.");
   }
-  return payload;
+  // Fail closed: anything but an explicit `true` is shown read-only.
+  return { ads: payload.ads, members: payload.members, isOwner: payload.isOwner === true };
 }
 
 /** Sets (or, with null, clears) who receives new leads from one ad. */

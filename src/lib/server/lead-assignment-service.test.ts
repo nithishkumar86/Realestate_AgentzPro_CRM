@@ -99,12 +99,19 @@ describe("ad assignment rules (owner only)", () => {
         { adId: "ad-2", adName: null, assigneeUserId: null, totalLeads: 4, unassignedLeads: 4 },
       ],
       members: [{ userId: PRIYA, fullName: "Priya" }],
+      isOwner: true,
     });
     expect(mocks.rpc).toHaveBeenCalledWith("list_lead_ad_assignments", { p_tenant_id: "tenant-a" });
   });
 
-  it("refuses an employee before touching the database", async () => {
-    await expect(listAdAssignments(EMPLOYEE)).rejects.toMatchObject({ status: 403, code: "AD_ASSIGNMENT_NOT_ALLOWED" });
+  it("lets an employee view the ads, flagged as not the owner", async () => {
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    mocks.from.mockImplementation(() => builder({ data: [], error: null }));
+    expect(await listAdAssignments(EMPLOYEE)).toEqual({ ads: [], members: [], isOwner: false });
+    expect(mocks.rpc).toHaveBeenCalledWith("list_lead_ad_assignments", { p_tenant_id: "tenant-a" });
+  });
+
+  it("refuses an employee any change before touching the database", async () => {
     await expect(setAdAssignmentRule(EMPLOYEE, "ad-1", PRIYA)).rejects.toMatchObject({ status: 403 });
     await expect(applyAdAssignmentRule(EMPLOYEE, "ad-1")).rejects.toMatchObject({ status: 403 });
     expect(mocks.rpc).not.toHaveBeenCalled();
