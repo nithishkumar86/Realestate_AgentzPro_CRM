@@ -17,9 +17,9 @@ export async function readError(response: Response, fallback: string): Promise<s
  * The one description of a lead-filter selection, shared by /leads and /dashboard so the two pages
  * can never disagree about what "Page + Ad + Status + Label + date" means.
  *
- * `autoSelectDefaultAd` keeps the leads page's long-standing behaviour of pre-selecting the newest
- * lead's ad. The dashboard turns it off: an aggregate view must open on ALL ads, otherwise every
- * total and chart would be silently narrowed to one ad.
+ * `autoSelectDefaultAd` pre-selects the newest lead's ad when it is true. Both the leads page and the
+ * dashboard turn it off: each must open on ALL ads, otherwise the rows, totals and charts would be
+ * silently narrowed to one ad before the user chose any filter.
  */
 export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDefaultAd: boolean; onError?: (message: string) => void }) {
   const [options, setOptions] = useState<LeadFilterOptions>({ pages: [], ads: [], defaultAdId: null, assignees: [] });

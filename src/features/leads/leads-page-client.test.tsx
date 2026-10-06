@@ -561,3 +561,24 @@ describe("editing a lead's status", () => {
     expect(select.textContent).toBe("New Lead");
   });
 });
+
+describe("opening the leads page", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("opens on all leads with no filter applied, even when the account has a newest ad", async () => {
+    const queries: Array<Record<string, unknown>> = [];
+    let filtersServed = false;
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/leads/filters")) { filtersServed = true; return jsonResponse({ ...FILTER_OPTIONS, defaultAdId: "6301-karuvi" }); }
+      if (url === "/api/leads/query") { queries.push(JSON.parse(String(init?.body)) as Record<string, unknown>); return jsonResponse({ items: [], total: 0, timezone: "Asia/Kolkata" }); }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    render(<LeadsPageClient />);
+    await waitFor(() => expect(filtersServed).toBe(true));
+    await screen.findByRole("button", { name: "Ad" });
+    await waitFor(() => expect(queries.length).toBeGreaterThan(0));
+    expect(queries.every((body) => !("adId" in body))).toBe(true);
+    expect(screen.queryByText("karuvi")).not.toBeInTheDocument();
+  });
+});

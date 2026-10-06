@@ -32,8 +32,8 @@ export function LeadsPageClient() {
   const [openRowDropdown, setOpenRowDropdown] = useState<string | null>(null);
   // The lead whose detail drawer (timeline, notes, task) is open.
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
-  // The leads page opens on the newest lead's ad; the shared hook owns the filter state and its options.
-  const filters = useLeadFilters({ autoSelectDefaultAd: true, onError: setError });
+  // The leads page opens on ALL leads with no filter applied; the shared hook owns the filter state and its options.
+  const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setError });
   const { quick, status, label, assignee, from, to, pageRecordId, adId, search } = filters;
 
   useEffect(() => {
