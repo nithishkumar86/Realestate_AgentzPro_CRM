@@ -2170,6 +2170,10 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 
 .mvp-filter-actions-right { display: flex; gap: 14px; margin-left: auto; }
 
+/* Leads page: a fifth dropdown (Assignee) sits beside the search box. A narrower search box keeps all six on one
+   line on a normal desktop instead of leaving the last dropdown alone on a second row. */
+.mvp-filter-card--assignee .mvp-search-field { flex: 1 1 170px; min-width: 150px; }
+
 /* No search box (dashboard): the two rows collapse into one line — the four
    dropdowns and Date share the width equally. Wraps cleanly on narrow screens. */
 .mvp-filter-card--single-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 14px; }

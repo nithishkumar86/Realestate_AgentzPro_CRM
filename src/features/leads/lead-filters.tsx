@@ -100,7 +100,7 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
     setIsDateOpen(false);
   };
 
-  return <section className={`mvp-filter-card${showSearch ? "" : " mvp-filter-card--single-row"}`}>
+  return <section className={`mvp-filter-card${showSearch ? "" : " mvp-filter-card--single-row"}${showAssignee ? " mvp-filter-card--assignee" : ""}`}>
     <div className="mvp-filter-row">
       {showSearch ? <label className="mvp-search-field">
         <Search size={16} />
