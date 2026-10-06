@@ -203,6 +203,7 @@ begin
 
   -- TC13: removing a member unassigns their leads (System) and drops their rules; other columns survive.
   v_lead := (select id from public.lead_data where tenant_id = t_a and assigned_user_id = emp_a1 limit 1);
+  perform pg_temp.assert_true(v_lead is not null, 'TC13: fixture lead assigned to emp_a1 exists');
   delete from public.tenant_memberships where tenant_id = t_a and user_id = emp_a1;
   perform pg_temp.assert_true(not exists (select 1 from public.lead_data where tenant_id = t_a and assigned_user_id = emp_a1), 'TC13: leads unassigned');
   perform pg_temp.assert_true(exists (select 1 from public.lead_data where id = v_lead and tenant_id = t_a), 'TC13: the lead itself survives');
@@ -230,6 +231,17 @@ begin
     and has_function_privilege('service_role', 'public.apply_lead_ad_assignment_rule(uuid,uuid,text)', 'execute')
     and has_function_privilege('service_role', 'public.list_lead_ad_assignments(uuid)', 'execute'), 'TC15: service_role can run the RPCs');
   perform pg_temp.assert_true((select relrowsecurity and relforcerowsecurity from pg_class where oid = 'public.lead_ad_assignment_rules'::regclass), 'TC15: RLS enabled and forced');
+
+  -- TC16: deleting the whole tenant (the Meta data-deletion / account-removal path) still works with assignments in
+  -- place. The cascade removes memberships, whose FK SET NULL updates leads that are themselves being deleted; the
+  -- assignment logger must not trip over rows that are going away.
+  perform pg_temp.assert_true(exists (select 1 from public.lead_data where tenant_id = t_a and assigned_user_id is not null), 'TC16: fixture has assigned leads');
+  delete from public.tenants where tenant_id = t_a;
+  perform pg_temp.assert_true(not exists (select 1 from public.lead_data where tenant_id = t_a)
+    and not exists (select 1 from public.lead_activities where tenant_id = t_a)
+    and not exists (select 1 from public.lead_ad_assignment_rules where tenant_id = t_a)
+    and not exists (select 1 from public.tenant_memberships where tenant_id = t_a), 'TC16: nothing of the tenant is left behind');
+  perform pg_temp.assert_true(exists (select 1 from public.tenants where tenant_id = t_b), 'TC16: the other tenant is untouched');
 
   raise notice 'LEAD_ASSIGNMENT_REGRESSION_PASSED';
 end;
