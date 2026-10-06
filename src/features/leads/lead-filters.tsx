@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CalendarDays, ChevronDown, Filter, LayoutGrid, Megaphone, Search, Tag, X } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronDown, Filter, LayoutGrid, Megaphone, Search, Tag, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
 import type { LeadFilters } from "@/features/leads/use-lead-filters";
@@ -82,10 +82,11 @@ function FilterChip({ chipLabel, value, onRemove }: { chipLabel: string; value: 
 /**
  * The search box, Page/Ad/Status/Label dropdowns, Date popover and Today's Leads toggle. `actions`
  * fills the right-hand end of the second row (the leads page puts Delete/Download there; the
- * dashboard has none). The dashboard also hides the search box and the Today's Leads toggle.
+ * dashboard has none). The dashboard also hides the search box and the Today's Leads toggle, and
+ * does not offer the Assignee filter (`showAssignee`, leads page only).
  */
-export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean }) {
-  const { options, pageRecordId, adId, search, quick, status, label, from, to } = filters;
+export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true, showAssignee = false }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean; showAssignee?: boolean }) {
+  const { options, pageRecordId, adId, search, quick, status, label, assignee, from, to } = filters;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [draftFrom, setDraftFrom] = useState("");
@@ -122,6 +123,10 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
         options={LEAD_LABELS.map((item) => ({ value: item, label: item }))}
         openField={openDropdown} onOpenChange={setOpenDropdown}
         onChange={(next) => filters.setLabel(next as LeadLabel | "")} />
+      {showAssignee ? <FieldDropdown id="assignee" icon={<UserRound size={16} />} label="Assignee" placeholder="All assignees" value={assignee}
+        options={assigneeFilterOptions(options.assignees)}
+        openField={openDropdown} onOpenChange={setOpenDropdown}
+        onChange={filters.setAssignee} /> : null}
     </div>
     <div className="mvp-filter-row mvp-filter-row--secondary">
       <div className="mvp-date-filter">
@@ -150,15 +155,25 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
   </section>;
 }
 
+/** "My leads" and "Unassigned" first, then every active member of the company. */
+function assigneeFilterOptions(assignees: LeadFilters["options"]["assignees"]): DropdownOption[] {
+  return [
+    { value: "me", label: "My leads" },
+    { value: "unassigned", label: "Unassigned" },
+    ...assignees.map((member) => ({ value: member.userId, label: member.fullName })),
+  ];
+}
+
 /** The "Active Filters" bar: one removable chip per active filter, plus Clear all. */
 export function LeadActiveFilters({ filters }: { filters: LeadFilters }) {
-  const { options, pageRecordId, adId, search, quick, status, label, from, to } = filters;
+  const { options, pageRecordId, adId, search, quick, status, label, assignee, from, to } = filters;
   if (!filters.hasActiveFilters) return null;
   const pageName = options.pages.find((page) => page.id === pageRecordId)?.name ?? pageRecordId;
   const adName = adId === "unattributed" ? "Unattributed" : (() => {
     const ad = options.ads.find((item) => item.id === adId);
     return ad ? `${ad.name ?? "Name pending"} (${ad.id.slice(-4)})` : adId;
   })();
+  const assigneeName = assigneeFilterOptions(options.assignees).find((option) => option.value === assignee)?.label ?? assignee;
   return <div className="mvp-active-filters">
     <span>Active Filters:</span>
     {search.trim() ? <FilterChip chipLabel="Search" value={`"${search.trim()}"`} onRemove={() => filters.setSearch("")} /> : null}
@@ -166,6 +181,7 @@ export function LeadActiveFilters({ filters }: { filters: LeadFilters }) {
     {adId ? <FilterChip chipLabel="Ad" value={adName} onRemove={() => filters.setAdId("")} /> : null}
     {status ? <FilterChip chipLabel="Status" value={status} onRemove={() => filters.setStatus("")} /> : null}
     {label ? <FilterChip chipLabel="Label" value={label} onRemove={() => filters.setLabel("")} /> : null}
+    {assignee ? <FilterChip chipLabel="Assignee" value={assigneeName} onRemove={() => filters.setAssignee("")} /> : null}
     {quick !== "All Leads" ? <FilterChip chipLabel="Range" value={quick} onRemove={() => filters.setQuick("All Leads")} /> : null}
     {from ? <FilterChip chipLabel="From" value={from} onRemove={() => filters.setFrom("")} /> : null}
     {to ? <FilterChip chipLabel="To" value={to} onRemove={() => filters.setTo("")} /> : null}

@@ -135,3 +135,56 @@ describe("lead timeline hooks into the leads list", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });
+
+
+describe("lead assignment in the leads list", () => {
+  const PRIYA = "33333333-3333-4333-8333-333333333333";
+  const timezone = () => builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+
+  it.each([
+    ["unassigned", "is", ["assigned_user_id", null]],
+    ["me", "eq", ["assigned_user_id", "user-a"]],
+    [PRIYA, "eq", ["assigned_user_id", PRIYA]],
+  ] as const)("filters by assignee %s with the matching tenant-scoped predicate", async (assignee, method, args) => {
+    const leads = builder({ data: [], error: null, count: 0 });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone() : leads);
+    await queryLeads(context, { assignee });
+    expect(leads[method]).toHaveBeenCalledWith(...args);
+    expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+  });
+
+  it("adds no assignee predicate when the filter is empty", async () => {
+    const leads = builder({ data: [], error: null, count: 0 });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone() : leads);
+    await queryLeads(context, {});
+    expect(leads.is).not.toHaveBeenCalled();
+    expect(leads.eq).not.toHaveBeenCalledWith("assigned_user_id", expect.anything());
+  });
+
+  it("names each row's assignee from profiles (one lookup), and leaves unassigned rows null", async () => {
+    const leads = builder({ data: [
+      { id: "lead-1", lead_name: "A", ad_id: "ad-1", lead_created_time: "2026-09-09T02:00:00Z", status: "New Lead", label: "Hot", assigned_user_id: PRIYA },
+      { id: "lead-2", lead_name: "B", ad_id: "ad-1", lead_created_time: "2026-09-09T01:00:00Z", status: "New Lead", label: "Hot", assigned_user_id: PRIYA },
+      { id: "lead-3", lead_name: "C", ad_id: null, lead_created_time: "2026-09-09T00:00:00Z", status: "New Lead", label: "Hot", assigned_user_id: null },
+    ], error: null, count: 3 });
+    const profiles = builder({ data: [{ user_id: PRIYA, full_name: "Priya" }], error: null });
+    const tasks = builder({ data: [], error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone() : table === "profiles" ? profiles : table === "lead_tasks" ? tasks : leads);
+    const result = await queryLeads(context, {});
+    expect(result.items.map((item) => [item.assignedUserId, item.assigneeName])).toEqual([[PRIYA, "Priya"], [PRIYA, "Priya"], [null, null]]);
+    expect(profiles.in).toHaveBeenCalledTimes(1);
+    expect(profiles.in).toHaveBeenCalledWith("user_id", [PRIYA]);
+  });
+
+  it("offers the tenant's active members as assignee choices with the filter options", async () => {
+    const pages = builder({ data: [], error: null });
+    const leads = builder({ data: [], error: null });
+    const memberships = builder({ data: [{ user_id: PRIYA }], error: null });
+    const profiles = builder({ data: [{ user_id: PRIYA, full_name: "Priya" }], error: null });
+    mocks.from.mockImplementation((table: string) => table === "facebook_pages" ? pages : table === "tenant_memberships" ? memberships : table === "profiles" ? profiles : leads);
+    const options = await getLeadFilterOptions(context);
+    expect(options.assignees).toEqual([{ userId: PRIYA, fullName: "Priya" }]);
+    expect(memberships.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(memberships.eq).toHaveBeenCalledWith("membership_status", "active");
+  });
+});

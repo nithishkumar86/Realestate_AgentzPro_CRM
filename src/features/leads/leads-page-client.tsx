@@ -10,7 +10,16 @@ import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
-type Lead = { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; hasOpenTask?: boolean; openTaskTitle?: string | null };
+type Lead = { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; assignedUserId?: string | null; assigneeName?: string | null; hasOpenTask?: boolean; openTaskTitle?: string | null };
+
+/** Who owns the lead: initial + name, or a quiet "Unassigned". Changed from the lead's detail drawer. */
+function AssigneeCell({ name }: { name: string | null }) {
+  if (!name) return <span className="mvp-assignee mvp-assignee--none">Unassigned</span>;
+  return <span className="mvp-assignee" title={name}>
+    <span className="mvp-assignee__avatar" aria-hidden="true">{name.trim().charAt(0).toUpperCase() || "?"}</span>
+    <span className="mvp-assignee__name">{name}</span>
+  </span>;
+}
 
 export function LeadsPageClient() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -25,7 +34,7 @@ export function LeadsPageClient() {
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
   // The leads page opens on the newest lead's ad; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: true, onError: setError });
-  const { quick, status, label, from, to, pageRecordId, adId, search } = filters;
+  const { quick, status, label, assignee, from, to, pageRecordId, adId, search } = filters;
 
   useEffect(() => {
     let active = true;
@@ -42,7 +51,7 @@ export function LeadsPageClient() {
     void loadLeads();
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filterBody() is a pure function of exactly these values
-  }, [quick, status, label, from, to, pageRecordId, adId, search]);
+  }, [quick, status, label, assignee, from, to, pageRecordId, adId, search]);
 
   async function download(): Promise<void> {
     try {
@@ -135,11 +144,14 @@ export function LeadsPageClient() {
   const applyOpenTask = useCallback((leadId: string, hasOpenTask: boolean, title?: string | null) => {
     setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, hasOpenTask, openTaskTitle: hasOpenTask ? title ?? existing.openTaskTitle ?? null : null } : existing));
   }, []);
+  const applyAssignee = useCallback((leadId: string, assignedUserId: string | null, assigneeName: string | null) => {
+    setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, assignedUserId, assigneeName } : existing));
+  }, []);
   const closeDrawer = useCallback(() => setDrawerLeadId(null), []);
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? null : null;
 
   return <div className="mvp-leads">
-    <LeadFilterBar filters={filters} actions={<>
+    <LeadFilterBar filters={filters} showAssignee actions={<>
       <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
         <Trash2 size={16} />{isDeleting ? "Deleting..." : selectedLeadIds.length > 0 ? `Delete (${selectedLeadIds.length})` : "Delete"}
       </button>
@@ -149,14 +161,16 @@ export function LeadsPageClient() {
     </>} />
     {error ? <div className="mvp-inline-error">{error}</div> : null}
     <LeadActiveFilters filters={filters} />
-    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Phone", "Page", "Ad Name", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
-      {loading ? <tr><td className="mvp-empty" colSpan={8}>Loading leads...</td></tr> : null}
-      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={8}>No leads match these filters.</td></tr> : null}
+    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" />{["Client Name", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
+      {loading ? <tr><td className="mvp-empty" colSpan={9}>Loading leads...</td></tr> : null}
+      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={9}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td><span className="mvp-lead-name-cell">
         <button type="button" className="mvp-lead-name-button" onClick={() => setDrawerLeadId(lead.id)} aria-label={`Open details for ${lead.leadName ?? "Unnamed Lead"}`}>{lead.leadName ?? "Unnamed Lead"}</button>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
       </span></td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
+        <AssigneeCell name={lead.assigneeName ?? null} />
+      </td><td>
         <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
           open={openRowDropdown === `${lead.id}:status`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:status` : null)}
           onChange={(next) => void updateStatus(lead.id, lead.status, next)} />
@@ -168,6 +182,6 @@ export function LeadsPageClient() {
         {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
       </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
     </tbody></table></section>
-    {drawerLead ? <LeadDrawer lead={drawerLead} timezone={timezone} onClose={closeDrawer} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
+    {drawerLead ? <LeadDrawer lead={drawerLead} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
   </div>;
 }

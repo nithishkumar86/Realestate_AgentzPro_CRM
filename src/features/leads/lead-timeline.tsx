@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRightLeft, CalendarClock, CircleCheck, CircleX, ListTodo, StickyNote, UserPlus, type LucideIcon } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, CircleCheck, CircleX, ListTodo, StickyNote, UserCheck, UserPlus, type LucideIcon } from "lucide-react";
 import { useId, useImperativeHandle, useMemo, useState, type Ref } from "react";
 import { Notice, SkeletonRows } from "@/components/ui";
 import { TIMELINE_FILTERS, type LeadActivityType, type TimelineFilter } from "@/features/leads/lead-options";
@@ -11,7 +11,7 @@ const TAB_LABELS: Record<TimelineFilter, string> = { all: "All", status: "Status
 
 const EMPTY_MESSAGES: Record<TimelineFilter, string> = {
   all: "Nothing has happened on this lead yet.",
-  status: "No status changes yet.",
+  status: "No status or assignment changes yet.",
   notes: "No notes yet. Add the first one above.",
   tasks: "No tasks yet. Add a follow-up task above.",
 };
@@ -24,6 +24,7 @@ const TYPE_ICONS: Record<LeadActivityType, { icon: LucideIcon; tone: string }> =
   task_rescheduled: { icon: CalendarClock, tone: "teal" },
   task_completed: { icon: CircleCheck, tone: "green" },
   task_cancelled: { icon: CircleX, tone: "gray" },
+  lead_assigned: { icon: UserCheck, tone: "blue" },
 };
 
 export interface LeadTimelineHandle { refresh: () => Promise<void> }

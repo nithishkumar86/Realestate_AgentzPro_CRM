@@ -4,6 +4,7 @@ import { AppError } from "@/lib/server/app-error";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
 import type { LeadLabel, LeadStatus } from "@/features/leads/lead-options";
+import { listAssignableMembers, loadProfileNames, type AssignableMember } from "@/lib/server/lead-assignment-service";
 
 export type LeadSortField = "leadName" | "leadDate";
 export type QuickFilter = "all" | "today" | "month";
@@ -16,6 +17,8 @@ export interface LeadSearchRequest {
   adId?: string | "unattributed";
   status?: LeadStatus;
   label?: LeadLabel;
+  /** "me" (the signed-in member), "unassigned", or a member's user id. */
+  assignee?: string;
   page?: number;
   pageSize?: number;
   sortField?: LeadSortField;
@@ -26,6 +29,8 @@ export interface LeadRow {
   id: string; leadName: string | null; email: string | null; phone: string | null;
   adId: string | null; facebookPage: string; adName: string; leadDate: string;
   status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource;
+  /** Who owns the lead; null = Unassigned. The name is resolved from the member's profile. */
+  assignedUserId: string | null; assigneeName: string | null;
   /** Whether the lead has an open follow-up task. Only set for the paginated table, never for export. */
   hasOpenTask?: boolean;
   /** Title of that open task, shown read-only under the client name. */
@@ -40,13 +45,16 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const sortField = request.sortField ?? "leadDate";
   const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
+    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.pageRecordId) query = query.eq("facebook_page_record_id", request.pageRecordId);
   if (request.adId === "unattributed") query = query.is("ad_id", null);
   else if (request.adId) query = query.eq("ad_id", request.adId);
   if (request.status) query = query.eq("status", request.status);
   if (request.label) query = query.eq("label", request.label);
+  if (request.assignee === "unassigned") query = query.is("assigned_user_id", null);
+  else if (request.assignee === "me") query = query.eq("assigned_user_id", context.userId);
+  else if (request.assignee) query = query.eq("assigned_user_id", request.assignee);
   if (request.search?.trim()) {
     const raw = request.search.trim().replace(/[,%()]/g, " ");
     const digits = normalizeIndianPhone(raw);
@@ -61,9 +69,16 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const { data, error, count } = await query;
   if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
   const items = (data ?? []).map((lead) => toLeadRow(lead as Record<string, unknown>));
+  await attachAssigneeNames(items);
   if (!exportAll) await attachOpenTaskFlags(context, items);
   const total = exportAll ? items.length : count ?? 0;
   return { items, total, page: exportAll ? 1 : page, pageSize: exportAll ? items.length : pageSize, totalPages: exportAll ? 1 : Math.max(1, Math.ceil(total / pageSize)), timezone };
+}
+
+/** Fills assigneeName from the profiles of the (tenant-scoped) assignees of these rows. One query per page. */
+async function attachAssigneeNames(items: LeadRow[]): Promise<void> {
+  const names = await loadProfileNames(items.flatMap((item) => (item.assignedUserId ? [item.assignedUserId] : [])));
+  for (const item of items) item.assigneeName = item.assignedUserId ? names.get(item.assignedUserId) ?? "Team member" : null;
 }
 
 /**
@@ -86,13 +101,15 @@ function toLeadRow(lead: Record<string, unknown>): LeadRow {
   const page = lead.facebook_pages as { facebook_page_name?: string } | null;
   const adId = typeof lead.ad_id === "string" ? lead.ad_id : null;
   const adName = asNullableString(lead.ad_name);
-  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default" };
+  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default", assignedUserId: typeof lead.assigned_user_id === "string" ? lead.assigned_user_id : null, assigneeName: null };
 }
 
 export type LeadFilterOptions = {
   pages: Array<{ id: string; name: string }>;
   ads: Array<{ id: string; name: string | null }>;
   defaultAdId: string | null;
+  /** Active members a lead can be assigned to (also the Assignee filter's choices). */
+  assignees: AssignableMember[];
 };
 
 export async function getLeadFilterOptions(context: TenantRequestContext, pageRecordId?: string): Promise<LeadFilterOptions> {
@@ -113,12 +130,13 @@ export async function getLeadFilterOptions(context: TenantRequestContext, pageRe
   if (selectedPageId) adQuery = adQuery.eq("facebook_page_record_id", selectedPageId);
   const { data: leads, error: adsError } = await adQuery;
   if (adsError) throw new AppError("Lead filters could not be loaded.", { status: 500, code: "LEAD_FILTERS_FAILED" });
+  const assignees = await listAssignableMembers(context.tenantId);
   const ads = new Map<string, { id: string; name: string | null }>();
   for (const lead of leads ?? []) {
     if (typeof lead.ad_id === "string" && !ads.has(lead.ad_id)) ads.set(lead.ad_id, { id: lead.ad_id, name: asNullableString(lead.ad_name) });
   }
   const values = [...ads.values()].sort((left, right) => (left.name ?? left.id).localeCompare(right.name ?? right.id));
-  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null };
+  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null, assignees };
 }
 
 /**

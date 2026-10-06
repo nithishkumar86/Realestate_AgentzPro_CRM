@@ -82,7 +82,7 @@ describe("UserMenu profile dialog", () => {
   it("shows Profile under Your account, grouped apart from the company sections", () => {
     const { dialog, sidebar } = openProfile();
 
-    expect(sidebar).toHaveTextContent("Your accountProfileCompanyMembersBillingInvoices");
+    expect(sidebar).toHaveTextContent("Your accountProfileCompanyMembersLead assignmentBillingInvoices");
     expect(within(sidebar).getByRole("button", { name: "Profile" })).toHaveAttribute("aria-current", "page");
     expect(within(dialog).getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Profile details" })).not.toBeInTheDocument();

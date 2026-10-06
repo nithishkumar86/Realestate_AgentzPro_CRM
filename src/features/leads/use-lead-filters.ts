@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import type { LeadLabel, LeadStatus } from "@/features/leads/lead-options";
 
 export type Quick = "All Leads" | "Today Leads" | "This Month Leads";
-export type LeadFilterOptions = { pages: Array<{ id: string; name: string }>; ads: Array<{ id: string; name: string | null }>; defaultAdId: string | null };
+export type AssigneeOption = { userId: string; fullName: string };
+export type LeadFilterOptions = { pages: Array<{ id: string; name: string }>; ads: Array<{ id: string; name: string | null }>; defaultAdId: string | null; assignees: AssigneeOption[] };
 type ApiError = { error?: { message?: string } };
 
 export async function readError(response: Response, fallback: string): Promise<string> {
@@ -21,13 +22,15 @@ export async function readError(response: Response, fallback: string): Promise<s
  * total and chart would be silently narrowed to one ad.
  */
 export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDefaultAd: boolean; onError?: (message: string) => void }) {
-  const [options, setOptions] = useState<LeadFilterOptions>({ pages: [], ads: [], defaultAdId: null });
+  const [options, setOptions] = useState<LeadFilterOptions>({ pages: [], ads: [], defaultAdId: null, assignees: [] });
   const [pageRecordId, setPageRecordId] = useState("");
   const [adId, setAdId] = useState("");
   const [search, setSearch] = useState("");
   const [quick, setQuick] = useState<Quick>("All Leads");
   const [status, setStatus] = useState<LeadStatus | "">("");
   const [label, setLabel] = useState<LeadLabel | "">("");
+  // "me", "unassigned", a member's user id, or "" for everyone. Only the leads page offers it; the dashboard never sets it.
+  const [assignee, setAssignee] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const onErrorRef = useRef(onError);
@@ -41,7 +44,7 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
         if (!response.ok) throw new Error(await readError(response, "Lead filters could not be loaded."));
         const next = await response.json() as LeadFilterOptions;
         if (!active) return;
-        setOptions(next);
+        setOptions({ ...next, assignees: next.assignees ?? [] });
         setAdId((current) => next.ads.some((ad) => ad.id === current) || current === "unattributed" ? current : autoSelectDefaultAd ? next.defaultAdId ?? "" : "");
       } catch (cause) { if (active) onErrorRef.current?.(cause instanceof Error ? cause.message : "Lead filters could not be loaded."); }
     }
@@ -56,13 +59,13 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
    */
   const filterBody = () => ({
     quickFilter: quick === "Today Leads" ? "today" : quick === "This Month Leads" ? "month" : "all",
-    ...(status ? { status } : {}), ...(label ? { label } : {}),
+    ...(status ? { status } : {}), ...(label ? { label } : {}), ...(assignee ? { assignee } : {}),
     ...(from ? { dateFrom: from } : {}), ...(to ? { dateTo: to } : {}),
     ...(pageRecordId ? { pageRecordId } : {}), ...(adId ? { adId } : {}),
     ...(search.trim() ? { search: search.trim() } : {}),
   });
 
-  const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setFrom(""); setTo(""); };
+  const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setAssignee(""); setFrom(""); setTo(""); };
   /**
    * Today's Leads and a From/To range are two ways of naming the same thing — a date window — and
    * the query service resolves that collision by letting the quick range win (see resolveDateRange).
@@ -77,11 +80,11 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
   };
   const applyDateRange = (nextFrom: string, nextTo: string) => { setFrom(nextFrom); setTo(nextTo); setQuick("All Leads"); };
   const clearPage = () => { setPageRecordId(""); setAdId(""); };
-  const hasActiveFilters = Boolean(pageRecordId || adId || search.trim() || quick !== "All Leads" || status || label || from || to);
+  const hasActiveFilters = Boolean(pageRecordId || adId || search.trim() || quick !== "All Leads" || status || label || assignee || from || to);
 
   return {
-    options, pageRecordId, adId, search, quick, status, label, from, to,
-    setPageRecordId, setAdId, setSearch, setQuick, setStatus, setLabel, setFrom, setTo,
+    options, pageRecordId, adId, search, quick, status, label, assignee, from, to,
+    setPageRecordId, setAdId, setSearch, setQuick, setStatus, setLabel, setAssignee, setFrom, setTo,
     filterBody, reset, toggleQuickRange, applyDateRange, clearPage, hasActiveFilters,
   };
 }

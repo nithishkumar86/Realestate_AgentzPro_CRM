@@ -40,6 +40,7 @@ export const LEAD_ACTIVITY_TYPES = [
   "task_rescheduled",
   "task_completed",
   "task_cancelled",
+  "lead_assigned",
 ] as const;
 
 export type LeadActivityType = (typeof LEAD_ACTIVITY_TYPES)[number];
@@ -49,10 +50,13 @@ export type TimelineFilter = (typeof TIMELINE_FILTERS)[number];
 
 /** The activity types each timeline tab shows. "all" is every type. */
 export const TIMELINE_FILTER_TYPES: Record<Exclude<TimelineFilter, "all">, readonly LeadActivityType[]> = {
-  status: ["lead_created", "status_change"],
+  status: ["lead_created", "status_change", "lead_assigned"],
   notes: ["note_added"],
   tasks: ["task_created", "task_rescheduled", "task_completed", "task_cancelled"],
 };
+
+// The Leads page "Assignee" filter: one of these two shortcuts, or a member's user id.
+export const ASSIGNEE_FILTER_SHORTCUTS = ["me", "unassigned"] as const;
 
 export const NOTE_MAX_LENGTH = 2000;
 export const TASK_TITLE_MAX_LENGTH = 200;

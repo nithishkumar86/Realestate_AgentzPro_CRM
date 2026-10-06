@@ -12,7 +12,7 @@ const LEAD_2 = "22222222-2222-4222-8222-222222222222";
 const LEAD_3 = "33333333-3333-4333-8333-333333333333";
 const TASK = "44444444-4444-4444-8444-444444444444";
 
-type Lead = { id: string; leadName: string; phone: string; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource: string; hasOpenTask: boolean };
+type Lead = { id: string; leadName: string; phone: string; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource: string; hasOpenTask: boolean; assignedUserId?: string | null; assigneeName?: string | null };
 const lead = (id: string, leadName: string, extra: Partial<Lead> = {}): Lead => ({ id, leadName, phone: "9999999999", facebookPage: "Chennai Homes", adName: "karuvi", leadDate: "2026-10-01T05:00:00Z", status: "New Lead", label: "Warm", labelSource: "default", hasOpenTask: false, ...extra });
 
 type Activity = { id: string; type: string; summary: string; metadata: Record<string, unknown>; actorName: string; createdAt: string; backfilled: boolean; noteBody?: string };
@@ -29,6 +29,8 @@ interface ApiState {
   pages: Record<string, { items: Activity[]; nextCursor: string | null }>;
   openTask: typeof openTask | null;
   createTaskConflict?: boolean;
+  assignees?: Array<{ userId: string; fullName: string }>;
+  failAssign?: boolean;
 }
 
 /** One router for every endpoint the leads page and the drawer call; records each request. */
@@ -39,7 +41,7 @@ function stubApi(state: ApiState) {
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ url, method, body });
-    if (url.startsWith("/api/leads/filters")) return json({ pages: [], ads: [], defaultAdId: null });
+    if (url.startsWith("/api/leads/filters")) return json({ pages: [], ads: [], defaultAdId: null, assignees: state.assignees ?? [] });
     if (url === "/api/leads/query") return json({ items: state.leads, total: state.leads.length, timezone: "Asia/Kolkata" });
     const activities = /^\/api\/leads\/[^/]+\/activities\?(.*)$/.exec(url);
     if (activities) {
@@ -58,6 +60,12 @@ function stubApi(state: ApiState) {
       return json(state.openTask);
     }
     if (/^\/api\/leads\/[^/]+\/notes$/.test(url)) return json({ id: "note-1", createdAt: "2026-10-05T04:00:00+00:00" }, 201);
+    const assignRoute = /^\/api\/leads\/([^/]+)\/assignee$/.exec(url);
+    if (assignRoute && method === "PUT") {
+      if (state.failAssign) return json({ error: { code: "INVALID_ASSIGNEE", message: "Choose an active member of this company." } }, 400);
+      const assignedUserId = (body?.assigneeUserId as string | null) ?? null;
+      return json({ id: assignRoute[1], assignedUserId, assigneeName: state.assignees?.find((member) => member.userId === assignedUserId)?.fullName ?? null });
+    }
     const patchLead = /^\/api\/leads\/([^/]+)$/.exec(url);
     if (patchLead && method === "PATCH") return json({ id: patchLead[1], status: body?.status, label: "Warm", labelSource: "default" });
     throw new Error(`Unexpected request: ${method} ${url}`);
@@ -293,5 +301,76 @@ describe("moving a lead to a final status with an open task", () => {
     await waitFor(() => expect(calls.some((call) => call.method === "PATCH")).toBe(true));
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(calls.some((call) => call.url.endsWith("/tasks"))).toBe(false);
+  });
+});
+
+
+const PRIYA = "55555555-5555-4555-8555-555555555555";
+const RAVI = "66666666-6666-4666-8666-666666666666";
+const members = [{ userId: PRIYA, fullName: "Priya" }, { userId: RAVI, fullName: "Ravi" }];
+
+describe("lead assignment", () => {
+  it("shows each lead's assignee in the table, or a quiet Unassigned", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { assignedUserId: PRIYA, assigneeName: "Priya" }), lead(LEAD_2, "Anitha")], pages: {}, openTask: null, assignees: members });
+    await renderPage();
+    expect(screen.getByRole("columnheader", { name: "Assigned To" })).toBeInTheDocument();
+    const rowOf = (name: string) => screen.getByRole("button", { name: `Open details for ${name}` }).closest("tr")!;
+    expect(within(rowOf("Kumar")).getByText("Priya")).toBeInTheDocument();
+    expect(within(rowOf("Anitha")).getByText("Unassigned")).toBeInTheDocument();
+  });
+
+  it("filters by assignee: My leads, Unassigned and a member are offered, and the choice reaches the query and shows as a chip", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, assignees: members });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Assignee" }));
+    const list = await screen.findByRole("listbox");
+    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["All assignees", "My leads", "Unassigned", "Priya", "Ravi"]);
+    fireEvent.click(within(list).getByRole("option", { name: "My leads" }));
+    await waitFor(() => expect(calls.filter((call) => call.url === "/api/leads/query").at(-1)?.body).toMatchObject({ assignee: "me" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Assignee filter: My leads" }));
+    await waitFor(() => expect(calls.filter((call) => call.url === "/api/leads/query").at(-1)?.body).not.toHaveProperty("assignee"));
+  });
+
+  it("assigns from the drawer: sends the chosen member, updates the table row and refreshes the timeline", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, assignees: members });
+    await renderPage();
+    const drawer = await openDrawer();
+    const select = await within(drawer).findByRole("combobox", { name: "Assigned to" });
+    expect(within(select).getAllByRole("option").map((option) => option.textContent)).toEqual(["Unassigned", "Priya", "Ravi"]);
+    const before = activityCalls(calls).length;
+    fireEvent.change(select, { target: { value: RAVI } });
+    await waitFor(() => expect(calls.some((call) => call.method === "PUT" && call.url === `/api/leads/${LEAD_1}/assignee` && call.body?.assigneeUserId === RAVI)).toBe(true));
+    await waitFor(() => expect(select).toHaveValue(RAVI));
+    expect(within(screen.getByRole("button", { name: "Open details for Kumar", hidden: true }).closest("tr")!).getByText("Ravi")).toBeInTheDocument();
+    await waitFor(() => expect(activityCalls(calls).length).toBeGreaterThan(before));
+  });
+
+  it("unassigns with a null assignee", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { assignedUserId: PRIYA, assigneeName: "Priya" })], pages: {}, openTask: null, assignees: members });
+    await renderPage();
+    const drawer = await openDrawer();
+    const select = await within(drawer).findByRole("combobox", { name: "Assigned to" });
+    expect(select).toHaveValue(PRIYA);
+    fireEvent.change(select, { target: { value: "" } });
+    await waitFor(() => expect(calls.some((call) => call.method === "PUT" && call.body?.assigneeUserId === null)).toBe(true));
+  });
+
+  it("still shows a lead's assignee who has since been blocked, but cannot be re-picked", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { assignedUserId: "77777777-7777-4777-8777-777777777777", assigneeName: "Meena" })], pages: {}, openTask: null, assignees: members });
+    await renderPage();
+    const drawer = await openDrawer();
+    const select = await within(drawer).findByRole("combobox", { name: "Assigned to" });
+    expect(select).toHaveValue("77777777-7777-4777-8777-777777777777");
+    expect(within(select).getByRole("option", { name: "Meena (no longer active)" })).toBeDisabled();
+  });
+
+  it("shows the server's message and keeps the previous assignee when the change is refused", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { assignedUserId: PRIYA, assigneeName: "Priya" })], pages: {}, openTask: null, assignees: members, failAssign: true });
+    await renderPage();
+    const drawer = await openDrawer();
+    const select = await within(drawer).findByRole("combobox", { name: "Assigned to" });
+    fireEvent.change(select, { target: { value: RAVI } });
+    expect(await within(drawer).findByText("Choose an active member of this company.")).toBeInTheDocument();
+    expect(select).toHaveValue(PRIYA);
   });
 });

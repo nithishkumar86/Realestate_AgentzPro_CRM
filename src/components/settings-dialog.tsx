@@ -20,9 +20,11 @@ import {
   ReceiptText,
   Trash2,
   User,
+  UserCheck,
   Users,
   X,
 } from "lucide-react";
+import { AdAssignmentSection } from "@/components/ad-assignment-section";
 import { BillingPageClient } from "@/features/billing/billing-page-client";
 import type { BillingOverview } from "@/lib/server/billing-service";
 import { BillingOwnerOnlyError, getBillingOverview, getInvoices, type BillingInvoice } from "@/services/billing-api-client";
@@ -57,11 +59,12 @@ const ROLE_LABELS: Record<MembershipRole, string> = {
 // The Members role filter offers only the roles a company actually uses: one owner and employees.
 const FILTERABLE_ROLES: readonly MembershipRole[] = ["owner", "employee"];
 
-type SettingsSection ="profile" | "members" | "billing" | "invoices";
+type SettingsSection ="profile" | "members" | "assignment" | "billing" | "invoices";
 
 const SECTION_LABELS: Record<SettingsSection, string> = {
   profile: "Profile",
   members: "Members",
+  assignment: "Lead assignment",
   billing: "Billing",
   invoices: "Invoices",
 };
@@ -169,6 +172,15 @@ export function SettingsDialog({ fullName, onClose, initialSection }: Readonly<S
             <button
               type="button"
               className="mvp-settings__nav-item"
+              aria-current={section === "assignment" ? "page" : undefined}
+              onClick={() => setSection("assignment")}
+            >
+              <UserCheck size={17} aria-hidden="true" />
+              <span>Lead assignment</span>
+            </button>
+            <button
+              type="button"
+              className="mvp-settings__nav-item"
               aria-current={section === "billing" ? "page" : undefined}
               onClick={() => setSection("billing")}
             >
@@ -206,6 +218,7 @@ export function SettingsDialog({ fullName, onClose, initialSection }: Readonly<S
           <div className="mvp-settings__content">
             {section === "profile" ? <ProfileSection /> : null}
             {section === "members" ? <MembersSection fullName={fullName} onOpenBilling={() => setSection("billing")} /> : null}
+            {section === "assignment" ? <AdAssignmentSection /> : null}
             {section === "billing" ? <BillingSection /> : null}
             {section === "invoices" ? <InvoicesSection /> : null}
           </div>

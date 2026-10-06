@@ -99,10 +99,10 @@ describe("listLeadActivities", () => {
     expect(built.lead_activities.or).toHaveBeenCalledWith(`created_at.lt."2026-10-05T09:31:12.123456+00:00",and(created_at.eq."2026-10-05T09:31:12.123456+00:00",id.lt.${TASK})`);
   });
 
-  it("maps the Status tab to lead_created + status_change", async () => {
+  it("maps the Status tab to lead_created + status_change + lead_assigned", async () => {
     const built = tables({ lead_data: { data: { id: LEAD }, error: null }, lead_activities: { data: [], error: null } });
     await listLeadActivities(context, LEAD, { filter: "status" });
-    expect(built.lead_activities.in).toHaveBeenCalledWith("type", ["lead_created", "status_change"]);
+    expect(built.lead_activities.in).toHaveBeenCalledWith("type", ["lead_created", "status_change", "lead_assigned"]);
   });
 
   it("attaches the full note body to note_added rows", async () => {

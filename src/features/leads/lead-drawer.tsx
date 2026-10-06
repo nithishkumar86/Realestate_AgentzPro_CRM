@@ -1,15 +1,15 @@
 "use client";
 
-import { BookOpen, Mail, Megaphone, Phone, X, type LucideIcon } from "lucide-react";
+import { BookOpen, ChevronDown, Mail, Megaphone, Phone, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_TITLE_MAX_LENGTH, isFinalLeadStatus, type LeadStatus } from "@/features/leads/lead-options";
 import { LeadRequestError, fetchOpenTask, formatActivityTime, formatTaskDate, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
 import { LeadTimeline, type LeadTimelineHandle } from "@/features/leads/lead-timeline";
 import { RowDropdown } from "@/features/leads/row-dropdown";
-import { readError } from "@/features/leads/use-lead-filters";
+import { readError, type AssigneeOption } from "@/features/leads/use-lead-filters";
 import type { LeadTask } from "@/lib/server/lead-timeline-service";
 
-export interface DrawerLead { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate?: string; label?: string; status: LeadStatus }
+export interface DrawerLead { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate?: string; label?: string; status: LeadStatus; assignedUserId?: string | null; assigneeName?: string | null }
 
 /** Colour of the status banner: where the lead is in the pipeline at a glance (UI only). */
 const STATUS_TONES: Partial<Record<LeadStatus, "blue" | "green" | "yellow" | "red" | "gray">> = {
@@ -45,12 +45,15 @@ function message(cause: unknown, fallback: string): string {
  * timeline. Every write goes through the tenant-scoped API routes; the timeline rows themselves are written
  * by the database, so after each change the drawer only asks the timeline to refresh.
  */
-export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTaskChange }: {
+export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusChange, onOpenTaskChange, onAssigneeChange }: {
   lead: DrawerLead;
   timezone: string;
+  /** Active members the lead can be assigned to. The "Assigned to" card shows only when onAssigneeChange is given. */
+  assignees?: AssigneeOption[];
   onClose: () => void;
   onStatusChange: (leadId: string, status: LeadStatus) => void;
   onOpenTaskChange: (leadId: string, hasOpenTask: boolean, title?: string | null) => void;
+  onAssigneeChange?: (leadId: string, assignedUserId: string | null, assigneeName: string | null) => void;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -140,12 +143,58 @@ export function LeadDrawer({ lead, timezone, onClose, onStatusChange, onOpenTask
           </div>
         </section>
 
+        {onAssigneeChange ? <AssigneeCard lead={lead} assignees={assignees} onChanged={(assignedUserId, assigneeName) => { onAssigneeChange(lead.id, assignedUserId, assigneeName); refreshTimeline(); }} /> : null}
         <TaskCard leadId={lead.id} timezone={timezone} tasks={tasks} />
         <NoteForm leadId={lead.id} onSaved={refreshTimeline} />
         <LeadTimeline ref={timelineRef} leadId={lead.id} timezone={timezone} />
       </div>
     </aside>
   </>;
+}
+
+/**
+ * Who owns the lead. Any member can reassign it (the database records who did, on the timeline). A person who
+ * was assigned and has since been blocked is still shown, but cannot be picked again.
+ */
+function AssigneeCard({ lead, assignees, onChanged }: {
+  lead: DrawerLead;
+  assignees: AssigneeOption[];
+  onChanged: (assignedUserId: string | null, assigneeName: string | null) => void;
+}) {
+  const selectId = useId();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const current = lead.assignedUserId ?? "";
+  const currentIsActive = !current || assignees.some((member) => member.userId === current);
+
+  async function change(next: string): Promise<void> {
+    if (next === current) return;
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch(`/api/leads/${lead.id}/assignee`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ assigneeUserId: next || null }) });
+      if (!response.ok) throw new Error(await readError(response, "The lead could not be assigned."));
+      const updated = await response.json() as { assignedUserId: string | null; assigneeName: string | null };
+      onChanged(updated.assignedUserId, updated.assigneeName);
+    } catch (cause) {
+      setError(message(cause, "The lead could not be assigned."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <section className="mvp-assign-card" aria-label="Assignment">
+    <label htmlFor={selectId} className="mvp-lead-drawer__section-title">Assigned to</label>
+    {error ? <div className="mvp-inline-error" role="alert">{error}</div> : null}
+    <div className="mvp-settings-select">
+      <select id={selectId} value={current} disabled={busy} onChange={(event) => void change(event.target.value)}>
+        <option value="">Unassigned</option>
+        {currentIsActive ? null : <option value={current} disabled>{lead.assigneeName ?? "Team member"} (no longer active)</option>}
+        {assignees.map((member) => <option key={member.userId} value={member.userId}>{member.fullName}</option>)}
+      </select>
+      <ChevronDown size={17} aria-hidden="true" />
+    </div>
+    <p className="mvp-assign-card__hint">New leads from an ad go to the person your company owner chose for that ad. You can reassign this lead at any time.</p>
+  </section>;
 }
 
 type LeadTaskState = ReturnType<typeof useLeadTask>;
