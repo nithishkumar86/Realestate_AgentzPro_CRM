@@ -224,11 +224,19 @@ export async function rescheduleLeadTask(context: TenantRequestContext, leadId: 
   return taskRpcResult(data, error, "The task could not be rescheduled.");
 }
 
-export async function closeLeadTask(context: TenantRequestContext, leadId: string, taskId: string, outcome: "completed" | "cancelled"): Promise<LeadTask> {
+/**
+ * Closes the open task. The RPC returns the closed row; completing a repeating task also opens the next
+ * occurrence in the same transaction, so it is read back here and returned for the drawer to show.
+ */
+export async function closeLeadTask(
+  context: TenantRequestContext, leadId: string, taskId: string, outcome: "completed" | "cancelled",
+): Promise<{ task: LeadTask; nextTask: LeadTask | null }> {
   const { data, error } = await getSupabaseAdminClient().rpc("close_lead_task", {
     p_tenant_id: context.tenantId, p_lead_id: leadId, p_task_id: taskId, p_outcome: outcome, p_actor_user_id: context.userId,
   });
-  return taskRpcResult(data, error, outcome === "completed" ? "The task could not be completed." : "The task could not be cancelled.");
+  const task = taskRpcResult(data, error, outcome === "completed" ? "The task could not be completed." : "The task could not be cancelled.");
+  const nextTask = outcome === "completed" && task.repeatRule !== "none" ? await getOpenLeadTask(context, leadId) : null;
+  return { task, nextTask };
 }
 
 /**
@@ -244,6 +252,7 @@ async function futureDueAt(context: TenantRequestContext, due: TaskDue): Promise
 
 function taskRpcResult(data: unknown, error: { code?: string; message?: string } | null, failure: string): LeadTask {
   if (error) {
+    if (error.code === "23505") throw new AppError("This lead already has an open task. Complete or cancel it before adding a new one.", { status: 409, code: "OPEN_TASK_EXISTS" });
     if (error.code === "55000") throw new AppError("This task is already closed and can no longer be changed.", { status: 409, code: "TASK_ALREADY_CLOSED" });
     if (error.code === "23514") throw invalidTaskDue();
     if (error.code === "42501") throw new AppError("You are not allowed to change tasks for this company.", { status: 403, code: "TASK_UPDATE_FORBIDDEN" });

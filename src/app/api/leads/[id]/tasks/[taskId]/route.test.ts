@@ -37,9 +37,15 @@ describe("PATCH /api/leads/[id]/tasks/[taskId]", () => {
   });
 
   it.each([["complete", "completed"], ["cancel", "cancelled"]])("maps action %s to outcome %s", async (action, outcome) => {
-    mocks.close.mockResolvedValue({ id: TASK });
+    mocks.close.mockResolvedValue({ task: { id: TASK }, nextTask: null });
     expect((await patch({ action })).status).toBe(200);
     expect(mocks.close).toHaveBeenCalledWith(ctx, LEAD, TASK, outcome);
+  });
+
+  it("returns the next occurrence of a repeating task beside the closed task", async () => {
+    mocks.close.mockResolvedValue({ task: { id: TASK }, nextTask: { id: "next" } });
+    const body = await (await patch({ action: "complete" })).json();
+    expect(body).toMatchObject({ id: TASK, nextTask: { id: "next" } });
   });
 
   it.each([

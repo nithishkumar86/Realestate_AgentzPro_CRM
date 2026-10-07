@@ -23,8 +23,8 @@ export async function fetchOpenTask(leadId: string): Promise<LeadTask | null> {
   return result.openTask;
 }
 
-export async function updateTask(leadId: string, taskId: string, change: { dueDate: string; dueTime: string } | { action: "complete" | "cancel" }, fallback: string): Promise<LeadTask> {
-  return send<LeadTask>(`/api/leads/${leadId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(change) }, fallback);
+export async function updateTask(leadId: string, taskId: string, change: { dueDate: string; dueTime: string } | { action: "complete" | "cancel" }, fallback: string): Promise<LeadTask & { nextTask?: LeadTask | null }> {
+  return send<LeadTask & { nextTask?: LeadTask | null }>(`/api/leads/${leadId}/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(change) }, fallback);
 }
 
 /**

@@ -427,10 +427,12 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
     if (!globalThis.confirm(prompt)) return;
     setBusy(true); setError(null);
     try {
-      await updateTask(leadId, openTask.id, { action }, action === "complete" ? "The task could not be completed." : "The task could not be cancelled.");
-      tasks.setOpenTask(null);
-      tasks.setJustClosed(true);
-      tasks.report(false);
+      const closed = await updateTask(leadId, openTask.id, { action }, action === "complete" ? "The task could not be completed." : "The task could not be cancelled.");
+      // A completed repeating task opens its next occurrence; show that instead of the "add next task" hint.
+      const next = closed.nextTask ?? null;
+      tasks.setOpenTask(next);
+      tasks.setJustClosed(!next);
+      tasks.report(Boolean(next), next?.title);
       tasks.onChanged();
     } catch (cause) {
       await handleFailure(cause, "The task could not be updated.");

@@ -313,6 +313,22 @@ describe("tasks", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("close_lead_task", { p_tenant_id: "tenant-a", p_lead_id: LEAD, p_task_id: TASK, p_outcome: "cancelled", p_actor_user_id: "user-a" });
   });
 
+  it("returns the next occurrence after completing a repeating task, and none after cancelling", async () => {
+    const closedRow = { ...taskRow, status: "completed", closed_at: "2026-10-07T06:00:00+00:00" };
+    const nextRow = { ...taskRow, id: "next-task", due_at: "2026-10-15T09:30:00+00:00" };
+    mocks.rpc.mockResolvedValue({ data: [closedRow], error: null });
+    tables({ lead_data: { data: { id: LEAD }, error: null }, lead_tasks: { data: nextRow, error: null } });
+    const done = await closeLeadTask(context, LEAD, TASK, "completed");
+    expect(done.task.id).toBe(TASK);
+    expect(done.nextTask).toMatchObject({ id: "next-task" });
+    expect((await closeLeadTask(context, LEAD, TASK, "cancelled")).nextTask).toBeNull();
+  });
+
+  it("maps a unique-violation on close to 409 OPEN_TASK_EXISTS", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "23505" } });
+    await expect(closeLeadTask(context, LEAD, TASK, "completed")).rejects.toMatchObject({ status: 409, code: "OPEN_TASK_EXISTS" });
+  });
+
   it("reads only the open task of a lead in the session's tenant", async () => {
     const built = tables({ ...ist, lead_data: { data: { id: LEAD }, error: null }, lead_tasks: { data: taskRow, error: null } });
     expect(await getOpenLeadTask(context, LEAD)).toMatchObject({ id: TASK });

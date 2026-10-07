@@ -20,10 +20,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const validTaskId = requireTaskId(taskId);
     const body = await parseJsonBody(request, bodySchema);
     const context = await resolveTenantRequestContext();
-    const task = "dueDate" in body
-      ? await rescheduleLeadTask(context, leadId, validTaskId, { dueDate: body.dueDate, dueTime: body.dueTime })
-      : await closeLeadTask(context, leadId, validTaskId, body.action === "complete" ? "completed" : "cancelled");
-    return createSuccessResponse(task);
+    if ("dueDate" in body) {
+      return createSuccessResponse(await rescheduleLeadTask(context, leadId, validTaskId, { dueDate: body.dueDate, dueTime: body.dueTime }));
+    }
+    // The closed task stays at the top level so a browser on the previous build keeps working; nextTask is the
+    // follow-up a completed repeating task opened (null otherwise).
+    const { task, nextTask } = await closeLeadTask(context, leadId, validTaskId, body.action === "complete" ? "completed" : "cancelled");
+    return createSuccessResponse({ ...task, nextTask });
   } catch (error) {
     return createErrorResponse(error, request);
   }
