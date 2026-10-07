@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
@@ -84,7 +84,9 @@ export function TaskBell() {
           .then((registration) => registration.pushManager.getSubscription())
           .then((subscription) => {
             const json = subscription?.toJSON();
-            if (json?.endpoint) return fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
+            // Allowed but turned off here (no subscription): offer to enable again instead of claiming it is on.
+            if (!json?.endpoint) { setPushState("ask"); return; }
+            return fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
           })
           .catch(() => undefined);
       }
@@ -106,12 +108,37 @@ export function TaskBell() {
     }
   }
 
+  async function disablePush() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        await fetch("/api/push/subscribe", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint }) });
+        await subscription.unsubscribe();
+      }
+      setPushState("ask");
+    } catch {
+      // Stay "on" so the button does not claim a state change that did not happen.
+    }
+  }
+
+  // The panel closes on Escape or a click anywhere outside it, as well as with its close button.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const onPointer = (event: PointerEvent) => { if (root.current && !root.current.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointer);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onPointer); };
+  }, [open]);
+
   async function markRead(body: { all: true } | { ids: string[] }) {
     await fetch("/api/notifications/read", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined);
     await load(false);
   }
 
-  return <div className="mvp-bell">
+  return <div className="mvp-bell" ref={root}>
     <button type="button" className="mvp-nav-link mvp-bell__button" aria-label={`Task alerts, ${feed.unread} unread`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
       <Bell size={19} aria-hidden="true" />
       <span className="mvp-nav-link__label">Alerts</span>
@@ -119,9 +146,13 @@ export function TaskBell() {
     </button>
     {open ? <div className="mvp-bell__panel" role="dialog" aria-label="Task alerts">
       <div className="mvp-bell__head"><strong>Task alerts</strong>
-        {feed.unread > 0 ? <button type="button" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
+        <span className="mvp-bell__actions">
+          {feed.unread > 0 ? <button type="button" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
+          <button type="button" className="mvp-bell__close" aria-label="Close alerts" onClick={() => setOpen(false)}><X size={16} aria-hidden="true" /></button>
+        </span>
       </div>
       {pushState === "ask" ? <button type="button" className="mvp-bell__push" onClick={() => void enablePush()}>Enable browser notifications</button> : null}
+      {pushState === "on" ? <button type="button" className="mvp-bell__push" onClick={() => void disablePush()}>Browser notifications on · Turn off</button> : null}
       {pushState === "blocked" ? <p className="mvp-bell__hint">Notifications are blocked in this browser.</p> : null}
       {feed.items.length === 0 ? <p className="mvp-empty">No alerts yet.</p> : <ul>
         {feed.items.map((item) => <li key={item.id} className={item.read ? undefined : "mvp-bell__unread"}>
