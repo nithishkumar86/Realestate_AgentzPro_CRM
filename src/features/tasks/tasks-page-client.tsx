@@ -10,9 +10,9 @@ import { readError } from "@/features/leads/use-lead-filters";
 import type { TaskBucket, TaskOverview, TrackedTask } from "@/lib/server/task-tracking-service";
 
 const TABS: { bucket: TaskBucket; label: string }[] = [
-  { bucket: "overdue", label: "Overdue" },
   { bucket: "today", label: "Today" },
   { bucket: "upcoming", label: "Upcoming" },
+  { bucket: "overdue", label: "Overdue" },
   { bucket: "done", label: "Done" },
 ];
 const RANGES = [{ value: "7d", label: "Last 7 days" }, { value: "30d", label: "Last 30 days" }, { value: "all", label: "All time" }] as const;
