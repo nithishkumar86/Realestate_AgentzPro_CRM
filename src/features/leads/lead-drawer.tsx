@@ -124,7 +124,7 @@ function message(cause: unknown, fallback: string): string {
  * timeline. Every write goes through the tenant-scoped API routes; the timeline rows themselves are written
  * by the database, so after each change the drawer only asks the timeline to refresh.
  */
-export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusChange, onOpenTaskChange, onAssigneeChange, initialPendingStatus }: {
+export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusChange, onOpenTaskChange, onAssigneeChange, initialPendingStatus, scrollToTimeline }: {
   lead: DrawerLead;
   timezone: string;
   /** Active members the lead can be assigned to. The "Assigned to" card shows only when onAssigneeChange is given. */
@@ -135,6 +135,8 @@ export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusCh
    * if it had been picked inside the drawer, and it is saved only together with a task or a note.
    */
   initialPendingStatus?: LeadStatus;
+  /** Opened from a task alert: scroll down to the latest timeline entry once the timeline has loaded. */
+  scrollToTimeline?: boolean;
   onStatusChange: (leadId: string, status: LeadStatus) => void;
   onOpenTaskChange: (leadId: string, hasOpenTask: boolean, title?: string | null) => void;
   onAssigneeChange?: (leadId: string, assignedUserId: string | null, assigneeName: string | null) => void;
@@ -178,6 +180,11 @@ export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusCh
     return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", onKeyDown); };
   }, [onClose, statusOpen]);
 
+  useEffect(() => {
+    if (!scrollToTimeline) return;
+    const timer = setTimeout(() => panelRef.current?.scrollTo({ top: panelRef.current.scrollHeight, behavior: "smooth" }), 900);
+    return () => clearTimeout(timer);
+  }, [scrollToTimeline]);
   const refreshTimeline = useCallback(() => { void timelineRef.current?.refresh(); }, []);
 
   const tasks = useLeadTask(lead.id, (hasOpenTask, title) => onOpenTaskChange(lead.id, hasOpenTask, title), refreshTimeline);

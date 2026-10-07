@@ -141,7 +141,7 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
 
   return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead }}>
     {children}
-    {toast ? <Link className="mvp-bell__toast" href="/tasks" role="status" onClick={() => { void markRead({ ids: [toast.id] }); setToast(null); }}>{reminderText(toast)}</Link> : null}
+    {toast ? <Link className="mvp-bell__toast" href={`/leads?lead=${toast.leadId}`} role="status" onClick={() => { void markRead({ ids: [toast.id] }); setToast(null); }}>{reminderText(toast)}</Link> : null}
   </TaskAlertsContext.Provider>;
 }
 
@@ -196,7 +196,7 @@ export function TaskBell() {
         <p>Reminders show up here 15 minutes before a task is due, and again when it is due.</p>
       </div> : <ul>
         {feed.items.map((item) => <li key={item.id}>
-          <Link href="/tasks" className={item.read ? "mvp-bell__item" : "mvp-bell__item mvp-bell__item--unread"} onClick={() => { setOpen(false); if (!item.read) void markRead({ ids: [item.id] }); }}>
+          <Link href={`/leads?lead=${item.leadId}`} className={item.read ? "mvp-bell__item" : "mvp-bell__item mvp-bell__item--unread"} onClick={() => { setOpen(false); if (!item.read) void markRead({ ids: [item.id] }); }}>
             <span className={item.kind === "due_now" ? "mvp-bell__item-icon mvp-bell__item-icon--now" : "mvp-bell__item-icon"}>
               {item.kind === "due_now" ? <AlarmClock size={16} aria-hidden="true" /> : <Clock size={16} aria-hidden="true" />}
             </span>

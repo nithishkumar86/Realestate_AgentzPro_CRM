@@ -10,6 +10,8 @@ export type LeadSortField = "leadName" | "leadDate";
 export type QuickFilter = "all" | "today" | "month";
 export interface LeadSearchRequest {
   search?: string;
+  /** Only this lead (used to open one lead from a task alert). */
+  leadId?: string;
   quickFilter?: QuickFilter;
   dateFrom?: string;
   dateTo?: string;
@@ -47,6 +49,7 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   let query = getSupabaseAdminClient().from("lead_data")
     .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
+  if (request.leadId) query = query.eq("id", request.leadId);
   if (request.pageRecordId) query = query.eq("facebook_page_record_id", request.pageRecordId);
   if (request.adId === "unattributed") query = query.is("ad_id", null);
   else if (request.adId) query = query.eq("ad_id", request.adId);

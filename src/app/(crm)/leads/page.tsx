@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "Leads",
 };
 
-export default function LeadsPage() {
-  return <LeadsPageClient />;
+export default async function LeadsPage({ searchParams }: Readonly<{ searchParams: Promise<{ lead?: string }> }>) {
+  const { lead } = await searchParams;
+  return <LeadsPageClient focusLeadId={lead} />;
 }

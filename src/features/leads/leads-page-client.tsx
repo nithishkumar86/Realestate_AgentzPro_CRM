@@ -20,7 +20,7 @@ function AssigneeCell({ name }: { name: string | null }) {
   </span>;
 }
 
-export function LeadsPageClient() {
+export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string }> = {}) {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [timezone, setTimezone] = useState("UTC");
   const [loading, setLoading] = useState(true);
@@ -138,7 +138,19 @@ export function LeadsPageClient() {
     setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, assignedUserId, assigneeName } : existing));
   }, []);
   const closeDrawer = useCallback(() => setDrawerLeadId(null), []);
-  const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? null : null;
+  // A task alert links here with ?lead=<id>: fetch that lead on its own (it may be filtered out or past the first
+  // page) and open its drawer.
+  const [focusedLead, setFocusedLead] = useState<Lead | null>(null);
+  useEffect(() => {
+    if (!focusLeadId) return;
+    let active = true;
+    void fetch("/api/leads/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ leadId: focusLeadId, pageSize: 1 }) })
+      .then(async (response) => response.ok ? (await response.json() as { items: Lead[] }).items[0] ?? null : null)
+      .then((lead) => { if (active && lead) { setFocusedLead(lead); setDrawerPendingStatus(null); setDrawerLeadId(lead.id); } })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [focusLeadId]);
+  const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? (focusedLead?.id === drawerLeadId ? focusedLead : null) : null;
 
   return <div className="mvp-leads">
     <LeadFilterBar filters={filters} showAssignee actions={<>
@@ -172,6 +184,6 @@ export function LeadsPageClient() {
         {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
       </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
     </tbody></table></section>
-    {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
+    {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} scrollToTimeline={focusedLead?.id === drawerLead.id} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
   </div>;
 }
