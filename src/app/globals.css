@@ -3434,3 +3434,6 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-bell__panel li a { display: block; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); font-size: .85rem; text-decoration: none; }
 .mvp-bell__unread a { font-weight: 800; background: var(--border); }
 .mvp-bell__toast { position: fixed; right: 20px; bottom: 20px; z-index: 80; max-width: 340px; padding: 14px 18px; border-radius: 10px; background: #1d2939; color: #fff; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.25); text-decoration: none; }
+
+.mvp-bell__push { display: block; width: 100%; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--primary, #4f46e5); font-weight: 700; text-align: left; cursor: pointer; }
+.mvp-bell__hint { margin: 0; padding: 10px 14px; color: var(--text-muted); font-size: .8rem; }

@@ -7,6 +7,15 @@ import type { TaskNotification } from "@/lib/server/task-notification-service";
 
 interface Feed { items: TaskNotification[]; unread: number }
 const TOAST_MS = 8_000;
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+function urlBase64ToBytes(value: string): Uint8Array<ArrayBuffer> {
+  const padded = (value + "=".repeat((4 - (value.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(padded);
+  const bytes = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+  return bytes;
+}
 
 export function reminderText(item: Pick<TaskNotification, "kind" | "taskTitle" | "leadName">): string {
   const who = item.leadName ? ` · ${item.leadName}` : "";
@@ -45,6 +54,30 @@ export function TaskBell() {
     return () => { clearTimeout(first); clearTimeout(toastTimer.current); source.close(); };
   }, [load]);
 
+  // Browser push: offered only where the browser supports it and the member has not decided yet.
+  const [pushState, setPushState] = useState<"unsupported" | "ask" | "on" | "blocked">("unsupported");
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) return;
+      setPushState(Notification.permission === "granted" ? "on" : Notification.permission === "denied" ? "blocked" : "ask");
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  async function enablePush() {
+    try {
+      if (await Notification.requestPermission() !== "granted") { setPushState("blocked"); return; }
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToBytes(VAPID_PUBLIC_KEY) });
+      const json = subscription.toJSON();
+      const response = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
+      setPushState(response.ok ? "on" : "ask");
+    } catch {
+      setPushState("ask");
+    }
+  }
+
   async function markRead(body: { all: true } | { ids: string[] }) {
     await fetch("/api/notifications/read", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined);
     await load(false);
@@ -60,6 +93,8 @@ export function TaskBell() {
       <div className="mvp-bell__head"><strong>Task alerts</strong>
         {feed.unread > 0 ? <button type="button" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
       </div>
+      {pushState === "ask" ? <button type="button" className="mvp-bell__push" onClick={() => void enablePush()}>Enable browser notifications</button> : null}
+      {pushState === "blocked" ? <p className="mvp-bell__hint">Notifications are blocked in this browser.</p> : null}
       {feed.items.length === 0 ? <p className="mvp-empty">No alerts yet.</p> : <ul>
         {feed.items.map((item) => <li key={item.id} className={item.read ? undefined : "mvp-bell__unread"}>
           <Link href="/tasks" onClick={() => { setOpen(false); if (!item.read) void markRead({ ids: [item.id] }); }}>{reminderText(item)}</Link>
