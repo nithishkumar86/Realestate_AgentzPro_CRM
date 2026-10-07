@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, X } from "lucide-react";
+import { AlarmClock, Bell, BellOff, BellRing, Clock, X } from "lucide-react";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
@@ -145,6 +145,14 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
   </TaskAlertsContext.Provider>;
 }
 
+function timeAgo(iso: string, now = Date.now()): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60_000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1_440) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / 1_440)}d`;
+}
+
 /** Bell with an unread count and the member's task alerts in a popover. Shown at the top right of the Tasks page. */
 export function TaskBell() {
   const alerts = useContext(TaskAlertsContext);
@@ -168,18 +176,36 @@ export function TaskBell() {
       {feed.unread > 0 ? <span className="mvp-bell__badge">{feed.unread > 9 ? "9+" : feed.unread}</span> : null}
     </button>
     {open ? <div className="mvp-bell__panel" role="dialog" aria-label="Task alerts">
-      <div className="mvp-bell__head"><strong>Task alerts</strong>
+      <div className="mvp-bell__head">
+        <div className="mvp-bell__title"><strong>Task alerts</strong>{feed.unread > 0 ? <span className="mvp-bell__new">{feed.unread} new</span> : null}</div>
         <span className="mvp-bell__actions">
-          {feed.unread > 0 ? <button type="button" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
+          {feed.unread > 0 ? <button type="button" className="mvp-bell__markall" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
           <button type="button" className="mvp-bell__close" aria-label="Close alerts" onClick={() => setOpen(false)}><X size={16} aria-hidden="true" /></button>
         </span>
       </div>
-      {pushState === "ask" ? <button type="button" className="mvp-bell__push" onClick={() => void enablePush()}>Enable browser notifications</button> : null}
-      {pushState === "on" ? <button type="button" className="mvp-bell__push" onClick={() => void disablePush()}>Browser notifications on · Turn off</button> : null}
-      {pushState === "blocked" ? <p className="mvp-bell__hint">Notifications are blocked in this browser.</p> : null}
-      {feed.items.length === 0 ? <p className="mvp-empty">No alerts yet.</p> : <ul>
-        {feed.items.map((item) => <li key={item.id} className={item.read ? undefined : "mvp-bell__unread"}>
-          <Link href="/tasks" onClick={() => { setOpen(false); if (!item.read) void markRead({ ids: [item.id] }); }}>{reminderText(item)}</Link>
+      {pushState === "ask" || pushState === "on" ? <div className="mvp-bell__setting">
+        <span className="mvp-bell__setting-icon"><BellRing size={16} aria-hidden="true" /></span>
+        <span className="mvp-bell__setting-text"><strong>Browser notifications</strong><small>{pushState === "on" ? "On: alerts reach you even when this tab is in the background." : "Get alerts even when this tab is in the background."}</small></span>
+        <button type="button" role="switch" aria-checked={pushState === "on"} aria-label="Browser notifications" className="mvp-bell__switch"
+          onClick={() => void (pushState === "on" ? disablePush() : enablePush())}><span /></button>
+      </div> : null}
+      {pushState === "blocked" ? <p className="mvp-bell__hint"><BellOff size={14} aria-hidden="true" /> Notifications are blocked in this browser. Allow them in the site settings to get alerts in the background.</p> : null}
+      {feed.items.length === 0 ? <div className="mvp-bell__empty">
+        <span className="mvp-bell__empty-icon"><Bell size={26} aria-hidden="true" /></span>
+        <strong>You&apos;re all caught up</strong>
+        <p>Reminders show up here 15 minutes before a task is due, and again when it is due.</p>
+      </div> : <ul>
+        {feed.items.map((item) => <li key={item.id}>
+          <Link href="/tasks" className={item.read ? "mvp-bell__item" : "mvp-bell__item mvp-bell__item--unread"} onClick={() => { setOpen(false); if (!item.read) void markRead({ ids: [item.id] }); }}>
+            <span className={item.kind === "due_now" ? "mvp-bell__item-icon mvp-bell__item-icon--now" : "mvp-bell__item-icon"}>
+              {item.kind === "due_now" ? <AlarmClock size={16} aria-hidden="true" /> : <Clock size={16} aria-hidden="true" />}
+            </span>
+            <span className="mvp-bell__item-body">
+              <strong>{item.taskTitle}</strong>
+              <small>{item.kind === "due_now" ? "Due now" : "Due in 15 min"}{item.leadName ? ` · ${item.leadName}` : ""}</small>
+            </span>
+            <span className="mvp-bell__item-time">{timeAgo(item.createdAt)}{item.read ? null : <i aria-label="Unread" />}</span>
+          </Link>
         </li>)}
       </ul>}
     </div> : null}
