@@ -70,3 +70,30 @@ export const ASSIGNEE_FILTER_SHORTCUTS = ["me", "unassigned"] as const;
 export const NOTE_MAX_LENGTH = 2000;
 export const TASK_TITLE_MAX_LENGTH = 200;
 export const TASK_DESCRIPTION_MAX_LENGTH = 2000;
+
+// Task repeat rules. Keep in sync with the `lead_tasks.repeat_rule` check constraint in
+// supabase/migrations/20261007120000_lead_task_due_time_repeat.sql.
+export const TASK_REPEAT_RULES = ["none", "daily", "weekly", "monthly", "yearly"] as const;
+export type TaskRepeatRule = (typeof TASK_REPEAT_RULES)[number];
+
+/** The "Select Repeat this Task" options, in the order and wording the form shows. */
+export const TASK_REPEAT_OPTIONS: ReadonlyArray<{ value: TaskRepeatRule; label: string }> = [
+  { value: "daily", label: "Everyday" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+  { value: "none", label: "Don't Repeat" },
+];
+
+export const DUE_DATE_PRESETS = ["today", "tomorrow", "3_days", "1_week", "1_month", "custom"] as const;
+export type DueDatePreset = (typeof DUE_DATE_PRESETS)[number];
+
+/** The "Due Date" options, in the order and wording the form shows. */
+export const DUE_DATE_PRESET_OPTIONS: ReadonlyArray<{ value: DueDatePreset; label: string }> = [
+  { value: "today", label: "Today" },
+  { value: "tomorrow", label: "Tomorrow" },
+  { value: "3_days", label: "3 Days From Now" },
+  { value: "1_week", label: "1 Week From Now" },
+  { value: "1_month", label: "1 Month From Now" },
+  { value: "custom", label: "Custom" },
+];

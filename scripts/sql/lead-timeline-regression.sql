@@ -1,6 +1,9 @@
--- Regression for supabase/migrations/20261005120000_lead_notes_tasks_timeline.sql:
+-- Regression for supabase/migrations/20261005120000_lead_notes_tasks_timeline.sql and
+-- 20261007120000_lead_task_due_time_repeat.sql:
 -- lead_created / status_change / note / task timeline triggers, the one-open-task rule, the task guard
--- (reschedule while open, final close), append-only guards, tenant isolation and grants, and the backfill.
+-- (reschedule while open, final close), append-only guards, tenant isolation and grants, and the backfill;
+-- due times in the company timezone, the repeat columns, the date <-> due_at sync that keeps the old build
+-- working, and the timestamptz reschedule overload.
 --
 -- Everything runs in one transaction that ends in ROLLBACK, so no fixture survives. A failed assertion
 -- raises 'Assertion failed: ...'; a clean run ends with the NOTICE 'LEAD_TIMELINE_REGRESSION_PASSED'.
@@ -35,9 +38,9 @@ insert into auth.users (id, instance_id, aud, role, email) values
   ('51000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'timeline-owner-a@timeline.test'),
   ('51000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'timeline-blocked-a@timeline.test'),
   ('51000000-0000-0000-0000-0000000000b1', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'timeline-owner-b@timeline.test');
-insert into public.tenants (tenant_id, tenant_name) values
-  ('51000000-0000-0000-0000-000000000001', 'Timeline Regression A'),
-  ('51000000-0000-0000-0000-000000000002', 'Timeline Regression B');
+insert into public.tenants (tenant_id, tenant_name, timezone) values
+  ('51000000-0000-0000-0000-000000000001', 'Timeline Regression A', 'Asia/Kolkata'),
+  ('51000000-0000-0000-0000-000000000002', 'Timeline Regression B', 'Asia/Kolkata');
 insert into public.tenant_memberships (tenant_id, user_id, membership_role, membership_status) values
   ('51000000-0000-0000-0000-000000000001', '51000000-0000-0000-0000-0000000000a1', 'owner', 'active'),
   ('51000000-0000-0000-0000-000000000001', '51000000-0000-0000-0000-0000000000a2', 'employee', 'blocked'),
@@ -128,29 +131,34 @@ begin
     and v_act.created_by = owner_a and v_act.metadata = jsonb_build_object('note_id', v_note_id), 'TC6: note summary truncated, actor, note_id');
   perform pg_temp.expect_error(format('insert into public.lead_notes (tenant_id, lead_id, body, created_by) values (%L, %L, %L, %L)', t_a, v_lead, '   ', owner_a), '23514', 'TC6: blank note rejected');
 
-  -- TC7: create a task -> task_created; a second open task -> 23505.
+  -- TC7: create a task the old build's way (dates only) -> due 23:59 company time, task_created; a second open task -> 23505.
   insert into public.lead_tasks (tenant_id, lead_id, title, description, start_date, due_date, created_by)
   values (t_a, v_lead, 'Call back', 'Confirm site visit slot', date '2026-10-05', date '2026-10-08', owner_a) returning * into v_task;
   perform pg_temp.assert_true(pg_temp.activity_count(v_lead, 'task_created') = 1, 'TC7: exactly one task_created');
   select * into v_act from public.lead_activities where lead_id = v_lead and type = 'task_created';
-  perform pg_temp.assert_true(v_act.summary = 'Task: Call back · due 08 Oct 2026' and v_act.created_by = owner_a
-    and v_act.metadata ->> 'task_id' = v_task.id::text, 'TC7: task_created content');
+  perform pg_temp.assert_true(v_act.summary = 'Task: Call back · due 08 Oct 2026, 11:59 PM' and v_act.created_by = owner_a
+    and v_act.metadata ->> 'task_id' = v_task.id::text and v_act.metadata ->> 'repeat_rule' = 'none', 'TC7: task_created content');
+  perform pg_temp.assert_true(v_task.due_at = timestamptz '2026-10-08 23:59+05:30' and v_task.original_due_at = v_task.due_at
+    and v_task.start_at <= v_task.due_at and v_task.repeat_rule = 'none' and v_task.series_id is null,
+    'TC7: old-build insert gets due_at at 23:59 company time');
   perform pg_temp.expect_error(format('insert into public.lead_tasks (tenant_id, lead_id, title, start_date, due_date, created_by) values (%L, %L, %L, %L, %L, %L)',
     t_a, v_lead, 'Second', '2026-10-05', '2026-10-06', owner_a), '23505', 'TC7: second open task rejected');
   perform pg_temp.expect_error(format('insert into public.lead_tasks (tenant_id, lead_id, title, start_date, due_date, created_by) values (%L, %L, %L, %L, %L, %L)',
     t_a, v_lead, 'Backwards', '2026-10-05', '2026-10-01', owner_a), '23514', 'TC7: due before start rejected');
 
-  -- TC8: reschedule -> task_rescheduled {old,new} with the actor; before start_date -> 23514; editing title -> 55000.
+  -- TC8: reschedule (the old build's date overload) -> task_rescheduled {old,new} with the actor; before start_date
+  -- -> 23514; editing title -> 55000. Date arguments are cast: an untyped literal no longer picks one overload.
   select * into v_task from public.reschedule_lead_task(t_a, v_lead, v_task.id, date '2026-10-10', owner_a);
-  perform pg_temp.assert_true(v_task.due_date = date '2026-10-10', 'TC8: due date moved');
+  perform pg_temp.assert_true(v_task.due_date = date '2026-10-10' and v_task.due_at = timestamptz '2026-10-10 23:59+05:30'
+    and v_task.original_due_at = timestamptz '2026-10-08 23:59+05:30', 'TC8: due date moved, due_at synced, original kept');
   perform pg_temp.assert_true(pg_temp.activity_count(v_lead, 'task_rescheduled') = 1, 'TC8: exactly one task_rescheduled');
   select * into v_act from public.lead_activities where lead_id = v_lead and type = 'task_rescheduled';
   perform pg_temp.assert_true(v_act.created_by = owner_a and v_act.metadata ->> 'old' = '2026-10-08' and v_act.metadata ->> 'new' = '2026-10-10'
-    and v_act.summary = 'Task rescheduled: Call back · 08 Oct 2026 → 10 Oct 2026', 'TC8: reschedule content and actor');
-  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L, %L)', t_a, v_lead, v_task.id, '2026-10-01', owner_a), '23514', 'TC8: reschedule before start rejected');
+    and v_act.summary = 'Task rescheduled: Call back · 08 Oct 2026, 11:59 PM → 10 Oct 2026, 11:59 PM', 'TC8: reschedule content and actor');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L::date, %L)', t_a, v_lead, v_task.id, '2026-10-01', owner_a), '23514', 'TC8: reschedule before start rejected');
   perform pg_temp.expect_error(format('update public.lead_tasks set title = %L where id = %L', 'Renamed', v_task.id), '55000', 'TC8: title immutable');
   perform pg_temp.expect_error(format('update public.lead_tasks set start_date = %L where id = %L', '2026-10-01', v_task.id), '55000', 'TC8: start date immutable');
-  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L, %L)', t_a, v_lead, v_task.id, '2026-10-11', owner_b), '42501', 'TC8: foreign actor cannot reschedule');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L::date, %L)', t_a, v_lead, v_task.id, '2026-10-11', owner_b), '42501', 'TC8: foreign actor cannot reschedule');
 
   -- TC9: complete -> task_completed with actor = closed_by; then every further change -> 55000, nothing logged.
   select * into v_task from public.close_lead_task(t_a, v_lead, v_task.id, 'completed', owner_a);
@@ -162,7 +170,8 @@ begin
   perform pg_temp.expect_error(format('select public.close_lead_task(%L, %L, %L, %L, %L)', t_a, v_lead, v_task.id, 'completed', owner_a), '55000', 'TC9: complete again rejected');
   perform pg_temp.expect_error(format('select public.close_lead_task(%L, %L, %L, %L, %L)', t_a, v_lead, v_task.id, 'cancelled', owner_a), '55000', 'TC9: cancel after complete rejected');
   -- reschedule_lead_task has no status filter: a closed task must reach the guard, not silently match nothing.
-  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L, %L)', t_a, v_lead, v_task.id, '2026-10-12', owner_a), '55000', 'TC9: reschedule of closed task rejected');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L::date, %L)', t_a, v_lead, v_task.id, '2026-10-12', owner_a), '55000', 'TC9: reschedule of closed task rejected');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L::timestamptz, %L)', t_a, v_lead, v_task.id, '2030-01-01 10:00+05:30', owner_a), '55000', 'TC9: timed reschedule of closed task rejected');
   perform pg_temp.assert_true((select count(*) from public.lead_activities where lead_id = v_lead) = v_count, 'TC9: nothing logged by rejected changes');
   perform pg_temp.assert_true((select count(*) from public.reschedule_lead_task(t_a, v_lead, gen_random_uuid(), date '2026-10-12', owner_a)) = 0, 'TC9: unknown task id matches nothing');
   perform pg_temp.expect_error(format('select public.close_lead_task(%L, %L, %L, %L, %L)', t_a, v_lead, v_task.id, 'open', owner_a), '22023', 'TC9: invalid outcome rejected');
@@ -215,14 +224,77 @@ begin
   perform pg_temp.assert_true(not exists (
     select 1 from (values ('anon'), ('authenticated')) as r(role_name),
       (values ('public.update_lead_status(uuid, uuid, text, uuid)'), ('public.reschedule_lead_task(uuid, uuid, uuid, date, uuid)'),
-              ('public.close_lead_task(uuid, uuid, uuid, text, uuid)')) as f(signature)
+              ('public.reschedule_lead_task(uuid, uuid, uuid, timestamptz, uuid)'),
+              ('public.close_lead_task(uuid, uuid, uuid, text, uuid)'), ('public.lead_task_tenant_timezone(uuid)'),
+              ('public.lead_task_due_label(timestamptz, text)'), ('public.sync_lead_task_due()')) as f(signature)
     where has_function_privilege(r.role_name, f.signature, 'EXECUTE')
-  ), 'TC14: browser roles cannot execute the RPCs');
+  ), 'TC14: browser roles cannot execute the RPCs or helpers');
+  perform pg_temp.assert_true(has_function_privilege('service_role', 'public.reschedule_lead_task(uuid, uuid, uuid, timestamptz, uuid)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.reschedule_lead_task(uuid, uuid, uuid, date, uuid)', 'EXECUTE'),
+    'TC14: service_role can call both reschedule overloads');
 
   -- TC15: backfill — every lead has exactly one lead_created row.
   select count(*) into v_count from public.lead_data as ld
   where (select count(*) from public.lead_activities as a where a.lead_id = ld.id and a.type = 'lead_created') <> 1;
   perform pg_temp.assert_true(v_count = 0, 'TC15: every lead has exactly one lead_created');
+
+  -- TC16: the new build's insert (due_at + repeat, no dates) -> dates derived in company time, start = now,
+  -- original due and series anchor set; the timeline shows the time and the repeat.
+  v_lead := pg_temp.new_lead();
+  insert into public.lead_tasks (tenant_id, lead_id, title, due_at, repeat_rule, created_by)
+  values (t_a, v_lead, 'Follow up', timestamptz '2030-01-15 14:30+05:30', 'weekly', owner_a) returning * into v_task;
+  perform pg_temp.assert_true(v_task.due_date = date '2030-01-15' and v_task.start_at = now()
+    and v_task.start_date = (now() at time zone 'Asia/Kolkata')::date
+    and v_task.original_due_at = v_task.due_at and v_task.series_id = v_task.id
+    and v_task.series_anchor_at = v_task.due_at and v_task.occurrence_index = 0, 'TC16: new-build insert derives the rest');
+  select * into v_act from public.lead_activities where lead_id = v_lead and type = 'task_created';
+  perform pg_temp.assert_true(v_act.summary = 'Task: Follow up · due 15 Jan 2030, 2:30 PM · repeats weekly'
+    and v_act.metadata ->> 'repeat_rule' = 'weekly' and (v_act.metadata ->> 'due_at')::timestamptz = v_task.due_at,
+    'TC16: task_created shows due time and repeat');
+  perform pg_temp.expect_error(format('insert into public.lead_tasks (tenant_id, lead_id, title, due_at, repeat_rule, created_by) values (%L, %L, %L, now() + interval %L, %L, %L)',
+    t_a, pg_temp.new_lead(), 'Hourly', '1 day', 'hourly', owner_a), '23514', 'TC16: unknown repeat rule rejected');
+
+  -- TC17: timed reschedule -> due_date follows the company-time date (01:00 IST is still the previous day in UTC);
+  -- original due, start and series stay; past, now or null times -> 22023.
+  select * into v_task2 from public.reschedule_lead_task(t_a, v_lead, v_task.id, timestamptz '2030-01-16 01:00+05:30', owner_a);
+  perform pg_temp.assert_true(v_task2.due_at = timestamptz '2030-01-16 01:00+05:30' and v_task2.due_date = date '2030-01-16'
+    and v_task2.original_due_at = v_task.original_due_at and v_task2.start_at = v_task.start_at
+    and v_task2.series_anchor_at = v_task.series_anchor_at, 'TC17: timed reschedule synced, originals kept');
+  select * into v_act from public.lead_activities where lead_id = v_lead and type = 'task_rescheduled';
+  perform pg_temp.assert_true(v_act.summary = 'Task rescheduled: Follow up · 15 Jan 2030, 2:30 PM → 16 Jan 2030, 1:00 AM'
+    and v_act.created_by = owner_a and (v_act.metadata ->> 'new_due_at')::timestamptz = v_task2.due_at, 'TC17: reschedule summary with times');
+  perform pg_temp.assert_true(coalesce(current_setting('app.current_user_id', true), '') = '', 'TC17: RPC clears the actor setting');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, now() - interval %L, %L)', t_a, v_lead, v_task.id, '1 minute', owner_a), '22023', 'TC17: past due time rejected');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, now(), %L)', t_a, v_lead, v_task.id, owner_a), '22023', 'TC17: due time of now rejected');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, null::timestamptz, %L)', t_a, v_lead, v_task.id, owner_a), '22023', 'TC17: null due time rejected');
+  perform pg_temp.expect_error(format('select public.reschedule_lead_task(%L, %L, %L, %L::timestamptz, %L)', t_a, v_lead, v_task.id, '2030-02-01 10:00+05:30', blocked_a), '42501', 'TC17: blocked actor cannot reschedule');
+  perform pg_temp.assert_true((select count(*) from public.reschedule_lead_task(t_b, v_lead, v_task.id, timestamptz '2030-02-01 10:00+05:30', owner_b)) = 0, 'TC17: cross-tenant task not matched');
+  perform pg_temp.assert_true(pg_temp.activity_count(v_lead, 'task_rescheduled') = 1, 'TC17: rejected reschedules log nothing');
+
+  -- TC18: the old build's date overload on a timed task -> 23:59 of that day.
+  select * into v_task2 from public.reschedule_lead_task(t_a, v_lead, v_task.id, date '2030-01-20', owner_a);
+  perform pg_temp.assert_true(v_task2.due_at = timestamptz '2030-01-20 23:59+05:30' and v_task2.due_date = date '2030-01-20', 'TC18: date overload sets 23:59');
+
+  -- TC19: the new columns are immutable; reschedule + close in one change is rejected; due before start -> 23514.
+  perform pg_temp.expect_error(format('update public.lead_tasks set repeat_rule = %L where id = %L', 'daily', v_task.id), '55000', 'TC19: repeat_rule immutable');
+  perform pg_temp.expect_error(format('update public.lead_tasks set original_due_at = now() + interval %L where id = %L', '1 day', v_task.id), '55000', 'TC19: original_due_at immutable');
+  perform pg_temp.expect_error(format('update public.lead_tasks set start_at = start_at - interval %L where id = %L', '1 day', v_task.id), '55000', 'TC19: start_at immutable');
+  perform pg_temp.expect_error(format('update public.lead_tasks set series_id = gen_random_uuid() where id = %L', v_task.id), '55000', 'TC19: series_id immutable');
+  perform pg_temp.expect_error(format('update public.lead_tasks set series_anchor_at = now() + interval %L where id = %L', '1 day', v_task.id), '55000', 'TC19: series_anchor_at immutable');
+  perform pg_temp.expect_error(format('update public.lead_tasks set occurrence_index = 1 where id = %L', v_task.id), '55000', 'TC19: occurrence_index immutable');
+  perform pg_temp.expect_error(format('update public.lead_tasks set status = %L, closed_at = now(), closed_by = %L, due_at = due_at + interval %L where id = %L',
+    'completed', owner_a, '1 hour', v_task.id), '55000', 'TC19: reschedule and close together rejected');
+  perform pg_temp.expect_error(format('update public.lead_tasks set due_at = start_at - interval %L where id = %L', '1 minute', v_task.id), '23514', 'TC19: due before start rejected');
+  select * into v_task2 from public.close_lead_task(t_a, v_lead, v_task.id, 'completed', owner_a);
+  perform pg_temp.assert_true(v_task2.status = 'completed' and v_task2.due_at = timestamptz '2030-01-20 23:59+05:30'
+    and v_task2.original_due_at = timestamptz '2030-01-15 14:30+05:30', 'TC19: close keeps due_at and original_due_at');
+
+  -- TC20: every task (fixtures and the migration backfill) has due_date = company-time date of due_at,
+  -- start <= due, an original due, and series fields on repeating tasks.
+  select count(*) into v_count from public.lead_tasks as t join public.tenants as tz on tz.tenant_id = t.tenant_id
+  where t.due_date <> (t.due_at at time zone tz.timezone)::date or t.start_at > t.due_at or t.original_due_at is null
+     or (t.repeat_rule <> 'none' and (t.series_id is null or t.series_anchor_at is null));
+  perform pg_temp.assert_true(v_count = 0, 'TC20: due_date/due_at in sync for every task');
 end;
 $$;
 
@@ -246,7 +318,7 @@ begin
     raise exception 'Assertion failed: TC14: authenticated could read lead_tasks';
   exception when insufficient_privilege then null;
   end;
-  raise notice 'LEAD_TIMELINE_REGRESSION_PASSED (15 cases; all fixtures rolled back)';
+  raise notice 'LEAD_TIMELINE_REGRESSION_PASSED (20 cases; all fixtures rolled back)';
 end;
 $$;
 

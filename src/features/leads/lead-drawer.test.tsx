@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LeadsPageClient } from "@/features/leads/leads-page-client";
+import { zonedDateTime } from "@/features/leads/task-schedule";
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: { children: React.ReactNode; href: string }) => <a href={href} {...props}>{children}</a>,
@@ -18,7 +19,13 @@ const lead = (id: string, leadName: string, extra: Partial<Lead> = {}): Lead => 
 type Activity = { id: string; type: string; summary: string; metadata: Record<string, unknown>; actorName: string; createdAt: string; backfilled: boolean; noteBody?: string };
 const act = (id: string, type: string, summary: string, extra: Partial<Activity> = {}): Activity => ({ id, type, summary, metadata: {}, actorName: "Priya", createdAt: "2026-10-05T04:00:00.123456+00:00", backfilled: false, ...extra });
 
-const openTask = { id: TASK, title: "Call back", description: "Confirm the site visit slot", startDate: "2026-10-05", dueDate: "2026-10-08", status: "open", closedAt: null, createdAt: "2026-10-05T04:00:00+00:00" };
+// Due Thu 08 Oct 2026, 11:00 PM on the company clock (Asia/Kolkata).
+const openTask = {
+  id: TASK, title: "Call back", description: "Confirm the site visit slot", startDate: "2026-10-05", dueDate: "2026-10-08",
+  startAt: "2026-10-05T04:00:00+00:00", dueAt: "2026-10-08T17:30:00+00:00", originalDueAt: "2026-10-08T17:30:00+00:00", repeatRule: "none",
+  status: "open", closedAt: null, createdAt: "2026-10-05T04:00:00+00:00",
+};
+const dueAtOf = (body: Record<string, unknown> | undefined) => zonedDateTime(String(body?.dueDate), String(body?.dueTime), "Asia/Kolkata").toISOString();
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -53,12 +60,12 @@ function stubApi(state: ApiState) {
     if (/^\/api\/leads\/[^/]+\/tasks$/.test(url)) {
       if (method === "GET") return json({ openTask: state.openTask });
       if (state.createTaskConflict) return json({ error: { code: "OPEN_TASK_EXISTS", message: "This lead already has an open task. Complete or cancel it before adding a new one." } }, 409);
-      state.openTask = { ...openTask, title: String(body?.title), startDate: String(body?.startDate), dueDate: String(body?.dueDate) };
+      state.openTask = { ...openTask, title: String(body?.title), dueDate: String(body?.dueDate), dueAt: dueAtOf(body), originalDueAt: dueAtOf(body), repeatRule: String(body?.repeat) };
       return json(state.openTask, 201);
     }
     if (/^\/api\/leads\/[^/]+\/tasks\/[^/]+$/.test(url)) {
       if (body && "action" in body) { const closed = { ...openTask, status: body.action === "complete" ? "completed" : "cancelled" }; state.openTask = null; return json(closed); }
-      state.openTask = { ...openTask, dueDate: String(body?.dueDate) };
+      state.openTask = { ...openTask, dueDate: String(body?.dueDate), dueAt: dueAtOf(body) };
       return json(state.openTask);
     }
     if (/^\/api\/leads\/[^/]+\/notes$/.test(url) && state.failNote) return json({ error: { code: "NOTE_SAVE_FAILED", message: "The note could not be saved." } }, 500);
@@ -106,7 +113,13 @@ beforeEach(() => {
   FakeEventSource.instances = [];
   vi.stubGlobal("EventSource", FakeEventSource);
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+/** Freezes only the clock (timers stay real so the UI still settles). Default: Wed 07 Oct 2026, 11:30 AM in Asia/Kolkata. */
+function freezeClock(iso = "2026-10-07T06:00:00Z") {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(iso));
+}
 
 describe("no open task marker in the leads table", () => {
   it("shows only for an active lead without a task, never for a lead with a task or in a final status", async () => {
@@ -277,7 +290,7 @@ describe("lead drawer notes and tasks", () => {
     const drawer = await openDrawer();
     await within(drawer).findByText("Call back");
     expect(within(drawer).queryByRole("button", { name: "Add task" })).not.toBeInTheDocument();
-    expect(within(drawer).getByText("05 Oct 2026 → 08 Oct 2026")).toBeInTheDocument();
+    expect(within(drawer).getByText("Due Thu 08 Oct 2026, 11:00 PM")).toBeInTheDocument();
 
     fireEvent.click(within(drawer).getByRole("button", { name: "Cancel task" }));
     expect(confirmSpy).toHaveBeenCalledWith('Cancel "Call back"? This cannot be undone.');
@@ -293,17 +306,72 @@ describe("lead drawer notes and tasks", () => {
     expect(within(row).getByText("No task")).toBeInTheDocument();
   });
 
-  it("creates a task with the form fields and clears the next-step prompt", async () => {
+  it("creates a task with a Due Date preset, a Time and a repeat, and has no start date field", async () => {
+    freezeClock();
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
-    expect(within(drawer).getByLabelText(/Description/)).toHaveAttribute("placeholder", "What needs to be done between the start and due dates");
     fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
-    fireEvent.change(within(drawer).getByLabelText("Start date"), { target: { value: "2026-10-06" } });
-    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2026-10-09" } });
+    expect(within(drawer).getByLabelText(/Description/)).toHaveAttribute("placeholder", "What needs to be done by the due time");
+    expect(within(drawer).queryByLabelText(/Start date/i)).not.toBeInTheDocument();
+    const dueDate = within(drawer).getByLabelText("Due Date");
+    expect(within(dueDate).getAllByRole("option").map((option) => option.textContent)).toEqual(["Today", "Tomorrow", "3 Days From Now", "1 Week From Now", "1 Month From Now", "Custom"]);
+    const repeat = within(drawer).getByLabelText("Select Repeat this Task");
+    expect(within(repeat).getAllByRole("option").map((option) => option.textContent)).toEqual(["Everyday", "Weekly", "Monthly", "Yearly", "Don't Repeat"]);
+    // Defaults: today, the next full hour, no repeat.
+    expect(dueDate).toHaveValue("today");
+    expect(within(drawer).getByLabelText("Time")).toHaveValue("12:00");
+    expect(repeat).toHaveValue("none");
+    expect(within(drawer).getByText("Due Wed 07 Oct 2026, 12:00 PM")).toBeInTheDocument();
+
+    fireEvent.change(dueDate, { target: { value: "3_days" } });
+    fireEvent.change(within(drawer).getByLabelText("Time"), { target: { value: "15:00" } });
+    fireEvent.change(repeat, { target: { value: "weekly" } });
+    expect(within(drawer).getByText("Due Sat 10 Oct 2026, 3:00 PM · Repeats every week")).toBeInTheDocument();
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
-    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toEqual({ title: "Site visit", description: null, startDate: "2026-10-06", dueDate: "2026-10-09" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toEqual({ title: "Site visit", description: null, dueDate: "2026-10-10", dueTime: "15:00", repeat: "weekly" });
+    expect(within(drawer).getByText("Due Sat 10 Oct 2026, 3:00 PM · Repeats every week")).toBeInTheDocument();
+  });
+
+  it("shows a calendar for Custom, starting on the date already picked, and sends the chosen day", async () => {
+    freezeClock();
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
+    expect(within(drawer).queryByLabelText("Pick a date")).not.toBeInTheDocument();
+    fireEvent.change(within(drawer).getByLabelText("Due Date"), { target: { value: "tomorrow" } });
+    fireEvent.change(within(drawer).getByLabelText("Due Date"), { target: { value: "custom" } });
+    const calendar = within(drawer).getByLabelText("Pick a date");
+    expect(calendar).toHaveValue("2026-10-08");
+    expect(calendar).toHaveAttribute("min", "2026-10-07");
+    fireEvent.change(calendar, { target: { value: "2026-10-20" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByRole("button", { name: "Mark complete" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toMatchObject({ dueDate: "2026-10-20", dueTime: "12:00", repeat: "none" });
+  });
+
+  it("refuses a due time that has already passed today, without sending anything", async () => {
+    freezeClock();
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
+    fireEvent.change(within(drawer).getByLabelText("Time"), { target: { value: "09:00" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByText("Pick a due time later than now.");
+    expect(calls.some((call) => call.method === "POST" && call.url.endsWith("/tasks"))).toBe(false);
+  });
+
+  it("late in the evening defaults to tomorrow at midnight", async () => {
+    freezeClock("2026-10-07T18:00:00Z"); // 11:30 PM in Asia/Kolkata
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    expect(await within(drawer).findByLabelText("Due Date")).toHaveValue("tomorrow");
+    expect(within(drawer).getByLabelText("Time")).toHaveValue("00:00");
+    expect(within(drawer).getByText("Due Thu 08 Oct 2026, 12:00 AM")).toBeInTheDocument();
   });
 
   it("shows the server's message when another open task already exists", async () => {
@@ -311,22 +379,49 @@ describe("lead drawer notes and tasks", () => {
     await renderPage();
     const drawer = await openDrawer();
     fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
-    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByText("This lead already has an open task. Complete or cancel it before adding a new one.");
   });
 
-  it("reschedules only the due date", async () => {
+  it("reschedules the due date and time, starting from the current due time", async () => {
+    freezeClock();
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
     fireEvent.click(await within(drawer).findByRole("button", { name: "Reschedule" }));
-    const input = within(drawer).getByLabelText("New due date");
-    expect(input).toHaveAttribute("min", "2026-10-05");
-    fireEvent.change(input, { target: { value: "2026-10-12" } });
+    const date = within(drawer).getByLabelText("New due date");
+    const time = within(drawer).getByLabelText("New time");
+    expect(date).toHaveValue("2026-10-08");
+    expect(time).toHaveValue("23:00");
+    expect(date).toHaveAttribute("min", "2026-10-07");
+    expect(within(drawer).getByRole("button", { name: "Save date" })).toBeDisabled();
+    fireEvent.change(date, { target: { value: "2026-10-12" } });
+    fireEvent.change(time, { target: { value: "10:00" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
-    await within(drawer).findByText("05 Oct 2026 → 12 Oct 2026");
-    expect(calls.find((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)?.body).toEqual({ dueDate: "2026-10-12" });
+    await within(drawer).findByText("Due Mon 12 Oct 2026, 10:00 AM");
+    expect(calls.find((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)?.body).toEqual({ dueDate: "2026-10-12", dueTime: "10:00" });
+  });
+
+  it("refuses to reschedule to a time that has already passed, without sending anything", async () => {
+    freezeClock();
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.click(await within(drawer).findByRole("button", { name: "Reschedule" }));
+    fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "2026-10-07" } });
+    fireEvent.change(within(drawer).getByLabelText("New time"), { target: { value: "09:00" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
+    await within(drawer).findByText("Pick a due time later than now.");
+    expect(calls.some((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)).toBe(false);
+  });
+
+  it("marks the task Overdue once its due time has passed", async () => {
+    freezeClock("2026-10-08T18:00:00Z");
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByText("Call back");
+    expect(within(drawer).getByText("Overdue")).toBeInTheDocument();
   });
 });
 
@@ -362,7 +457,6 @@ describe("lead drawer: step 1, 2, 3", () => {
     expect(stepState(drawer)).toEqual(["done", "current", "todo"]);
 
     fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
-    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
     expect(stepState(drawer)).toEqual(["done", "done", "current"]);
@@ -415,6 +509,7 @@ describe("lead drawer: step 1, 2, 3", () => {
   });
 
   it("still shows Mark complete, Reschedule and Cancel for an open task on a New Lead, and a reschedule does not tick step 2", async () => {
+    freezeClock();
     stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
@@ -425,7 +520,7 @@ describe("lead drawer: step 1, 2, 3", () => {
     fireEvent.click(within(drawer).getByRole("button", { name: "Reschedule" }));
     fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "2026-10-12" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
-    await within(drawer).findByText("05 Oct 2026 \u2192 12 Oct 2026");
+    await within(drawer).findByText("Due Mon 12 Oct 2026, 11:00 PM");
     expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
   });
 });
@@ -539,7 +634,6 @@ describe("a status is saved only together with a task or a note", () => {
     await renderPage();
     const drawer = await changeInTable("Working");
     fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
-    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
     expect(writesOf(calls)).toEqual(["POST /api/leads/:id/tasks"]);
@@ -555,7 +649,6 @@ describe("a status is saved only together with a task or a note", () => {
     const drawer = await openDrawer();
     await within(drawer).findByRole("button", { name: "Add task" });
     fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
-    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
     expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).not.toHaveProperty("status");

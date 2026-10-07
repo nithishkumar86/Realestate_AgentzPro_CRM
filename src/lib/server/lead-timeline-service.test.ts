@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addLeadNote, closeLeadTask, createLeadTask, decodeActivityCursor, encodeActivityCursor, getOpenLeadTask,
   listLeadActivities, rescheduleLeadTask,
@@ -29,7 +29,7 @@ function activity(id: string, createdAt: string, extra: Record<string, unknown> 
 }
 
 /** Wires every table to its own builder so each query can be asserted separately. */
-function tables(results: Partial<Record<"lead_data" | "lead_activities" | "profiles" | "lead_notes" | "lead_tasks", Result>>) {
+function tables(results: Partial<Record<"lead_data" | "lead_activities" | "profiles" | "lead_notes" | "lead_tasks" | "tenants", Result>>) {
   const built = Object.fromEntries(Object.entries(results).map(([table, result]) => [table, builder(result)]));
   mocks.from.mockImplementation((table: string) => {
     if (!built[table]) throw new Error(`Unexpected table ${table}`);
@@ -143,16 +143,58 @@ describe("notes", () => {
 });
 
 describe("tasks", () => {
-  const taskRow = { id: TASK, title: "Call back", description: null, start_date: "2026-10-05", due_date: "2026-10-08", status: "open", closed_at: null, created_at: "2026-10-05T09:00:00+00:00" };
+  // "Now" is 07 Oct 2026, 11:30 IST. 08 Oct 15:00 IST is 09:30Z.
+  const NOW = new Date("2026-10-07T06:00:00Z");
+  const ist = { tenants: { data: { timezone: "Asia/Kolkata" }, error: null } };
+  const taskRow = {
+    id: TASK, title: "Call back", description: null, start_date: "2026-10-07", due_date: "2026-10-08",
+    start_at: "2026-10-07T06:00:00+00:00", due_at: "2026-10-08T09:30:00+00:00", original_due_at: "2026-10-08T09:30:00+00:00",
+    repeat_rule: "weekly", status: "open", closed_at: null, created_at: "2026-10-07T06:00:00+00:00",
+  };
 
   const working = { data: { status: "Working" }, error: null };
-  const input = { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" };
+  const input = { title: "Call back", description: null, dueDate: "2026-10-08", dueTime: "15:00", repeatRule: "weekly" as const };
 
-  it("creates the task for the session's tenant and user", async () => {
-    const built = tables({ lead_data: working, lead_tasks: { data: taskRow, error: null } });
-    const task = await createLeadTask(context, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" });
-    expect(built.lead_tasks.insert).toHaveBeenCalledWith({ tenant_id: "tenant-a", lead_id: LEAD, title: "Call back", description: null, start_date: "2026-10-05", due_date: "2026-10-08", created_by: "user-a" });
-    expect(task).toMatchObject({ id: TASK, startDate: "2026-10-05", dueDate: "2026-10-08", status: "open" });
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
+  afterEach(() => vi.useRealTimers());
+
+  it("creates the task for the session's tenant and user, due at the picked time on the company clock", async () => {
+    const built = tables({ ...ist, lead_data: working, lead_tasks: { data: taskRow, error: null } });
+    const task = await createLeadTask(context, LEAD, input);
+    expect(built.tenants.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(built.lead_tasks.insert).toHaveBeenCalledWith({ tenant_id: "tenant-a", lead_id: LEAD, title: "Call back", description: null, due_at: "2026-10-08T09:30:00.000Z", repeat_rule: "weekly", created_by: "user-a" });
+    expect(task).toMatchObject({
+      id: TASK, dueDate: "2026-10-08", dueAt: "2026-10-08T09:30:00+00:00", originalDueAt: "2026-10-08T09:30:00+00:00",
+      startAt: "2026-10-07T06:00:00+00:00", repeatRule: "weekly", status: "open",
+    });
+  });
+
+  it("reads a row without repeat_rule as Don't Repeat", async () => {
+    tables({ ...ist, lead_data: working, lead_tasks: { data: { ...taskRow, repeat_rule: null }, error: null } });
+    expect(await createLeadTask(context, LEAD, input)).toMatchObject({ repeatRule: "none" });
+  });
+
+  it.each([
+    ["earlier today", "2026-10-07", "11:00"],
+    ["exactly now", "2026-10-07", "11:30"],
+    ["yesterday", "2026-10-06", "23:59"],
+  ])("refuses a due time %s (422 DUE_IN_PAST) and writes nothing", async (_label, dueDate, dueTime) => {
+    const built = tables({ ...ist, lead_data: working, lead_tasks: { data: taskRow, error: null } });
+    await expect(createLeadTask(context, LEAD, { ...input, dueDate, dueTime }, "Working")).rejects.toMatchObject({ status: 422, code: "DUE_IN_PAST" });
+    expect(built.lead_tasks.insert).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("accepts the next minute", async () => {
+    const built = tables({ ...ist, lead_data: working, lead_tasks: { data: taskRow, error: null } });
+    await createLeadTask(context, LEAD, { ...input, dueDate: "2026-10-07", dueTime: "11:31" });
+    expect(built.lead_tasks.insert).toHaveBeenCalledWith(expect.objectContaining({ due_at: "2026-10-07T06:01:00.000Z" }));
+  });
+
+  it("answers 503 and writes nothing when the company has no verified timezone", async () => {
+    const built = tables({ tenants: { data: { timezone: "UTC" }, error: null }, lead_data: working, lead_tasks: { data: taskRow, error: null } });
+    await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 503, code: "TENANT_TIMEZONE_UNAVAILABLE" });
+    expect(built.lead_tasks.insert).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -161,23 +203,23 @@ describe("tasks", () => {
     ["23514", 400, "INVALID_TASK_DATES"],
     ["XX000", 500, "TASK_SAVE_FAILED"],
   ])("maps create error %s to %i %s", async (code, status, appCode) => {
-    tables({ lead_data: working, lead_tasks: { data: null, error: { code } } });
-    await expect(createLeadTask(context, LEAD, { title: "t", description: null, startDate: "2026-10-05", dueDate: "2026-10-05" })).rejects.toMatchObject({ status, code: appCode });
+    tables({ ...ist, lead_data: working, lead_tasks: { data: null, error: { code } } });
+    await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status, code: appCode });
   });
 
   it("refuses a task while the lead is still New Lead (422 STATUS_REQUIRED) and writes nothing", async () => {
-    const built = tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+    const built = tables({ ...ist, lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
     await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 422, code: "STATUS_REQUIRED" });
     expect(built.lead_tasks.insert).not.toHaveBeenCalled();
   });
 
   it.each(["Working", "Not reachable", "Sale", "Archived"])("allows a task once the lead is %s", async (status) => {
-    tables({ lead_data: { data: { status }, error: null }, lead_tasks: { data: taskRow, error: null } });
+    tables({ ...ist, lead_data: { data: { status }, error: null }, lead_tasks: { data: taskRow, error: null } });
     await expect(createLeadTask(context, LEAD, input)).resolves.toMatchObject({ id: TASK });
   });
 
   it("reads the status for this tenant only, and answers 404 for a missing or other tenant's lead without writing", async () => {
-    const built = tables({ lead_data: { data: null, error: null }, lead_tasks: { data: taskRow, error: null } });
+    const built = tables({ ...ist, lead_data: { data: null, error: null }, lead_tasks: { data: taskRow, error: null } });
     await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 404, code: "LEAD_NOT_FOUND" });
     expect(built.lead_data.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
     expect(built.lead_data.eq).toHaveBeenCalledWith("id", LEAD);
@@ -185,7 +227,7 @@ describe("tasks", () => {
   });
 
   it("answers 500 when the lead cannot be read, and writes nothing", async () => {
-    const built = tables({ lead_data: { data: null, error: { code: "XX000" } }, lead_tasks: { data: taskRow, error: null } });
+    const built = tables({ ...ist, lead_data: { data: null, error: { code: "XX000" } }, lead_tasks: { data: taskRow, error: null } });
     await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 500, code: "LEAD_QUERY_FAILED" });
     expect(built.lead_tasks.insert).not.toHaveBeenCalled();
   });
@@ -194,7 +236,7 @@ describe("tasks", () => {
     const statusRow = { data: [{ lead_id: LEAD, lead_status: "Working", lead_label: "Warm", lead_label_source: "default" }], error: null };
 
     it("accepts the task on a New Lead when the chosen status unlocks it, inserts it first, then saves the status", async () => {
-      const built = tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+      const built = tables({ ...ist, lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
       const order: string[] = [];
       built.lead_tasks.insert.mockImplementation(() => { order.push("task"); return built.lead_tasks; });
       mocks.rpc.mockImplementation(async () => { order.push("status"); return statusRow; });
@@ -204,41 +246,55 @@ describe("tasks", () => {
     });
 
     it("still refuses when the chosen status is New Lead, and writes nothing", async () => {
-      const built = tables({ lead_data: { data: { status: "Working" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+      const built = tables({ ...ist, lead_data: { data: { status: "Working" }, error: null }, lead_tasks: { data: taskRow, error: null } });
       await expect(createLeadTask(context, LEAD, input, "New Lead")).rejects.toMatchObject({ status: 422, code: "STATUS_REQUIRED" });
       expect(built.lead_tasks.insert).not.toHaveBeenCalled();
       expect(mocks.rpc).not.toHaveBeenCalled();
     });
 
     it("saves no status when the task cannot be created", async () => {
-      tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: null, error: { code: "23505" } } });
+      tables({ ...ist, lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: null, error: { code: "23505" } } });
       await expect(createLeadTask(context, LEAD, input, "Working")).rejects.toMatchObject({ status: 409, code: "OPEN_TASK_EXISTS" });
       expect(mocks.rpc).not.toHaveBeenCalled();
     });
 
     it("does not save a status that equals the lead's current one", async () => {
-      tables({ lead_data: working, lead_tasks: { data: taskRow, error: null } });
+      tables({ ...ist, lead_data: working, lead_tasks: { data: taskRow, error: null } });
       await expect(createLeadTask(context, LEAD, input, "Working")).resolves.toMatchObject({ id: TASK });
       expect(mocks.rpc).not.toHaveBeenCalled();
     });
 
     it("answers 500 STATUS_SAVE_FAILED when the task was saved but the status could not be", async () => {
-      tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+      tables({ ...ist, lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
       mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000" } });
       await expect(createLeadTask(context, LEAD, input, "Working")).rejects.toMatchObject({ status: 500, code: "STATUS_SAVE_FAILED" });
     });
   });
 
-  it("reschedules through the RPC with the session's tenant and actor", async () => {
-    mocks.rpc.mockResolvedValue({ data: [{ ...taskRow, due_date: "2026-10-10" }], error: null });
-    const task = await rescheduleLeadTask(context, LEAD, TASK, "2026-10-10");
-    expect(mocks.rpc).toHaveBeenCalledWith("reschedule_lead_task", { p_tenant_id: "tenant-a", p_lead_id: LEAD, p_task_id: TASK, p_due_date: "2026-10-10", p_actor_user_id: "user-a" });
-    expect(task.dueDate).toBe("2026-10-10");
+  it("reschedules through the timestamptz RPC with the session's tenant and actor", async () => {
+    tables(ist);
+    mocks.rpc.mockResolvedValue({ data: [{ ...taskRow, due_date: "2026-10-10", due_at: "2026-10-10T04:00:00+00:00" }], error: null });
+    const task = await rescheduleLeadTask(context, LEAD, TASK, { dueDate: "2026-10-10", dueTime: "09:30" });
+    expect(mocks.rpc).toHaveBeenCalledWith("reschedule_lead_task", { p_tenant_id: "tenant-a", p_lead_id: LEAD, p_task_id: TASK, p_due_at: "2026-10-10T04:00:00.000Z", p_actor_user_id: "user-a" });
+    expect(task).toMatchObject({ dueDate: "2026-10-10", dueAt: "2026-10-10T04:00:00+00:00", originalDueAt: "2026-10-08T09:30:00+00:00" });
+  });
+
+  it("refuses to reschedule into the past (422 DUE_IN_PAST) without calling the RPC", async () => {
+    tables(ist);
+    await expect(rescheduleLeadTask(context, LEAD, TASK, { dueDate: "2026-10-07", dueTime: "09:00" })).rejects.toMatchObject({ status: 422, code: "DUE_IN_PAST" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("maps the database's own future check (22023) to 422 DUE_IN_PAST", async () => {
+    tables(ist);
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "22023", message: "The due time must be in the future" } });
+    await expect(rescheduleLeadTask(context, LEAD, TASK, { dueDate: "2026-10-10", dueTime: "09:30" })).rejects.toMatchObject({ status: 422, code: "DUE_IN_PAST" });
   });
 
   it("reports rescheduling a closed task as 409 TASK_ALREADY_CLOSED", async () => {
+    tables(ist);
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "55000" } });
-    await expect(rescheduleLeadTask(context, LEAD, TASK, "2026-10-10")).rejects.toMatchObject({ status: 409, code: "TASK_ALREADY_CLOSED" });
+    await expect(rescheduleLeadTask(context, LEAD, TASK, { dueDate: "2026-10-10", dueTime: "09:30" })).rejects.toMatchObject({ status: 409, code: "TASK_ALREADY_CLOSED" });
   });
 
   it.each([
@@ -258,7 +314,7 @@ describe("tasks", () => {
   });
 
   it("reads only the open task of a lead in the session's tenant", async () => {
-    const built = tables({ lead_data: { data: { id: LEAD }, error: null }, lead_tasks: { data: taskRow, error: null } });
+    const built = tables({ ...ist, lead_data: { data: { id: LEAD }, error: null }, lead_tasks: { data: taskRow, error: null } });
     expect(await getOpenLeadTask(context, LEAD)).toMatchObject({ id: TASK });
     expect(built.lead_tasks.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
     expect(built.lead_tasks.eq).toHaveBeenCalledWith("status", "open");

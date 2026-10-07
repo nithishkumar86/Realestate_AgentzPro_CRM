@@ -2,8 +2,12 @@
 
 import { BookOpen, Check, ChevronDown, Lock, Mail, Megaphone, Phone, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_TITLE_MAX_LENGTH, isFinalLeadStatus, isTaskCreationLocked, type LeadStatus } from "@/features/leads/lead-options";
-import { LeadRequestError, fetchOpenTask, formatActivityTime, formatTaskDate, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
+import {
+  DUE_DATE_PRESET_OPTIONS, LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_REPEAT_OPTIONS, TASK_TITLE_MAX_LENGTH,
+  isFinalLeadStatus, isTaskCreationLocked, type DueDatePreset, type LeadStatus, type TaskRepeatRule,
+} from "@/features/leads/lead-options";
+import { LeadRequestError, describeRepeat, fetchOpenTask, formatActivityTime, formatTaskDue, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
+import { TIME_PATTERN, defaultDueChoice, nowInZone, presetDueDate, zonedDateTime } from "@/features/leads/task-schedule";
 import { LeadTimeline, type LeadTimelineHandle } from "@/features/leads/lead-timeline";
 import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, type AssigneeOption } from "@/features/leads/use-lead-filters";
@@ -375,6 +379,30 @@ function useLeadTask(leadId: string, onOpenTaskChange: (hasOpenTask: boolean, ti
   return { openTask, loadError, justClosed, setJustClosed, setOpenTask, reload, onChanged, report: (hasOpenTask: boolean, title?: string | null) => reportRef.current(hasOpenTask, title) };
 }
 
+const DUE_IN_PAST_MESSAGE = "Pick a due time later than now.";
+
+/** Both inputs filled with a real date and time (an emptied date or time input gives ""). */
+function isDueChoice(date: string, time: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && TIME_PATTERN.test(time);
+}
+
+/** A due instant as the date + HH:mm the company clock shows, the values the date and time inputs take. */
+function wallClockOf(dueAt: string, timezone: string): { date: string; time: string } {
+  const { date, hour, minute } = nowInZone(timezone, new Date(dueAt));
+  return { date, time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}` };
+}
+
+/** "Due Thu 08 Oct 2026, 11:00 PM · Repeats every week". */
+function dueLine(dueAt: string, repeat: TaskRepeatRule, timezone: string): string {
+  const repeats = describeRepeat(repeat);
+  return `Due ${formatTaskDue(dueAt, timezone)}${repeats ? ` · ${repeats}` : ""}`;
+}
+
+/** True when the instant is now or already gone; a due time must be later than now. */
+function isNotFuture(instant: Date): boolean {
+  return instant.getTime() <= Date.now();
+}
+
 function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus, onTaskCreated }: {
   leadId: string; timezone: string; tasks: LeadTaskState; locked: boolean;
   /** The unsaved status choice: saved with a new task, or right after the open task is completed, cancelled or rescheduled. */
@@ -385,7 +413,7 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
   const { openTask } = tasks;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rescheduleTo, setRescheduleTo] = useState<string | null>(null);
+  const [rescheduleTo, setRescheduleTo] = useState<{ date: string; time: string } | null>(null);
 
   async function handleFailure(cause: unknown, fallback: string) {
     setError(message(cause, fallback));
@@ -420,10 +448,11 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
 
   async function reschedule(event: FormEvent) {
     event.preventDefault();
-    if (!openTask || !rescheduleTo) return;
+    if (!openTask || !rescheduleTo || !isDueChoice(rescheduleTo.date, rescheduleTo.time)) return;
+    if (isNotFuture(zonedDateTime(rescheduleTo.date, rescheduleTo.time, timezone))) { setError(DUE_IN_PAST_MESSAGE); return; }
     setBusy(true); setError(null);
     try {
-      const updated = await updateTask(leadId, openTask.id, { dueDate: rescheduleTo }, "The task could not be rescheduled.");
+      const updated = await updateTask(leadId, openTask.id, { dueDate: rescheduleTo.date, dueTime: rescheduleTo.time }, "The task could not be rescheduled.");
       tasks.setOpenTask(updated);
       setRescheduleTo(null);
       tasks.onChanged();
@@ -436,7 +465,9 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
     setBusy(false);
   }
 
-  const overdue = openTask ? openTask.dueDate < todayIn(timezone) : false;
+  const overdue = openTask ? new Date(openTask.dueAt).getTime() <= Date.now() : false;
+  const currentDue = openTask ? wallClockOf(openTask.dueAt, timezone) : null;
+  const rescheduleUnchanged = !!rescheduleTo && !!currentDue && rescheduleTo.date === currentDue.date && rescheduleTo.time === currentDue.time;
 
   return <section className="mvp-task-card" aria-label="Follow-up task">
     <h3 className="mvp-lead-drawer__section-title">Follow-up task</h3>
@@ -449,18 +480,23 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
         {overdue ? <span className="mvp-pill mvp-pill--red">Overdue</span> : <span className="mvp-pill mvp-pill--blue">Open</span>}
       </div>
       {openTask.description ? <p className="mvp-task-card__description">{openTask.description}</p> : null}
-      <p className="mvp-task-card__dates">{formatTaskDate(openTask.startDate)} → {formatTaskDate(openTask.dueDate)}</p>
+      <p className="mvp-task-card__dates">{dueLine(openTask.dueAt, openTask.repeatRule, timezone)}</p>
       {rescheduleTo !== null ? <form className="mvp-task-card__reschedule" onSubmit={(event) => void reschedule(event)}>
-        <label className="mvp-task-card__field"><span>New due date</span>
-          <input className="mvp-settings-input" type="date" required min={openTask.startDate} value={rescheduleTo} onChange={(event) => setRescheduleTo(event.target.value)} />
-        </label>
+        <div className="mvp-task-card__dates-row">
+          <label className="mvp-task-card__field"><span>New due date</span>
+            <input className="mvp-settings-input" type="date" required min={todayIn(timezone)} value={rescheduleTo.date} onChange={(event) => setRescheduleTo({ ...rescheduleTo, date: event.target.value })} />
+          </label>
+          <label className="mvp-task-card__field"><span>New time</span>
+            <input className="mvp-settings-input" type="time" required value={rescheduleTo.time} onChange={(event) => setRescheduleTo({ ...rescheduleTo, time: event.target.value })} />
+          </label>
+        </div>
         <div className="mvp-task-card__actions">
-          <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !rescheduleTo || rescheduleTo === openTask.dueDate}>Save date</button>
+          <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !isDueChoice(rescheduleTo.date, rescheduleTo.time) || rescheduleUnchanged}>Save date</button>
           <button type="button" className="mvp-task-button" disabled={busy} onClick={() => setRescheduleTo(null)}>Keep current date</button>
         </div>
       </form> : <div className="mvp-task-card__actions">
         <button type="button" className="mvp-task-button mvp-task-button--primary" disabled={busy} onClick={() => void close("complete")}>Mark complete</button>
-        <button type="button" className="mvp-task-button" disabled={busy} onClick={() => setRescheduleTo(openTask.dueDate)}>Reschedule</button>
+        <button type="button" className="mvp-task-button" disabled={busy} onClick={() => setRescheduleTo(currentDue)}>Reschedule</button>
         <button type="button" className="mvp-task-button mvp-task-button--danger" disabled={busy} onClick={() => void close("cancel")}>Cancel task</button>
       </div>}
     </div> : null}
@@ -475,21 +511,35 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
 function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { leadId: string; timezone: string; tasks: LeadTaskState; pendingStatus: LeadStatus | null; onCreated: (savedStatus: LeadStatus | null) => void }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [startDate, setStartDate] = useState(() => todayIn(timezone));
-  const [dueDate, setDueDate] = useState("");
+  // The task starts when it is saved; the user picks only when it is due (default: the next full hour).
+  const [initial] = useState(() => defaultDueChoice(timezone));
+  const [preset, setPreset] = useState<DueDatePreset>(initial.preset);
+  const [customDate, setCustomDate] = useState("");
+  const [dueTime, setDueTime] = useState(initial.time);
+  const [repeat, setRepeat] = useState<TaskRepeatRule>("none");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const today = todayIn(timezone);
+  const dueDate = preset === "custom" ? customDate : presetDueDate(preset, today);
+  const dueAt = isDueChoice(dueDate, dueTime) ? zonedDateTime(dueDate, dueTime, timezone) : null;
+
+  function choosePreset(value: DueDatePreset) {
+    // Custom opens on the date that was showing, so the calendar starts somewhere sensible.
+    if (value === "custom" && preset !== "custom") setCustomDate(dueDate);
+    setPreset(value);
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim() || !startDate || !dueDate) return;
-    if (dueDate < startDate) { setError("The due date must be on or after the start date."); return; }
+    if (!title.trim() || !dueAt) return;
+    if (isNotFuture(dueAt)) { setError(DUE_IN_PAST_MESSAGE); return; }
     setBusy(true); setError(null);
     try {
       const response = await fetch(`/api/leads/${leadId}/tasks`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), description: description.trim() || null, startDate, dueDate, ...(pendingStatus ? { status: pendingStatus } : {}) }),
+        body: JSON.stringify({ title: title.trim(), description: description.trim() || null, dueDate, dueTime, repeat, ...(pendingStatus ? { status: pendingStatus } : {}) }),
       });
       if (!response.ok) {
         const failure = new LeadRequestError(await readError(response, "The task could not be saved."), response.status);
@@ -518,18 +568,29 @@ function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { le
     </label>
     <label className="mvp-task-card__field"><span>Description <em>(optional)</em></span>
       <textarea className="mvp-settings-input mvp-lead-drawer__textarea" rows={3} maxLength={TASK_DESCRIPTION_MAX_LENGTH} value={description}
-        onChange={(event) => setDescription(event.target.value)} placeholder="What needs to be done between the start and due dates" />
+        onChange={(event) => setDescription(event.target.value)} placeholder="What needs to be done by the due time" />
     </label>
     <div className="mvp-task-card__dates-row">
-      <label className="mvp-task-card__field"><span>Start date</span>
-        <input className="mvp-settings-input" type="date" required value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+      <label className="mvp-task-card__field"><span>Due Date</span>
+        <select className="mvp-settings-input" value={preset} onChange={(event) => choosePreset(event.target.value as DueDatePreset)}>
+          {DUE_DATE_PRESET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
       </label>
-      <label className="mvp-task-card__field"><span>Due date</span>
-        <input className="mvp-settings-input" type="date" required min={startDate || undefined} value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+      <label className="mvp-task-card__field"><span>Time</span>
+        <input className="mvp-settings-input" type="time" required value={dueTime} onChange={(event) => setDueTime(event.target.value)} />
       </label>
     </div>
+    {preset === "custom" ? <label className="mvp-task-card__field"><span>Pick a date</span>
+      <input className="mvp-settings-input" type="date" required min={today} value={customDate} onChange={(event) => setCustomDate(event.target.value)} />
+    </label> : null}
+    <label className="mvp-task-card__field"><span>Select Repeat this Task</span>
+      <select className="mvp-settings-input" value={repeat} onChange={(event) => setRepeat(event.target.value as TaskRepeatRule)}>
+        {TASK_REPEAT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
+    {dueAt ? <p className="mvp-task-card__dates">{dueLine(dueAt.toISOString(), repeat, timezone)}</p> : null}
     <div className="mvp-task-card__actions">
-      <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !title.trim() || !startDate || !dueDate}>{busy ? "Saving..." : "Add task"}</button>
+      <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !title.trim() || !dueAt}>{busy ? "Saving..." : "Add task"}</button>
     </div>
   </form>;
 }

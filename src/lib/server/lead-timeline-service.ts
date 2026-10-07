@@ -1,10 +1,11 @@
 import "server-only";
 
 import { AppError } from "@/lib/server/app-error";
-import { updateLeadTriage } from "@/lib/server/lead-query-service";
+import { getTenantTimezone, updateLeadTriage } from "@/lib/server/lead-query-service";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
-import { TIMELINE_FILTER_TYPES, isTaskCreationLocked, type LeadActivityType, type LeadStatus, type TimelineFilter } from "@/features/leads/lead-options";
+import { TIMELINE_FILTER_TYPES, isTaskCreationLocked, type LeadActivityType, type LeadStatus, type TaskRepeatRule, type TimelineFilter } from "@/features/leads/lead-options";
+import { zonedDateTime } from "@/features/leads/task-schedule";
 
 /**
  * Lead Timeline, notes and follow-up tasks (migration 20261005120000_lead_notes_tasks_timeline.sql).
@@ -36,14 +37,25 @@ export interface LeadTask {
   id: string;
   title: string;
   description: string | null;
+  /** Company-timezone dates of startAt / dueAt (kept until the date columns are dropped). */
   startDate: string;
   dueDate: string;
+  /** When the task was created. */
+  startAt: string;
+  /** The exact moment the task is due. */
+  dueAt: string;
+  /** The first due time; never changes, so "on time" is measured against it even after a reschedule. */
+  originalDueAt: string;
+  repeatRule: TaskRepeatRule;
   status: LeadTaskStatus;
   closedAt: string | null;
   createdAt: string;
 }
 
-export interface NewLeadTask { title: string; description: string | null; startDate: string; dueDate: string; }
+/** A due moment as the user picked it: a calendar date and an HH:mm time on the company clock. */
+export interface TaskDue { dueDate: string; dueTime: string; }
+
+export interface NewLeadTask extends TaskDue { title: string; description: string | null; repeatRule: TaskRepeatRule; }
 
 export const TIMELINE_PAGE_SIZE = 20;
 export const SYSTEM_ACTOR_NAME = "System";
@@ -54,7 +66,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 
-const TASK_COLUMNS = "id,title,description,start_date,due_date,status,closed_at,created_at";
+const TASK_COLUMNS = "id,title,description,start_date,due_date,start_at,due_at,original_due_at,repeat_rule,status,closed_at,created_at";
 
 /**
  * The cursor carries created_at exactly as the database returned it. It must never pass through a JS Date:
@@ -171,6 +183,9 @@ export async function createLeadTask(context: TenantRequestContext, leadId: stri
   if (isTaskCreationLocked(status ?? lead.status as LeadStatus)) {
     throw new AppError("Change this lead's status first, then add a task.", { status: 422, code: "STATUS_REQUIRED" });
   }
+  // The only past-time check on create: the database starts a task at least(now(), due_at), so it would
+  // accept a past due time.
+  const dueAt = await futureDueAt(context, input);
 
   const { data, error } = await getSupabaseAdminClient().from("lead_tasks")
     .insert({
@@ -178,8 +193,8 @@ export async function createLeadTask(context: TenantRequestContext, leadId: stri
       lead_id: leadId,
       title: input.title,
       description: input.description,
-      start_date: input.startDate,
-      due_date: input.dueDate,
+      due_at: dueAt,
+      repeat_rule: input.repeatRule,
       created_by: context.userId,
     })
     .select(TASK_COLUMNS)
@@ -187,7 +202,7 @@ export async function createLeadTask(context: TenantRequestContext, leadId: stri
   if (error) {
     if (error.code === "23505") throw new AppError("This lead already has an open task. Complete or cancel it before adding a new one.", { status: 409, code: "OPEN_TASK_EXISTS" });
     if (error.code === "23503") throw leadNotFound();
-    if (error.code === "23514") throw new AppError("The due date must be on or after the start date.", { status: 400, code: "INVALID_TASK_DATES" });
+    if (error.code === "23514") throw invalidTaskDue();
     throw new AppError("The task could not be saved.", { status: 500, code: "TASK_SAVE_FAILED" });
   }
   if (status && status !== lead.status) {
@@ -200,9 +215,11 @@ export async function createLeadTask(context: TenantRequestContext, leadId: stri
   return toLeadTask(data);
 }
 
-export async function rescheduleLeadTask(context: TenantRequestContext, leadId: string, taskId: string, dueDate: string): Promise<LeadTask> {
+export async function rescheduleLeadTask(context: TenantRequestContext, leadId: string, taskId: string, due: TaskDue): Promise<LeadTask> {
+  const dueAt = await futureDueAt(context, due);
+  // p_due_at selects the timestamptz overload of the RPC (PostgREST matches overloads by argument name).
   const { data, error } = await getSupabaseAdminClient().rpc("reschedule_lead_task", {
-    p_tenant_id: context.tenantId, p_lead_id: leadId, p_task_id: taskId, p_due_date: dueDate, p_actor_user_id: context.userId,
+    p_tenant_id: context.tenantId, p_lead_id: leadId, p_task_id: taskId, p_due_at: dueAt, p_actor_user_id: context.userId,
   });
   return taskRpcResult(data, error, "The task could not be rescheduled.");
 }
@@ -214,11 +231,24 @@ export async function closeLeadTask(context: TenantRequestContext, leadId: strin
   return taskRpcResult(data, error, outcome === "completed" ? "The task could not be completed." : "The task could not be cancelled.");
 }
 
-function taskRpcResult(data: unknown, error: { code?: string } | null, failure: string): LeadTask {
+/**
+ * The due moment as an ISO instant, read on the company clock. It must lie in the future: an overdue task is
+ * fixed by moving it to a later time, never by back-dating.
+ */
+async function futureDueAt(context: TenantRequestContext, due: TaskDue): Promise<string> {
+  const timezone = await getTenantTimezone(context.tenantId);
+  const dueAt = zonedDateTime(due.dueDate, due.dueTime, timezone);
+  if (dueAt.getTime() <= Date.now()) throw dueInPast();
+  return dueAt.toISOString();
+}
+
+function taskRpcResult(data: unknown, error: { code?: string; message?: string } | null, failure: string): LeadTask {
   if (error) {
     if (error.code === "55000") throw new AppError("This task is already closed and can no longer be changed.", { status: 409, code: "TASK_ALREADY_CLOSED" });
-    if (error.code === "23514") throw new AppError("The due date must be on or after the start date.", { status: 400, code: "INVALID_TASK_DATES" });
+    if (error.code === "23514") throw invalidTaskDue();
     if (error.code === "42501") throw new AppError("You are not allowed to change tasks for this company.", { status: 403, code: "TASK_UPDATE_FORBIDDEN" });
+    // The time passed between our check and the database's (a reschedule sent seconds before the due time).
+    if (error.code === "22023" && error.message?.includes("must be in the future")) throw dueInPast();
     if (error.code === "22023") throw new AppError("Request data is invalid.", { status: 400, code: "INVALID_REQUEST" });
     throw new AppError(failure, { status: 500, code: "TASK_UPDATE_FAILED" });
   }
@@ -262,10 +292,22 @@ function toLeadTask(row: Record<string, unknown>): LeadTask {
     description: typeof row.description === "string" ? row.description : null,
     startDate: String(row.start_date),
     dueDate: String(row.due_date),
+    startAt: String(row.start_at),
+    dueAt: String(row.due_at),
+    originalDueAt: String(row.original_due_at),
+    repeatRule: (row.repeat_rule ?? "none") as TaskRepeatRule,
     status: row.status as LeadTaskStatus,
     closedAt: typeof row.closed_at === "string" ? row.closed_at : null,
     createdAt: String(row.created_at),
   };
+}
+
+function dueInPast(): AppError {
+  return new AppError("Pick a due time later than now.", { status: 422, code: "DUE_IN_PAST" });
+}
+
+function invalidTaskDue(): AppError {
+  return new AppError("The due time cannot be before the task's start.", { status: 400, code: "INVALID_TASK_DATES" });
 }
 
 function leadNotFound(): AppError {

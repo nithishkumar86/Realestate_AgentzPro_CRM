@@ -11,7 +11,8 @@ import { GET, POST } from "./route";
 const LEAD = "11111111-1111-4111-8111-111111111111";
 const params = () => ({ params: Promise.resolve({ id: LEAD }) });
 const post = (body: unknown) => POST(new Request(`http://localhost/api/leads/${LEAD}/tasks`, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } }), params());
-const valid = { title: " Call back ", description: "  ", startDate: "2026-10-05", dueDate: "2026-10-08" };
+const valid = { title: " Call back ", description: "  ", dueDate: "2026-10-08", dueTime: "15:00", repeat: "weekly" };
+const expected = { title: "Call back", description: null, dueDate: "2026-10-08", dueTime: "15:00", repeatRule: "weekly" };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -31,21 +32,37 @@ describe("/api/leads/[id]/tasks", () => {
     mocks.create.mockResolvedValue({ id: "task-1" });
     const response = await post(valid);
     expect(response.status).toBe(201);
-    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" }, undefined);
+    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, expected, undefined);
+  });
+
+  it("defaults to no repeat when the form sends none", async () => {
+    mocks.create.mockResolvedValue({ id: "task-1" });
+    const body: Record<string, unknown> = { ...valid };
+    delete body.repeat;
+    expect((await post(body)).status).toBe(201);
+    expect(mocks.create).toHaveBeenCalledWith(expect.anything(), LEAD, { ...expected, repeatRule: "none" }, undefined);
+  });
+
+  it("accepts a previous-build body (start + due date, no time): due at the end of that day, start ignored", async () => {
+    mocks.create.mockResolvedValue({ id: "task-1" });
+    expect((await post({ title: "Call back", startDate: "2026-10-05", dueDate: "2026-10-08" })).status).toBe(201);
+    expect(mocks.create).toHaveBeenCalledWith(expect.anything(), LEAD, { title: "Call back", description: null, dueDate: "2026-10-08", dueTime: "23:59", repeatRule: "none" }, undefined);
   });
 
   it("passes a chosen status along so it is saved together with the task", async () => {
     mocks.create.mockResolvedValue({ id: "task-1" });
     const response = await post({ ...valid, status: "Working" });
     expect(response.status).toBe(201);
-    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" }, "Working");
+    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, expected, "Working");
   });
 
   it.each([
     ["no title", { ...valid, title: "  " }],
-    ["due before start", { ...valid, dueDate: "2026-10-01" }],
-    ["impossible date", { ...valid, startDate: "2026-02-30" }],
-    ["missing due date", { title: "x", startDate: "2026-10-05" }],
+    ["impossible date", { ...valid, dueDate: "2026-02-30" }],
+    ["missing due date", { title: "x", dueTime: "15:00" }],
+    ["a 12-hour time", { ...valid, dueTime: "3:00 PM" }],
+    ["hour 24", { ...valid, dueTime: "24:00" }],
+    ["a repeat rule that does not exist", { ...valid, repeat: "hourly" }],
     ["description too long", { ...valid, description: "x".repeat(2001) }],
     ["unknown field", { ...valid, createdBy: "someone" }],
     ["a status that does not exist", { ...valid, status: "completed" }],
@@ -60,5 +77,12 @@ describe("/api/leads/[id]/tasks", () => {
     const response = await post(valid);
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: "OPEN_TASK_EXISTS", message: "This lead already has an open task. Complete or cancel it before adding a new one." } });
+  });
+
+  it("passes a past due time through as 422 DUE_IN_PAST", async () => {
+    mocks.create.mockRejectedValue(new AppError("Pick a due time later than now.", { status: 422, code: "DUE_IN_PAST" }));
+    const response = await post(valid);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: "DUE_IN_PAST", message: "Pick a due time later than now." } });
   });
 });

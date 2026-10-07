@@ -23,11 +23,17 @@ beforeEach(() => {
 });
 
 describe("PATCH /api/leads/[id]/tasks/[taskId]", () => {
-  it("reschedules with a new due date", async () => {
+  it("reschedules to a new due date and time", async () => {
+    mocks.reschedule.mockResolvedValue({ id: TASK });
+    expect((await patch({ dueDate: "2026-10-10", dueTime: "09:30" })).status).toBe(200);
+    expect(mocks.reschedule).toHaveBeenCalledWith(ctx, LEAD, TASK, { dueDate: "2026-10-10", dueTime: "09:30" });
+    expect(mocks.close).not.toHaveBeenCalled();
+  });
+
+  it("accepts a previous-build body (date only): due at the end of that day", async () => {
     mocks.reschedule.mockResolvedValue({ id: TASK });
     expect((await patch({ dueDate: "2026-10-10" })).status).toBe(200);
-    expect(mocks.reschedule).toHaveBeenCalledWith(ctx, LEAD, TASK, "2026-10-10");
-    expect(mocks.close).not.toHaveBeenCalled();
+    expect(mocks.reschedule).toHaveBeenCalledWith(ctx, LEAD, TASK, { dueDate: "2026-10-10", dueTime: "23:59" });
   });
 
   it.each([["complete", "completed"], ["cancel", "cancelled"]])("maps action %s to outcome %s", async (action, outcome) => {
@@ -42,6 +48,8 @@ describe("PATCH /api/leads/[id]/tasks/[taskId]", () => {
     ["an editable title", { title: "Renamed" }],
     ["a reopen", { action: "reopen" }],
     ["an invalid date", { dueDate: "10/10/2026" }],
+    ["an invalid time", { dueDate: "2026-10-10", dueTime: "25:00" }],
+    ["a time without a date", { dueTime: "09:30" }],
   ])("rejects %s with 400", async (_label, body) => {
     expect((await patch(body)).status).toBe(400);
     expect(mocks.reschedule).not.toHaveBeenCalled();
@@ -57,5 +65,12 @@ describe("PATCH /api/leads/[id]/tasks/[taskId]", () => {
     const response = await patch({ dueDate: "2026-10-10" });
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: { code: "TASK_ALREADY_CLOSED" } });
+  });
+
+  it("passes a past due time through as 422 DUE_IN_PAST", async () => {
+    mocks.reschedule.mockRejectedValue(new AppError("Pick a due time later than now.", { status: 422, code: "DUE_IN_PAST" }));
+    const response = await patch({ dueDate: "2026-10-01", dueTime: "09:00" });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: "DUE_IN_PAST" } });
   });
 });
