@@ -2,7 +2,7 @@
 
 import { Repeat } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TASKS_CHANGED_EVENT } from "@/components/task-bell";
+import { TASKS_CHANGED_EVENT, TaskBell } from "@/components/task-bell";
 import type { LeadStatus, TaskRepeatRule } from "@/features/leads/lead-options";
 import { LeadDrawer, type DrawerLead } from "@/features/leads/lead-drawer";
 import { formatTaskDue } from "@/features/leads/lead-task-client";
@@ -73,7 +73,7 @@ export function TasksPageClient() {
   } : null;
 
   return <div className="mvp-leads">
-    <header className="mvp-page-header"><div><h1>Tasks</h1><p>{data?.isOwner ? "Follow-ups across your team." : "Your follow-ups."}</p></div></header>
+    <header className="mvp-page-header"><div><h1>Tasks</h1><p>{data?.isOwner ? "Follow-ups across your team." : "Your follow-ups."}</p></div><TaskBell /></header>
     <div className="mvp-tasks__bar">
       <div className="mvp-tasks__tabs" role="tablist" aria-label="Task buckets">
         {TABS.map((tab) => <button key={tab.bucket} role="tab" type="button" aria-selected={bucket === tab.bucket}

@@ -2,7 +2,7 @@
 
 import { Bell, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
 
 interface Feed { items: TaskNotification[]; unread: number }
@@ -24,10 +24,22 @@ export function reminderText(item: Pick<TaskNotification, "kind" | "taskTitle" |
   return `${item.kind === "due_now" ? "Due now" : "Due in 15 min"}: ${item.taskTitle}${who}`;
 }
 
-/** Bell with an unread count and a list of the member's task alerts; a toast pops when a new one arrives live. */
-export function TaskBell() {
+type PushState = "unsupported" | "ask" | "on" | "blocked";
+interface TaskAlerts {
+  feed: Feed;
+  pushState: PushState;
+  enablePush: () => Promise<void>;
+  disablePush: () => Promise<void>;
+  markRead: (body: { all: true } | { ids: string[] }) => Promise<void>;
+}
+const TaskAlertsContext = createContext<TaskAlerts | null>(null);
+
+/**
+ * Lives in the shell so reminders reach the member on every page: it owns the live stream, the alert list, browser
+ * push and the toast. The bell that shows the list is `TaskBell`, placed on the Tasks page.
+ */
+export function TaskAlertsProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [feed, setFeed] = useState<Feed>({ items: [], unread: 0 });
-  const [open, setOpen] = useState(false);
   const [toast, setToast] = useState<TaskNotification | null>(null);
   const known = useRef<Set<string> | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -72,7 +84,7 @@ export function TaskBell() {
   }, [load]);
 
   // Browser push: offered only where the browser supports it and the member has not decided yet.
-  const [pushState, setPushState] = useState<"unsupported" | "ask" | "on" | "blocked">("unsupported");
+  const [pushState, setPushState] = useState<PushState>("unsupported");
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) return;
@@ -122,6 +134,21 @@ export function TaskBell() {
     }
   }
 
+  async function markRead(body: { all: true } | { ids: string[] }) {
+    await fetch("/api/notifications/read", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined);
+    await load(false);
+  }
+
+  return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead }}>
+    {children}
+    {toast ? <Link className="mvp-bell__toast" href="/tasks" role="status" onClick={() => { void markRead({ ids: [toast.id] }); setToast(null); }}>{reminderText(toast)}</Link> : null}
+  </TaskAlertsContext.Provider>;
+}
+
+/** Bell with an unread count and the member's task alerts in a popover. Shown at the top right of the Tasks page. */
+export function TaskBell() {
+  const alerts = useContext(TaskAlertsContext);
+  const [open, setOpen] = useState(false);
   // The panel closes on Escape or a click anywhere outside it, as well as with its close button.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -132,16 +159,12 @@ export function TaskBell() {
     document.addEventListener("pointerdown", onPointer);
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onPointer); };
   }, [open]);
-
-  async function markRead(body: { all: true } | { ids: string[] }) {
-    await fetch("/api/notifications/read", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined);
-    await load(false);
-  }
+  if (!alerts) return null;
+  const { feed, pushState, enablePush, disablePush, markRead } = alerts;
 
   return <div className="mvp-bell" ref={root}>
-    <button type="button" className="mvp-nav-link mvp-bell__button" aria-label={`Task alerts, ${feed.unread} unread`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-      <Bell size={19} aria-hidden="true" />
-      <span className="mvp-nav-link__label">Alerts</span>
+    <button type="button" className="mvp-bell__button" aria-label={`Task alerts, ${feed.unread} unread`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+      <Bell size={20} aria-hidden="true" />
       {feed.unread > 0 ? <span className="mvp-bell__badge">{feed.unread > 9 ? "9+" : feed.unread}</span> : null}
     </button>
     {open ? <div className="mvp-bell__panel" role="dialog" aria-label="Task alerts">
@@ -160,6 +183,5 @@ export function TaskBell() {
         </li>)}
       </ul>}
     </div> : null}
-    {toast ? <Link className="mvp-bell__toast" href="/tasks" role="status" onClick={() => { void markRead({ ids: [toast.id] }); setToast(null); }}>{reminderText(toast)}</Link> : null}
   </div>;
 }

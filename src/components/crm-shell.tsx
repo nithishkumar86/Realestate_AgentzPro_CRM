@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, CalendarCheck, ClipboardList, Link2 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { CompanySwitcher } from "@/components/company-switcher";
-import { TaskBell } from "@/components/task-bell";
+import { TaskAlertsProvider } from "@/components/task-bell";
 import { SidebarCollapseButton, SidebarExpandButton } from "@/components/sidebar-toggle";
 import { UserMenu } from "@/components/user-menu";
 
@@ -26,6 +26,7 @@ export function CrmShell({ children, fullName, tenantName }: Readonly<CrmShellPr
   const pathname = usePathname();
 
   return (
+    <TaskAlertsProvider>
     <div className="mvp-shell">
       <SidebarExpandButton />
       <aside className="mvp-sidebar" id="primary-sidebar" aria-label="Primary navigation">
@@ -47,10 +48,10 @@ export function CrmShell({ children, fullName, tenantName }: Readonly<CrmShellPr
             </Link>
           ))}
         </nav>
-        <TaskBell />
         <UserMenu fullName={fullName} tenantName={tenantName} />
       </aside>
       <main className="mvp-main">{children}</main>
     </div>
+    </TaskAlertsProvider>
   );
 }
