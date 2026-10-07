@@ -8,6 +8,17 @@ import type { TenantRequestContext } from "@/lib/server/tenant-context";
 export interface PushSubscriptionInput { endpoint: string; keys: { p256dh: string; auth: string } }
 export interface ReminderRow { id: string; tenant_id: string; user_id: string; task_id: string; lead_id: string; kind: string }
 
+// The server later POSTs to this URL, so it must be a real browser push service and nothing else (no SSRF).
+const PUSH_HOSTS = [/(^|\.)fcm\.googleapis\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /(^|\.)push\.apple\.com$/, /(^|\.)notify\.windows\.com$/];
+export function isPushServiceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.port && !url.username && !url.password && PUSH_HOSTS.some((pattern) => pattern.test(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
 let configured: boolean | undefined;
 
 /** Web Push is optional: without the VAPID env vars the in-app alerts still work and push is skipped. */

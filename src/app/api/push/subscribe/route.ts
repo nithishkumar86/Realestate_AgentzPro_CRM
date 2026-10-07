@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { createErrorResponse, createSuccessResponse, parseJsonBody } from "@/app/api/meta/_lib/route-utils";
-import { removePushSubscription, savePushSubscription } from "@/lib/server/push-service";
+import { isPushServiceUrl, removePushSubscription, savePushSubscription } from "@/lib/server/push-service";
 import { resolveTenantRequestContext } from "@/lib/server/tenant-context";
 
-const endpoint = z.string().url().startsWith("https://").max(2000);
+const endpoint = z.string().max(2000).refine(isPushServiceUrl, "Not a browser push service.");
 const subscribeSchema = z.object({
   endpoint,
   keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }).strict(),

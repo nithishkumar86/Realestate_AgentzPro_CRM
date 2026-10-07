@@ -7,6 +7,8 @@ import type { TaskNotification } from "@/lib/server/task-notification-service";
 
 interface Feed { items: TaskNotification[]; unread: number }
 const TOAST_MS = 8_000;
+/** Fired on window when the live stream says tasks may have changed; the Tasks page refetches on it. */
+export const TASKS_CHANGED_EVENT = "agentz:tasks-changed";
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
 function urlBase64ToBytes(value: string): Uint8Array<ArrayBuffer> {
@@ -49,9 +51,24 @@ export function TaskBell() {
 
   useEffect(() => {
     const first = setTimeout(() => void load(false), 0);
-    const source = new EventSource("/api/dashboard/stream");
-    source.addEventListener("task_reminder", () => void load(true));
-    return () => { clearTimeout(first); clearTimeout(toastTimer.current); source.close(); };
+    // One live stream for the whole shell (the Tasks page listens to the window events below instead of opening
+    // its own). It is closed while the tab is hidden, like the dashboard's, and a catch-up fetch runs on return.
+    let source: EventSource | null = null;
+    const open = () => {
+      source?.close();
+      source = new EventSource("/api/dashboard/stream");
+      source.addEventListener("task_reminder", () => { void load(true); window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); });
+      source.addEventListener("change", () => window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)));
+    };
+    const onVisibility = () => {
+      if (document.hidden) { source?.close(); source = null; return; }
+      open();
+      void load(true);
+      window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
+    };
+    if (!document.hidden) open();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { clearTimeout(first); clearTimeout(toastTimer.current); document.removeEventListener("visibilitychange", onVisibility); source?.close(); };
   }, [load]);
 
   // Browser push: offered only where the browser supports it and the member has not decided yet.
@@ -60,6 +77,17 @@ export function TaskBell() {
     const timer = setTimeout(() => {
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) return;
       setPushState(Notification.permission === "granted" ? "on" : Notification.permission === "denied" ? "blocked" : "ask");
+      // Already allowed on this device: hand the existing subscription to whoever is signed in now, so a second
+      // member on a shared device gets their own pushes (and the previous member stops getting them).
+      if (Notification.permission === "granted") {
+        void navigator.serviceWorker.register("/sw.js").then(() => navigator.serviceWorker.ready)
+          .then((registration) => registration.pushManager.getSubscription())
+          .then((subscription) => {
+            const json = subscription?.toJSON();
+            if (json?.endpoint) return fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
+          })
+          .catch(() => undefined);
+      }
     }, 0);
     return () => clearTimeout(timer);
   }, []);

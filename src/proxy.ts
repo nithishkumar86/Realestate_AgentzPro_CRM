@@ -25,7 +25,7 @@ import { clearSessionActivity, IDLE_ACTIVITY_COOKIE, isSessionActive } from "@/l
  *    check (requireCrmAccess) runs in `(crm)/layout.tsx`, never in proxy.
  */
 
-const CRM_PATH_PREFIXES = ["/leads", "/dashboard", "/connection", "/settings"];
+const CRM_PATH_PREFIXES = ["/leads", "/dashboard", "/connection", "/settings", "/tasks"];
 const LOGIN_PATH = "/login";
 // These routes create a new session and stamp its idle clock; an old session they replace is not checked.
 const SESSION_START_PATHS = ["/api/auth/otp/verify", "/api/auth/invite/confirm"];

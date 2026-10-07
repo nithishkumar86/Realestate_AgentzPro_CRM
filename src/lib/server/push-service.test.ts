@@ -54,6 +54,7 @@ describe("sendReminderPushes", () => {
     mocks.send.mockRejectedValue({ statusCode: 410 });
     const { sendReminderPushes } = await import("@/lib/server/push-service");
     await expect(sendReminderPushes([row])).resolves.toEqual({ sent: 0 });
-    expect(removal.delete).toBeDefined();
+    expect(removal.delete).toHaveBeenCalled();
+    expect(removal.eq).toHaveBeenCalledWith("endpoint", "https://push/dead");
   });
 });

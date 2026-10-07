@@ -2,6 +2,7 @@
 
 import { Repeat } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TASKS_CHANGED_EVENT } from "@/components/task-bell";
 import type { LeadStatus, TaskRepeatRule } from "@/features/leads/lead-options";
 import { LeadDrawer, type DrawerLead } from "@/features/leads/lead-drawer";
 import { formatTaskDue } from "@/features/leads/lead-task-client";
@@ -56,11 +57,11 @@ export function TasksPageClient() {
     return () => { clearTimeout(first); clearInterval(timer); };
   }, [load]);
 
-  // Task changes made elsewhere arrive on the shared live stream; refetch when one does.
+  // Task changes made elsewhere arrive on the shell's live stream (the bell re-dispatches them); refetch on one.
   useEffect(() => {
-    const source = new EventSource("/api/dashboard/stream");
-    source.addEventListener("change", () => void load());
-    return () => source.close();
+    const onChanged = () => void load();
+    window.addEventListener(TASKS_CHANGED_EVENT, onChanged);
+    return () => window.removeEventListener(TASKS_CHANGED_EVENT, onChanged);
   }, [load]);
 
   const counts = data?.counts;
