@@ -71,8 +71,8 @@ export async function sendReminderPushes(rows: ReminderRow[]): Promise<{ sent: n
         const title = titles.get(`${row.tenant_id}:${row.task_id}`) ?? "Task";
         const lead = names.get(`${row.tenant_id}:${row.lead_id}`);
         const payload = JSON.stringify({
-          title: row.kind === "due_now" ? "Task due now" : "Task due in 15 minutes",
-          body: lead ? `${title} · ${lead}` : title, url: "/tasks", tag: row.id,
+          title: `Follow up with ${lead ?? "this lead"} ${row.kind === "due_now" ? "now" : "in 15 min"}`,
+          body: title, url: "/tasks", tag: row.id,
         });
         return webpush.sendNotification({ endpoint: String(sub.endpoint), keys: { p256dh: String(sub.p256dh), auth: String(sub.auth) } }, payload)
           .then(() => { sent += 1; })

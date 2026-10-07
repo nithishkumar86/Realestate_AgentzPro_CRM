@@ -19,9 +19,13 @@ function urlBase64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/** "Follow up with Ravi in 15 min" / "Follow up with Ravi now": the heading of every reminder. */
+export function reminderHeading(item: Pick<TaskNotification, "kind" | "leadName">): string {
+  return `Follow up with ${item.leadName ?? "this lead"} ${item.kind === "due_now" ? "now" : "in 15 min"}`;
+}
+
 export function reminderText(item: Pick<TaskNotification, "kind" | "taskTitle" | "leadName">): string {
-  const who = item.leadName ? ` · ${item.leadName}` : "";
-  return `${item.kind === "due_now" ? "Due now" : "Due in 15 min"}: ${item.taskTitle}${who}`;
+  return `${reminderHeading(item)}: ${item.taskTitle}`;
 }
 
 type PushState = "unsupported" | "ask" | "on" | "blocked";
@@ -201,8 +205,8 @@ export function TaskBell() {
               {item.kind === "due_now" ? <AlarmClock size={16} aria-hidden="true" /> : <Clock size={16} aria-hidden="true" />}
             </span>
             <span className="mvp-bell__item-body">
-              <strong>{item.taskTitle}</strong>
-              <small>{item.kind === "due_now" ? "Due now" : "Due in 15 min"}{item.leadName ? ` · ${item.leadName}` : ""}</small>
+              <strong>{reminderHeading(item)}</strong>
+              <small>{item.taskTitle}</small>
             </span>
             <span className="mvp-bell__item-time">{timeAgo(item.createdAt)}{item.read ? null : <i aria-label="Unread" />}</span>
           </Link>

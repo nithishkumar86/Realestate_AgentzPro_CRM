@@ -45,7 +45,7 @@ describe("sendReminderPushes", () => {
     expect(await sendReminderPushes([row])).toEqual({ sent: 1 });
     expect(mocks.send).toHaveBeenCalledTimes(1);
     expect(mocks.send.mock.calls[0][0]).toMatchObject({ endpoint: "https://push/mine" });
-    expect(JSON.parse(mocks.send.mock.calls[0][1])).toMatchObject({ title: "Task due now", body: "Call back · Ravi", url: "/tasks" });
+    expect(JSON.parse(mocks.send.mock.calls[0][1])).toMatchObject({ title: "Follow up with Ravi now", body: "Call back", url: "/tasks" });
   });
 
   it("drops a subscription the push service reports gone, and never throws", async () => {
