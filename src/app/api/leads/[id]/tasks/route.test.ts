@@ -31,7 +31,14 @@ describe("/api/leads/[id]/tasks", () => {
     mocks.create.mockResolvedValue({ id: "task-1" });
     const response = await post(valid);
     expect(response.status).toBe(201);
-    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" });
+    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" }, undefined);
+  });
+
+  it("passes a chosen status along so it is saved together with the task", async () => {
+    mocks.create.mockResolvedValue({ id: "task-1" });
+    const response = await post({ ...valid, status: "Working" });
+    expect(response.status).toBe(201);
+    expect(mocks.create).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" }, "Working");
   });
 
   it.each([
@@ -40,7 +47,8 @@ describe("/api/leads/[id]/tasks", () => {
     ["impossible date", { ...valid, startDate: "2026-02-30" }],
     ["missing due date", { title: "x", startDate: "2026-10-05" }],
     ["description too long", { ...valid, description: "x".repeat(2001) }],
-    ["unknown field", { ...valid, status: "completed" }],
+    ["unknown field", { ...valid, createdBy: "someone" }],
+    ["a status that does not exist", { ...valid, status: "completed" }],
   ])("rejects %s with 400", async (_label, body) => {
     const response = await post(body);
     expect(response.status).toBe(400);

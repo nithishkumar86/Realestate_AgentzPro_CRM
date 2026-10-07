@@ -30,6 +30,15 @@ export function isFinalLeadStatus(status: LeadStatus): boolean {
   return (FINAL_LEAD_STATUSES as readonly LeadStatus[]).includes(status);
 }
 
+// The status every lead starts with. While a lead is still on it nobody has recorded the outcome of a first
+// call, so the follow-up task cannot be created yet: the telecaller updates the status first (step 1), then
+// adds the task (step 2), then the note (step 3). The server enforces this; the drawer shows it.
+export const INITIAL_LEAD_STATUS = "New Lead" satisfies LeadStatus;
+
+export function isTaskCreationLocked(status: LeadStatus): boolean {
+  return status === INITIAL_LEAD_STATUS;
+}
+
 // Lead Timeline vocabulary. Keep in sync with the `lead_activities.type` check constraint in
 // supabase/migrations/20261005120000_lead_notes_tasks_timeline.sql.
 export const LEAD_ACTIVITY_TYPES = [

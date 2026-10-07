@@ -145,8 +145,11 @@ describe("notes", () => {
 describe("tasks", () => {
   const taskRow = { id: TASK, title: "Call back", description: null, start_date: "2026-10-05", due_date: "2026-10-08", status: "open", closed_at: null, created_at: "2026-10-05T09:00:00+00:00" };
 
+  const working = { data: { status: "Working" }, error: null };
+  const input = { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" };
+
   it("creates the task for the session's tenant and user", async () => {
-    const built = tables({ lead_tasks: { data: taskRow, error: null } });
+    const built = tables({ lead_data: working, lead_tasks: { data: taskRow, error: null } });
     const task = await createLeadTask(context, LEAD, { title: "Call back", description: null, startDate: "2026-10-05", dueDate: "2026-10-08" });
     expect(built.lead_tasks.insert).toHaveBeenCalledWith({ tenant_id: "tenant-a", lead_id: LEAD, title: "Call back", description: null, start_date: "2026-10-05", due_date: "2026-10-08", created_by: "user-a" });
     expect(task).toMatchObject({ id: TASK, startDate: "2026-10-05", dueDate: "2026-10-08", status: "open" });
@@ -158,8 +161,72 @@ describe("tasks", () => {
     ["23514", 400, "INVALID_TASK_DATES"],
     ["XX000", 500, "TASK_SAVE_FAILED"],
   ])("maps create error %s to %i %s", async (code, status, appCode) => {
-    tables({ lead_tasks: { data: null, error: { code } } });
+    tables({ lead_data: working, lead_tasks: { data: null, error: { code } } });
     await expect(createLeadTask(context, LEAD, { title: "t", description: null, startDate: "2026-10-05", dueDate: "2026-10-05" })).rejects.toMatchObject({ status, code: appCode });
+  });
+
+  it("refuses a task while the lead is still New Lead (422 STATUS_REQUIRED) and writes nothing", async () => {
+    const built = tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+    await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 422, code: "STATUS_REQUIRED" });
+    expect(built.lead_tasks.insert).not.toHaveBeenCalled();
+  });
+
+  it.each(["Working", "Not reachable", "Sale", "Archived"])("allows a task once the lead is %s", async (status) => {
+    tables({ lead_data: { data: { status }, error: null }, lead_tasks: { data: taskRow, error: null } });
+    await expect(createLeadTask(context, LEAD, input)).resolves.toMatchObject({ id: TASK });
+  });
+
+  it("reads the status for this tenant only, and answers 404 for a missing or other tenant's lead without writing", async () => {
+    const built = tables({ lead_data: { data: null, error: null }, lead_tasks: { data: taskRow, error: null } });
+    await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 404, code: "LEAD_NOT_FOUND" });
+    expect(built.lead_data.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(built.lead_data.eq).toHaveBeenCalledWith("id", LEAD);
+    expect(built.lead_tasks.insert).not.toHaveBeenCalled();
+  });
+
+  it("answers 500 when the lead cannot be read, and writes nothing", async () => {
+    const built = tables({ lead_data: { data: null, error: { code: "XX000" } }, lead_tasks: { data: taskRow, error: null } });
+    await expect(createLeadTask(context, LEAD, input)).rejects.toMatchObject({ status: 500, code: "LEAD_QUERY_FAILED" });
+    expect(built.lead_tasks.insert).not.toHaveBeenCalled();
+  });
+
+  describe("with a status chosen but not saved yet", () => {
+    const statusRow = { data: [{ lead_id: LEAD, lead_status: "Working", lead_label: "Warm", lead_label_source: "default" }], error: null };
+
+    it("accepts the task on a New Lead when the chosen status unlocks it, inserts it first, then saves the status", async () => {
+      const built = tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+      const order: string[] = [];
+      built.lead_tasks.insert.mockImplementation(() => { order.push("task"); return built.lead_tasks; });
+      mocks.rpc.mockImplementation(async () => { order.push("status"); return statusRow; });
+      await expect(createLeadTask(context, LEAD, input, "Working")).resolves.toMatchObject({ id: TASK });
+      expect(mocks.rpc).toHaveBeenCalledWith("update_lead_status", { p_tenant_id: "tenant-a", p_lead_id: LEAD, p_status: "Working", p_actor_user_id: "user-a" });
+      expect(order).toEqual(["task", "status"]);
+    });
+
+    it("still refuses when the chosen status is New Lead, and writes nothing", async () => {
+      const built = tables({ lead_data: { data: { status: "Working" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+      await expect(createLeadTask(context, LEAD, input, "New Lead")).rejects.toMatchObject({ status: 422, code: "STATUS_REQUIRED" });
+      expect(built.lead_tasks.insert).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    });
+
+    it("saves no status when the task cannot be created", async () => {
+      tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: null, error: { code: "23505" } } });
+      await expect(createLeadTask(context, LEAD, input, "Working")).rejects.toMatchObject({ status: 409, code: "OPEN_TASK_EXISTS" });
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    });
+
+    it("does not save a status that equals the lead's current one", async () => {
+      tables({ lead_data: working, lead_tasks: { data: taskRow, error: null } });
+      await expect(createLeadTask(context, LEAD, input, "Working")).resolves.toMatchObject({ id: TASK });
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    });
+
+    it("answers 500 STATUS_SAVE_FAILED when the task was saved but the status could not be", async () => {
+      tables({ lead_data: { data: { status: "New Lead" }, error: null }, lead_tasks: { data: taskRow, error: null } });
+      mocks.rpc.mockResolvedValue({ data: null, error: { code: "XX000" } });
+      await expect(createLeadTask(context, LEAD, input, "Working")).rejects.toMatchObject({ status: 500, code: "STATUS_SAVE_FAILED" });
+    });
   });
 
   it("reschedules through the RPC with the session's tenant and actor", async () => {

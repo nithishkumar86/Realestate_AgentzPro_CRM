@@ -31,6 +31,8 @@ interface ApiState {
   createTaskConflict?: boolean;
   assignees?: Array<{ userId: string; fullName: string }>;
   failAssign?: boolean;
+  failStatus?: boolean;
+  failNote?: boolean;
 }
 
 /** One router for every endpoint the leads page and the drawer call; records each request. */
@@ -59,6 +61,7 @@ function stubApi(state: ApiState) {
       state.openTask = { ...openTask, dueDate: String(body?.dueDate) };
       return json(state.openTask);
     }
+    if (/^\/api\/leads\/[^/]+\/notes$/.test(url) && state.failNote) return json({ error: { code: "NOTE_SAVE_FAILED", message: "The note could not be saved." } }, 500);
     if (/^\/api\/leads\/[^/]+\/notes$/.test(url)) return json({ id: "note-1", createdAt: "2026-10-05T04:00:00+00:00" }, 201);
     const assignRoute = /^\/api\/leads\/([^/]+)\/assignee$/.exec(url);
     if (assignRoute && method === "PUT") {
@@ -67,6 +70,7 @@ function stubApi(state: ApiState) {
       return json({ id: assignRoute[1], assignedUserId, assigneeName: state.assignees?.find((member) => member.userId === assignedUserId)?.fullName ?? null });
     }
     const patchLead = /^\/api\/leads\/([^/]+)$/.exec(url);
+    if (patchLead && method === "PATCH" && state.failStatus) return json({ error: { code: "UPDATE_FAILED", message: "The status could not be updated." } }, 500);
     if (patchLead && method === "PATCH") return json({ id: patchLead[1], status: body?.status, label: "Warm", labelSource: "default" });
     throw new Error(`Unexpected request: ${method} ${url}`);
   }));
@@ -95,6 +99,7 @@ async function openDrawer(name = "Kumar") {
   return screen.findByRole("dialog", { name });
 }
 
+const patches = (calls: ReturnType<typeof stubApi>) => calls.filter((call) => call.method === "PATCH" && call.url === `/api/leads/${LEAD_1}`).map((call) => call.body);
 const activityCalls = (calls: ReturnType<typeof stubApi>) => calls.filter((call) => call.url.includes("/activities"));
 
 beforeEach(() => {
@@ -114,6 +119,64 @@ describe("no open task marker in the leads table", () => {
   });
 });
 
+describe("resizing the drawer", () => {
+  const widthOf = (drawer: HTMLElement) => drawer.style.width;
+  // jsdom has no PointerEvent, so a fired pointer event would arrive without its position and button.
+  beforeEach(() => {
+    class TestPointerEvent extends MouseEvent {
+      pointerId: number;
+      constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerId = init.pointerId ?? 1; }
+    }
+    vi.stubGlobal("PointerEvent", TestPointerEvent);
+  });
+
+  it("widens when the left edge is dragged left, narrows back and never goes below the default", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    const drawer = await openDrawer();
+    const handle = within(document.body).getByRole("separator", { name: /resize lead details/i });
+    expect(widthOf(drawer)).toBe("min(520px, 100vw)");
+    handle.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(handle, { button: 0, clientX: 700, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 500, pointerId: 1 });
+    expect(widthOf(drawer)).toBe("min(720px, 100vw)");
+    fireEvent.pointerMove(handle, { clientX: 900, pointerId: 1 });
+    expect(widthOf(drawer)).toBe("min(520px, 100vw)");
+    fireEvent.pointerMove(handle, { clientX: 400, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 400, pointerId: 1 });
+    expect(widthOf(drawer)).toBe("min(760px, 100vw)");
+    expect(document.body.classList.contains("mvp-drawer-resizing")).toBe(false);
+  });
+
+  it("can be resized with the arrow keys and reset with a double click", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    const drawer = await openDrawer();
+    const handle = within(document.body).getByRole("separator", { name: /resize lead details/i });
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    fireEvent.keyDown(handle, { key: "ArrowLeft" });
+    expect(widthOf(drawer)).toBe("min(600px, 100vw)");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.doubleClick(handle);
+    expect(widthOf(drawer)).toBe("min(520px, 100vw)");
+  });
+
+  it("opens at the default width every time, even after it was expanded and closed", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    const drawer = await openDrawer();
+    const handle = within(document.body).getByRole("separator", { name: /resize lead details/i });
+    handle.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(handle, { button: 0, clientX: 700, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 400, pointerId: 1 });
+    fireEvent.pointerUp(handle, { clientX: 400, pointerId: 1 });
+    expect(widthOf(drawer)).toBe("min(760px, 100vw)");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close lead details" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(widthOf(await openDrawer())).toBe("min(520px, 100vw)");
+  });
+});
+
 describe("lead drawer timeline", () => {
   it("opens from the lead name and shows entries oldest first (latest at the bottom) with actor, note text and the backfill hint", async () => {
     stubApi({
@@ -128,7 +191,7 @@ describe("lead drawer timeline", () => {
     await renderPage();
     const drawer = await openDrawer();
     await within(drawer).findByText("Status: New Lead → Working");
-    const items = within(drawer).getAllByRole("listitem");
+    const items = within(within(drawer).getByRole("tabpanel")).getAllByRole("listitem");
     expect(items.map((item) => item.querySelector(".mvp-timeline__summary")?.textContent)).toEqual(["Lead created · Status: New Lead", "Status: New Lead → Working", "Note added"]);
     expect(within(drawer).getByText("Will visit Sunday with family")).toBeInTheDocument();
     expect(within(items[0]).getByText("System")).toBeInTheDocument();
@@ -208,7 +271,7 @@ describe("lead drawer notes and tasks", () => {
   });
 
   it("hides the add form while a task is open, and asks before cancelling it", async () => {
-    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true, status: "Working" })], openTask, pages: {} });
     const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     await renderPage();
     const drawer = await openDrawer();
@@ -231,7 +294,7 @@ describe("lead drawer notes and tasks", () => {
   });
 
   it("creates a task with the form fields and clears the next-step prompt", async () => {
-    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
     expect(within(drawer).getByLabelText(/Description/)).toHaveAttribute("placeholder", "What needs to be done between the start and due dates");
@@ -244,7 +307,7 @@ describe("lead drawer notes and tasks", () => {
   });
 
   it("shows the server's message when another open task already exists", async () => {
-    stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, createTaskConflict: true, pages: {} });
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, createTaskConflict: true, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
     fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
@@ -267,8 +330,108 @@ describe("lead drawer notes and tasks", () => {
   });
 });
 
+const stepState = (drawer: HTMLElement) => within(within(drawer).getByRole("list", { name: "After every call" })).getAllByRole("listitem")
+  .map((item) => item.hasAttribute("data-done") ? "done" : item.hasAttribute("data-current") ? "current" : "todo");
+
+describe("lead drawer: step 1, 2, 3", () => {
+  const LOCK_TEXT = "Do step 1 first: change the status above. Then you can add a task.";
+
+  it("locks the task form while the lead is New Lead, keeps notes open, and starts with no ticks", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByText(LOCK_TEXT);
+    expect(within(drawer).queryByRole("button", { name: "Add task" })).not.toBeInTheDocument();
+    expect(within(drawer).queryByLabelText("Title")).not.toBeInTheDocument();
+    expect(within(drawer).getByLabelText("Add a note")).toBeEnabled();
+    expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
+  });
+
+  it("unlocks the task form and ticks step 1 once the status is saved, then ticks step 2 and step 3 as each is saved", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    const confirmSpy = vi.spyOn(globalThis, "confirm");
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByText(LOCK_TEXT);
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Working" }));
+    await within(drawer).findByRole("button", { name: "Add task" });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(within(drawer).queryByText(LOCK_TEXT)).not.toBeInTheDocument();
+    expect(stepState(drawer)).toEqual(["done", "current", "todo"]);
+
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
+    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByRole("button", { name: "Mark complete" });
+    expect(stepState(drawer)).toEqual(["done", "done", "current"]);
+
+    fireEvent.change(within(drawer).getByLabelText("Add a note"), { target: { value: "Asked for brochure" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save note" }));
+    await waitFor(() => expect(stepState(drawer)).toEqual(["done", "done", "done"]));
+    expect(within(drawer).getByText("Step 3 done")).toBeInTheDocument();
+  });
+
+  it("saves nothing when a status is chosen: it stays pending, with a hint, until a task or a note is saved", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    const confirmSpy = vi.spyOn(globalThis, "confirm");
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Working" }));
+    await within(drawer).findByRole("button", { name: "Add task" });
+    expect(within(drawer).getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("Working");
+    expect(within(drawer).getByText("Not saved yet. Add a task or a note to save it.")).toBeInTheDocument();
+    expect(patches(calls)).toEqual([]);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close lead details" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(patches(calls)).toEqual([]);
+    expect(screen.getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("New Lead");
+  });
+
+  it("takes the step 1 tick back, and locks the task form again, when the lead is moved back to New Lead", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByRole("button", { name: "Add task" });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Sale" }));
+    await waitFor(() => expect(stepState(drawer)).toEqual(["done", "current", "todo"]));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "New Lead" }));
+    await within(drawer).findByText(LOCK_TEXT);
+    expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
+    expect(within(drawer).queryByRole("button", { name: "Add task" })).not.toBeInTheDocument();
+  });
+
+  it("starts every visit with empty ticks, even for a lead already past New Lead, and leaves its task form open", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByRole("button", { name: "Add task" });
+    expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
+  });
+
+  it("still shows Mark complete, Reschedule and Cancel for an open task on a New Lead, and a reschedule does not tick step 2", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    expect(await within(drawer).findByRole("button", { name: "Mark complete" })).toBeEnabled();
+    expect(within(drawer).getByRole("button", { name: "Reschedule" })).toBeEnabled();
+    expect(within(drawer).getByRole("button", { name: "Cancel task" })).toBeEnabled();
+    expect(within(drawer).queryByText(LOCK_TEXT)).not.toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Reschedule" }));
+    fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "2026-10-12" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
+    await within(drawer).findByText("05 Oct 2026 \u2192 12 Oct 2026");
+    expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
+  });
+});
+
 describe("moving a lead to a final status with an open task", () => {
-  it("from the drawer: saves the status, then offers to cancel the open task", async () => {
+  it("from the drawer: a note saves first, then the status, then the open task is offered for cancelling", async () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
     const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     await renderPage();
@@ -276,34 +439,198 @@ describe("moving a lead to a final status with an open task", () => {
     await within(drawer).findByText("Call back");
     fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
     fireEvent.click(screen.getByRole("option", { name: "Sale" }));
+    expect(patches(calls)).toEqual([]);
+    fireEvent.change(within(drawer).getByLabelText("Add a note"), { target: { value: "Booked" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save note" }));
     await waitFor(() => expect(calls.find((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)?.body).toEqual({ action: "cancel" }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(confirmSpy).toHaveBeenCalledWith('This lead is now "Sale" but still has an open task "Call back". Cancel the task now?');
-    expect(calls.find((call) => call.method === "PATCH" && call.url === `/api/leads/${LEAD_1}`)?.body).toEqual({ status: "Sale" });
+    const writes = calls.filter((call) => call.method !== "GET" && call.url !== "/api/leads/query").map((call) => `${call.method} ${call.url.replace(LEAD_1, ":id")}`);
+    expect(writes.slice(0, 2)).toEqual(["POST /api/leads/:id/notes", "PATCH /api/leads/:id"]);
+    expect(patches(calls)).toEqual([{ status: "Sale" }]);
   });
 
   it("from the table: keeps the task when the telecaller declines", async () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValueOnce(true).mockReturnValueOnce(false);
+    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
     fireEvent.click(screen.getByRole("option", { name: "Closed" }));
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(2));
+    const drawer = await screen.findByRole("dialog");
+    await within(drawer).findByText("Call back");
+    expect(confirmSpy).not.toHaveBeenCalled();
+    fireEvent.change(within(drawer).getByLabelText("Add a note"), { target: { value: "Not interested" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save note" }));
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1));
     expect(confirmSpy).toHaveBeenLastCalledWith('This lead is now "Closed" but still has an open task "Call back". Cancel the task now?');
+    expect(patches(calls)).toEqual([{ status: "Closed" }]);
     expect(calls.some((call) => call.url.includes("/tasks/"))).toBe(false);
   });
 
   it("from the table: does not ask when the lead has no open task", async () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    const confirmSpy = vi.spyOn(globalThis, "confirm");
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
     fireEvent.click(screen.getByRole("option", { name: "Disqualified" }));
-    await waitFor(() => expect(calls.some((call) => call.method === "PATCH")).toBe(true));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(calls.some((call) => call.url.endsWith("/tasks"))).toBe(false);
+    const drawer = await screen.findByRole("dialog");
+    fireEvent.change(within(drawer).getByLabelText("Add a note"), { target: { value: "Wrong number" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save note" }));
+    await waitFor(() => expect(patches(calls)).toEqual([{ status: "Disqualified" }]));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.url.endsWith("/tasks") && call.method === "POST")).toBe(false);
   });
 });
 
+describe("a status is saved only together with a task or a note", () => {
+  async function changeInTable(status: string) {
+    fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: status }));
+    const drawer = await screen.findByRole("dialog");
+    await within(drawer).findByRole("button", { name: "Add task" });
+    return drawer;
+  }
+  const writesOf = (calls: ReturnType<typeof stubApi>) => calls.filter((call) => call.method !== "GET" && call.url !== "/api/leads/query").map((call) => `${call.method} ${call.url.replace(LEAD_1, ":id")}`);
+  const saveNote = (drawer: HTMLElement, text = "Asked for brochure") => {
+    fireEvent.change(within(drawer).getByLabelText("Add a note"), { target: { value: text } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Save note" }));
+  };
+
+  it("choosing a status in the table saves nothing: the drawer opens with it pending and the row keeps the saved status", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    const confirmSpy = vi.spyOn(globalThis, "confirm");
+    await renderPage();
+    const drawer = await changeInTable("Working");
+    expect(within(drawer).getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("Working");
+    expect(within(drawer).getByText("Not saved yet. Add a task or a note to save it.")).toBeInTheDocument();
+    expect(stepState(drawer)).toEqual(["done", "current", "todo"]);
+    expect(writesOf(calls)).toEqual([]);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the X button", () => { fireEvent.click(screen.getByRole("button", { name: "Close lead details" })); }],
+    ["the backdrop", () => { fireEvent.pointerDown(document.querySelector(".mvp-lead-drawer-backdrop") as Element); }],
+    ["Escape", () => { fireEvent.keyDown(document, { key: "Escape" }); }],
+  ])("closing with %s drops the choice and writes nothing at all", async (_name, close) => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    await renderPage();
+    await changeInTable("Working");
+    close();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(writesOf(calls)).toEqual([]);
+    expect(screen.getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("New Lead");
+  });
+
+  it("a note is saved first, then the status; the row and the hint then show it as saved", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await changeInTable("Working");
+    saveNote(drawer);
+    await waitFor(() => expect(patches(calls)).toEqual([{ status: "Working" }]));
+    expect(writesOf(calls)).toEqual(["POST /api/leads/:id/notes", "PATCH /api/leads/:id"]);
+    await waitFor(() => expect(within(drawer).queryByText("Not saved yet. Add a task or a note to save it.")).not.toBeInTheDocument());
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close lead details" }));
+    expect(screen.getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("Working");
+  });
+
+  it("a task is created and the status saved in one request, with no separate status call", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await changeInTable("Working");
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
+    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByRole("button", { name: "Mark complete" });
+    expect(writesOf(calls)).toEqual(["POST /api/leads/:id/tasks"]);
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toMatchObject({ title: "Site visit", status: "Working" });
+    expect(patches(calls)).toEqual([]);
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close lead details" }));
+    expect(screen.getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("Working");
+  });
+
+  it("sends no status with a task when none is pending", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByRole("button", { name: "Add task" });
+    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
+    fireEvent.change(within(drawer).getByLabelText("Due date"), { target: { value: "2099-01-01" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByRole("button", { name: "Mark complete" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).not.toHaveProperty("status");
+  });
+
+  it("completing the open task saves the pending status after it", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true })], openTask, pages: {} });
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    await renderPage();
+    const drawer = await openDrawer();
+    await within(drawer).findByText("Call back");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Working" }));
+    expect(patches(calls)).toEqual([]);
+    fireEvent.click(within(drawer).getByRole("button", { name: "Mark complete" }));
+    await waitFor(() => expect(patches(calls)).toEqual([{ status: "Working" }]));
+    expect(writesOf(calls).slice(0, 2)).toEqual([`PATCH /api/leads/:id/tasks/${TASK}`, "PATCH /api/leads/:id"]);
+  });
+
+  it("when the note fails, no status is saved and the choice stays pending", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {}, failNote: true });
+    await renderPage();
+    const drawer = await changeInTable("Working");
+    saveNote(drawer);
+    await within(drawer).findByText("The note could not be saved.");
+    expect(patches(calls)).toEqual([]);
+    expect(within(drawer).getByText("Not saved yet. Add a task or a note to save it.")).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("Working");
+  });
+
+  it("when the status cannot be saved after the note, says so and keeps the choice pending", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {}, failStatus: true });
+    await renderPage();
+    const drawer = await changeInTable("Working");
+    saveNote(drawer);
+    await within(drawer).findByText(/Saved, but the status was not updated\./);
+    expect(patches(calls)).toEqual([{ status: "Working" }]);
+    expect(within(drawer).getByText("Not saved yet. Add a task or a note to save it.")).toBeInTheDocument();
+  });
+
+  it("choosing the saved status again clears the pending choice", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Sale" }));
+    expect(within(drawer).getByText("Not saved yet. Add a task or a note to save it.")).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Working" }));
+    expect(within(drawer).queryByText("Not saved yet. Add a task or a note to save it.")).not.toBeInTheDocument();
+    expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
+    saveNote(drawer);
+    await waitFor(() => expect(stepState(drawer)[2]).toBe("done"));
+    expect(patches(calls)).toEqual([]);
+  });
+
+  it("a status chosen inside the drawer and then abandoned is never written either", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Sale" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "Close lead details" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(writesOf(calls)).toEqual([]);
+  });
+
+  it("opening a lead by its name starts with nothing pending", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    expect(within(drawer).queryByText("Not saved yet. Add a task or a note to save it.")).not.toBeInTheDocument();
+    expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
+  });
+});
 
 const PRIYA = "55555555-5555-4555-8555-555555555555";
 const RAVI = "66666666-6666-4666-8666-666666666666";

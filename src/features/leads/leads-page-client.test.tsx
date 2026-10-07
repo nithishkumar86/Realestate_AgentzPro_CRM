@@ -511,33 +511,6 @@ describe("editing a lead's status", () => {
     expect(names).not.toContain("All statuses");
   });
 
-  it("warns before saving, and does not send a request when the warning is declined", async () => {
-    const sent = stubLeadApi(DUMMY_LEADS);
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
-    await renderLeadsPage(sent);
-
-    const select = triggerFor("status");
-    choose("status", "Site visit done");
-
-    expect(confirmSpy).toHaveBeenCalledWith("Change status from New Lead to Site visit done? This will be saved and reflected in the CRM.");
-    expect(sent.patches).toEqual([]);
-    expect(select.textContent).toBe("New Lead");
-  });
-
-  it("saves only the status once confirmed and leaves the label and its source alone", async () => {
-    const sent = stubLeadApi(DUMMY_LEADS);
-    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
-    await renderLeadsPage(sent);
-
-    const select = triggerFor("status");
-    choose("status", "Site visit done");
-
-    await waitFor(() => expect(sent.patches).toEqual([{ id: "lead-1", body: { status: "Site visit done" } }]));
-    await waitFor(() => expect(select.textContent).toBe("Site visit done"));
-    expect(triggerFor("label").textContent).toBe("Warm");
-    expect(screen.queryByText("Telecaller")).not.toBeInTheDocument();
-  });
-
   it("does not send a request when the same status is re-selected", async () => {
     const sent = stubLeadApi(DUMMY_LEADS);
     const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
@@ -547,18 +520,6 @@ describe("editing a lead's status", () => {
 
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(sent.patches).toEqual([]);
-  });
-
-  it("shows the server's error and leaves the status unchanged when the save fails", async () => {
-    const sent = stubLeadApi(DUMMY_LEADS, { fail: true });
-    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
-    await renderLeadsPage(sent);
-
-    const select = triggerFor("status");
-    choose("status", "Closed");
-
-    await screen.findByText("The status could not be updated.");
-    expect(select.textContent).toBe("New Lead");
   });
 });
 

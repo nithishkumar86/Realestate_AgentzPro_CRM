@@ -1,9 +1,10 @@
 import "server-only";
 
 import { AppError } from "@/lib/server/app-error";
+import { updateLeadTriage } from "@/lib/server/lead-query-service";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
-import { TIMELINE_FILTER_TYPES, type LeadActivityType, type TimelineFilter } from "@/features/leads/lead-options";
+import { TIMELINE_FILTER_TYPES, isTaskCreationLocked, type LeadActivityType, type LeadStatus, type TimelineFilter } from "@/features/leads/lead-options";
 
 /**
  * Lead Timeline, notes and follow-up tasks (migration 20261005120000_lead_notes_tasks_timeline.sql).
@@ -152,7 +153,25 @@ export async function getOpenLeadTask(context: TenantRequestContext, leadId: str
   return data ? toLeadTask(data) : null;
 }
 
-export async function createLeadTask(context: TenantRequestContext, leadId: string, input: NewLeadTask): Promise<LeadTask> {
+/**
+ * Creates the lead's open task. `status` is a status the telecaller chose in the drawer but has not saved yet:
+ * it is held back until this follow-up exists, so the timeline never shows a status change nobody followed up.
+ * The lock below is checked against it, the task is inserted first, and only then is the status saved.
+ */
+export async function createLeadTask(context: TenantRequestContext, leadId: string, input: NewLeadTask, status?: LeadStatus): Promise<LeadTask> {
+  // A lead that is still "New Lead" has had no status update yet, so no task can be added. The lead is read
+  // for this tenant only; a lead of another tenant is indistinguishable from a missing one (404).
+  const { data: lead, error: leadError } = await getSupabaseAdminClient().from("lead_data")
+    .select("status")
+    .eq("tenant_id", context.tenantId)
+    .eq("id", leadId)
+    .maybeSingle();
+  if (leadError) throw new AppError("The lead could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
+  if (!lead) throw leadNotFound();
+  if (isTaskCreationLocked(status ?? lead.status as LeadStatus)) {
+    throw new AppError("Change this lead's status first, then add a task.", { status: 422, code: "STATUS_REQUIRED" });
+  }
+
   const { data, error } = await getSupabaseAdminClient().from("lead_tasks")
     .insert({
       tenant_id: context.tenantId,
@@ -170,6 +189,13 @@ export async function createLeadTask(context: TenantRequestContext, leadId: stri
     if (error.code === "23503") throw leadNotFound();
     if (error.code === "23514") throw new AppError("The due date must be on or after the start date.", { status: 400, code: "INVALID_TASK_DATES" });
     throw new AppError("The task could not be saved.", { status: 500, code: "TASK_SAVE_FAILED" });
+  }
+  if (status && status !== lead.status) {
+    try {
+      await updateLeadTriage(context, leadId, { status });
+    } catch {
+      throw new AppError("The task was saved, but the status could not be updated. Choose the status again.", { status: 500, code: "STATUS_SAVE_FAILED" });
+    }
   }
   return toLeadTask(data);
 }
