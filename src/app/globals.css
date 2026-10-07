@@ -3422,3 +3422,15 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-tasks__overdue { color: #b42318; font-weight: 800; }
 .mvp-tasks__ontime { background: #dcfae6; color: #067647; }
 .mvp-tasks__late { background: #fee4e2; color: #b42318; }
+
+/* Task alerts bell */
+.mvp-bell { position: relative; }
+.mvp-bell__button { width: 100%; border: 0; background: transparent; cursor: pointer; position: relative; }
+.mvp-bell__badge { margin-left: auto; min-width: 18px; padding: 1px 5px; border-radius: 999px; background: #d92d20; color: #fff; font-size: .7rem; font-weight: 800; text-align: center; }
+.mvp-bell__panel { position: absolute; left: 100%; bottom: 0; z-index: 60; width: 300px; max-height: 360px; overflow: auto; margin-left: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.mvp-bell__head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.mvp-bell__head button { border: 0; background: transparent; color: var(--primary, #4f46e5); font-weight: 700; cursor: pointer; }
+.mvp-bell__panel ul { margin: 0; padding: 0; list-style: none; }
+.mvp-bell__panel li a { display: block; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); font-size: .85rem; text-decoration: none; }
+.mvp-bell__unread a { font-weight: 800; background: var(--border); }
+.mvp-bell__toast { position: fixed; right: 20px; bottom: 20px; z-index: 80; max-width: 340px; padding: 14px 18px; border-radius: 10px; background: #1d2939; color: #fff; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.25); text-decoration: none; }

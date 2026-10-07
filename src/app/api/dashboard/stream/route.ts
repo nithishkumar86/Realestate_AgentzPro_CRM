@@ -51,7 +51,9 @@ export async function GET(request: Request): Promise<Response> {
 
       const unsubscribe = subscribeToTenantChanges(tenantId, (event, payload) => {
         if (event === "change") sendEvent("change", {});
-        else if (event === "activity") { if (payload) sendEvent("activity", { leadId: payload.leadId }); }
+        else if (event === "activity") { if (payload?.leadId) sendEvent("activity", { leadId: payload.leadId }); }
+        // A reminder belongs to one member; the other streams of the tenant never see it.
+        else if (event === "reminder") { if (payload?.userId === userId && payload.notificationId) sendEvent("task_reminder", { notificationId: payload.notificationId }); }
         else sendEvent("status", { state: event });
       });
       const heartbeat = setInterval(() => send(": ping\n\n"), HEARTBEAT_MS);

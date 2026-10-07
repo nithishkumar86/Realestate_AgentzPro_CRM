@@ -74,6 +74,23 @@ describe("GET /api/dashboard/stream", () => {
     await reader.cancel().catch(() => {});
   });
 
+  it("delivers a task reminder only to the member it is for", async () => {
+    let emit: (event: "reminder", payload?: { notificationId: string; userId: string }) => void = () => {};
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-me" });
+    mocks.subscribe.mockImplementation((_tenant: string, listener: typeof emit) => { emit = listener; return vi.fn(); });
+    const abort = new AbortController();
+    const response = await GET(new Request("http://localhost/api/dashboard/stream", { signal: abort.signal }));
+    const reader = response.body!.getReader();
+    await readUntil(reader, "event: ready");
+    emit("reminder", { notificationId: "n-other", userId: "user-other" });
+    emit("reminder", { notificationId: "n-mine", userId: "user-me" });
+    const received = await readUntil(reader, "event: task_reminder");
+    expect(received).toContain('event: task_reminder\ndata: {"notificationId":"n-mine"}');
+    expect(received).not.toContain("n-other");
+    abort.abort();
+    await reader.cancel().catch(() => {});
+  });
+
   it("answers an unauthenticated request with 401 JSON (which makes EventSource stop) and never subscribes", async () => {
     mocks.context.mockRejectedValue(new AppError("Authentication is required.", { status: 401, code: "UNAUTHENTICATED" }));
     const response = await GET(new Request("http://localhost/api/dashboard/stream"));

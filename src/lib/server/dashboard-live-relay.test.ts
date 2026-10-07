@@ -91,6 +91,21 @@ describe("dashboard live relay", () => {
     stop();
   });
 
+  it("relays a task reminder only with well-formed ids", () => {
+    const a = vi.fn();
+    const stop = subscribeToTenantChanges("tenant-r", a);
+    const reminder = mocks.channels[mocks.channels.length - 1].handlers.task_reminder;
+    const ids = { notification_id: "11111111-1111-4111-8111-111111111111", user_id: "22222222-2222-4222-8222-222222222222" };
+    reminder({ payload: ids });
+    expect(a).toHaveBeenCalledWith("reminder", { notificationId: ids.notification_id, userId: ids.user_id });
+    a.mockClear();
+    reminder({ payload: { ...ids, user_id: "nope" } });
+    reminder({ payload: { notification_id: 7 } });
+    reminder(undefined);
+    expect(a).not.toHaveBeenCalled();
+    stop();
+  });
+
   it("relays a timeline activity with only a well-formed lead id, to that tenant only", () => {
     const a = vi.fn(); const b = vi.fn();
     const stopA = subscribeToTenantChanges("tenant-g", a);

@@ -15,9 +15,12 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
  * A stream can only ever attach to the tenant id it was authenticated for.
  */
 
-export type RelayEvent = "change" | "degraded" | "live" | "activity";
-/** Set only for "activity": the lead whose timeline gained a row (a UUID, no PII). */
-export interface RelayPayload { leadId: string }
+export type RelayEvent = "change" | "degraded" | "live" | "activity" | "reminder";
+/**
+ * "activity": the lead whose timeline gained a row. "reminder": a task alert and the one member it is for
+ * (the stream route forwards it only to that member). Both are UUIDs, no PII.
+ */
+export interface RelayPayload { leadId?: string; notificationId?: string; userId?: string }
 export type RelayListener = (event: RelayEvent, payload?: RelayPayload) => void;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -56,6 +59,14 @@ function openTenantChannel(tenantId: string): TenantChannel {
   channel.on("broadcast", { event: "lead_activity" }, (message?: { payload?: { lead_id?: unknown } }) => {
     const leadId = message?.payload?.lead_id;
     if (typeof leadId === "string" && UUID_PATTERN.test(leadId)) emit(entry, "activity", { leadId });
+  });
+  // A task is due soon / now (migration 20261007130000). The stream route delivers it to the named member only.
+  channel.on("broadcast", { event: "task_reminder" }, (message?: { payload?: { notification_id?: unknown; user_id?: unknown } }) => {
+    const notificationId = message?.payload?.notification_id;
+    const userId = message?.payload?.user_id;
+    if (typeof notificationId === "string" && UUID_PATTERN.test(notificationId) && typeof userId === "string" && UUID_PATTERN.test(userId)) {
+      emit(entry, "reminder", { notificationId, userId });
+    }
   });
   channel.subscribe((status) => {
     if (status === "SUBSCRIBED") {
