@@ -99,7 +99,7 @@ export function TasksPageClient() {
       {!data ? <tr><td className="mvp-empty" colSpan={5}>Loading tasks...</td></tr> : null}
       {data && data.items.length === 0 ? <tr><td className="mvp-empty" colSpan={5}>No {bucket} tasks.</td></tr> : null}
       {data?.items.map((task) => <tr key={task.id} className="mvp-tasks__row" tabIndex={0} onClick={() => setOpen(task)} onKeyDown={(event) => { if (event.key === "Enter") setOpen(task); }}>
-        <td>{task.leadName ?? "Unnamed Lead"}<small>{task.leadPhone ?? ""}</small></td>
+        <td className="mvp-tasks__lead">{task.leadName ?? "Unnamed Lead"}</td>
         <td>{task.title}{task.repeatRule !== "none" ? <Repeat size={13} aria-label={`Repeats ${task.repeatRule}`} className="mvp-tasks__repeat" /> : null}</td>
         <td>{formatTaskDue(task.dueAt, data.timezone)}</td>
         <td>{task.ownerName ?? "Unassigned"}</td>

@@ -410,6 +410,12 @@ function isNotFuture(instant: Date): boolean {
   return instant.getTime() <= Date.now();
 }
 
+/** The preset whose date lands on `date`, or "custom" when none of them do. */
+function matchDuePreset(date: string, today: string): DueDatePreset {
+  const match = DUE_DATE_PRESET_OPTIONS.find((option) => option.value !== "custom" && presetDueDate(option.value as Exclude<DueDatePreset, "custom">, today) === date);
+  return match ? match.value : "custom";
+}
+
 function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus, onTaskCreated }: {
   leadId: string; timezone: string; tasks: LeadTaskState; locked: boolean;
   /** The unsaved status choice: saved with a new task, or right after the open task is completed, cancelled or rescheduled. */
@@ -420,7 +426,13 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
   const { openTask } = tasks;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rescheduleTo, setRescheduleTo] = useState<{ date: string; time: string } | null>(null);
+  // null preset = not rescheduling. Reschedule picks a due date the same way Add Task does: a preset, or Custom with a calendar.
+  const [reschedulePreset, setReschedulePreset] = useState<DueDatePreset | null>(null);
+  const [rescheduleCustomDate, setRescheduleCustomDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+  // Read the clock once per mount so render stays pure (react-hooks/purity).
+  const [mountedAt] = useState(() => Date.now());
+  const today = todayIn(timezone);
 
   async function handleFailure(cause: unknown, fallback: string) {
     setError(message(cause, fallback));
@@ -430,8 +442,6 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
 
   async function close(action: "complete" | "cancel") {
     if (!openTask) return;
-    const prompt = action === "complete" ? `Mark "${openTask.title}" as complete? This cannot be undone.` : `Cancel "${openTask.title}"? This cannot be undone.`;
-    if (!globalThis.confirm(prompt)) return;
     setBusy(true); setError(null);
     try {
       const closed = await updateTask(leadId, openTask.id, { action }, action === "complete" ? "The task could not be completed." : "The task could not be cancelled.");
@@ -455,15 +465,30 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
     try { await commitStatus(); } catch (cause) { setError(message(cause, "The status could not be updated.")); }
   }
 
+  /** Opens the reschedule form, starting from a preset that matches the task's current due date (else Custom). */
+  function startReschedule() {
+    if (!currentDue) return;
+    const matched = matchDuePreset(currentDue.date, today);
+    setReschedulePreset(matched);
+    setRescheduleCustomDate(matched === "custom" ? currentDue.date : "");
+    setRescheduleTime(currentDue.time);
+  }
+
+  function chooseReschedulePreset(value: DueDatePreset) {
+    // Custom opens on the date that was showing, so the calendar starts somewhere sensible.
+    if (value === "custom" && reschedulePreset !== "custom" && rescheduleDueDate) setRescheduleCustomDate(rescheduleDueDate);
+    setReschedulePreset(value);
+  }
+
   async function reschedule(event: FormEvent) {
     event.preventDefault();
-    if (!openTask || !rescheduleTo || !isDueChoice(rescheduleTo.date, rescheduleTo.time)) return;
-    if (isNotFuture(zonedDateTime(rescheduleTo.date, rescheduleTo.time, timezone))) { setError(DUE_IN_PAST_MESSAGE); return; }
+    if (!openTask || !rescheduleDueDate || !isDueChoice(rescheduleDueDate, rescheduleTime)) return;
+    if (isNotFuture(zonedDateTime(rescheduleDueDate, rescheduleTime, timezone))) { setError(DUE_IN_PAST_MESSAGE); return; }
     setBusy(true); setError(null);
     try {
-      const updated = await updateTask(leadId, openTask.id, { dueDate: rescheduleTo.date, dueTime: rescheduleTo.time }, "The task could not be rescheduled.");
+      const updated = await updateTask(leadId, openTask.id, { dueDate: rescheduleDueDate, dueTime: rescheduleTime }, "The task could not be rescheduled.");
       tasks.setOpenTask(updated);
-      setRescheduleTo(null);
+      setReschedulePreset(null);
       tasks.onChanged();
     } catch (cause) {
       await handleFailure(cause, "The task could not be rescheduled.");
@@ -474,9 +499,10 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
     setBusy(false);
   }
 
-  const overdue = openTask ? new Date(openTask.dueAt).getTime() <= Date.now() : false;
+  const overdue = openTask ? new Date(openTask.dueAt).getTime() <= mountedAt : false;
   const currentDue = openTask ? wallClockOf(openTask.dueAt, timezone) : null;
-  const rescheduleUnchanged = !!rescheduleTo && !!currentDue && rescheduleTo.date === currentDue.date && rescheduleTo.time === currentDue.time;
+  const rescheduleDueDate = reschedulePreset === null ? null : reschedulePreset === "custom" ? rescheduleCustomDate : presetDueDate(reschedulePreset, today);
+  const rescheduleUnchanged = rescheduleDueDate !== null && !!currentDue && rescheduleDueDate === currentDue.date && rescheduleTime === currentDue.time;
 
   return <section className="mvp-task-card" aria-label="Follow-up task">
     <h3 className="mvp-lead-drawer__section-title">Follow-up task</h3>
@@ -490,22 +516,23 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
       </div>
       {openTask.description ? <p className="mvp-task-card__description">{openTask.description}</p> : null}
       <p className="mvp-task-card__dates">{dueLine(openTask.dueAt, openTask.repeatRule, timezone)}</p>
-      {rescheduleTo !== null ? <form className="mvp-task-card__reschedule" onSubmit={(event) => void reschedule(event)}>
-        <div className="mvp-task-card__dates-row">
-          <label className="mvp-task-card__field"><span>New due date</span>
-            <input className="mvp-settings-input" type="date" required min={todayIn(timezone)} value={rescheduleTo.date} onChange={(event) => setRescheduleTo({ ...rescheduleTo, date: event.target.value })} />
-          </label>
-          <label className="mvp-task-card__field"><span>New time</span>
-            <input className="mvp-settings-input" type="time" required value={rescheduleTo.time} onChange={(event) => setRescheduleTo({ ...rescheduleTo, time: event.target.value })} />
-          </label>
-        </div>
+      {reschedulePreset !== null ? <form className="mvp-task-card__reschedule" onSubmit={(event) => void reschedule(event)}>
+        <label className="mvp-task-card__field"><span>New due date</span>
+          <select className="mvp-settings-input" value={reschedulePreset} onChange={(event) => chooseReschedulePreset(event.target.value as DueDatePreset)}>
+            {DUE_DATE_PRESET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        {reschedulePreset === "custom" ? <label className="mvp-task-card__field"><span>Pick a date</span>
+          <input className="mvp-settings-input" type="date" required min={today} value={rescheduleCustomDate} onChange={(event) => setRescheduleCustomDate(event.target.value)} />
+        </label> : null}
+        <TimeField label="New time" value={rescheduleTime} onChange={setRescheduleTime} />
         <div className="mvp-task-card__actions">
-          <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !isDueChoice(rescheduleTo.date, rescheduleTo.time) || rescheduleUnchanged}>Save date</button>
-          <button type="button" className="mvp-task-button" disabled={busy} onClick={() => setRescheduleTo(null)}>Keep current date</button>
+          <button type="button" className="mvp-task-button" disabled={busy} onClick={() => setReschedulePreset(null)}>Keep current date</button>
+          <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !rescheduleDueDate || !isDueChoice(rescheduleDueDate, rescheduleTime) || rescheduleUnchanged}>Update</button>
         </div>
       </form> : <div className="mvp-task-card__actions">
         <button type="button" className="mvp-task-button mvp-task-button--primary" disabled={busy} onClick={() => void close("complete")}>Mark complete</button>
-        <button type="button" className="mvp-task-button" disabled={busy} onClick={() => setRescheduleTo(currentDue)}>Reschedule</button>
+        <button type="button" className="mvp-task-button" disabled={busy} onClick={startReschedule}>Reschedule</button>
         <button type="button" className="mvp-task-button mvp-task-button--danger" disabled={busy} onClick={() => void close("cancel")}>Cancel task</button>
       </div>}
     </div> : null}
@@ -579,19 +606,15 @@ function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { le
       <textarea className="mvp-settings-input mvp-lead-drawer__textarea" rows={3} maxLength={TASK_DESCRIPTION_MAX_LENGTH} value={description}
         onChange={(event) => setDescription(event.target.value)} placeholder="What needs to be done by the due time" />
     </label>
-    <div className="mvp-task-card__dates-row">
-      <label className="mvp-task-card__field"><span>Due Date</span>
-        <select className="mvp-settings-input" value={preset} onChange={(event) => choosePreset(event.target.value as DueDatePreset)}>
-          {DUE_DATE_PRESET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </label>
-      <label className="mvp-task-card__field"><span>Time</span>
-        <input className="mvp-settings-input" type="time" required value={dueTime} onChange={(event) => setDueTime(event.target.value)} />
-      </label>
-    </div>
+    <label className="mvp-task-card__field"><span>Due Date</span>
+      <select className="mvp-settings-input" value={preset} onChange={(event) => choosePreset(event.target.value as DueDatePreset)}>
+        {DUE_DATE_PRESET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
     {preset === "custom" ? <label className="mvp-task-card__field"><span>Pick a date</span>
       <input className="mvp-settings-input" type="date" required min={today} value={customDate} onChange={(event) => setCustomDate(event.target.value)} />
     </label> : null}
+    <TimeField label="Time" value={dueTime} onChange={setDueTime} />
     <label className="mvp-task-card__field"><span>Select Repeat this Task</span>
       <select className="mvp-settings-input" value={repeat} onChange={(event) => setRepeat(event.target.value as TaskRepeatRule)}>
         {TASK_REPEAT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -602,6 +625,31 @@ function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { le
       <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !title.trim() || !dueAt}>{busy ? "Saving..." : "Add task"}</button>
     </div>
   </form>;
+}
+
+const HOURS_24 = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
+const MINUTES = Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0"));
+
+/** A 24-hour clock (hour 00-23, minutes). The value stays "HH:mm", the same as the time input it replaces. */
+function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (time: string) => void }) {
+  const [rawHour, rawMinute] = value.split(":");
+  const hour = (rawHour ?? "00").padStart(2, "0");
+  const minute = (rawMinute ?? "00").padStart(2, "0");
+
+  function change(next: { hour?: string; minute?: string }) {
+    onChange(`${next.hour ?? hour}:${next.minute ?? minute}`);
+  }
+
+  return <div className="mvp-task-card__field" role="group" aria-label={label}><span>{label}</span>
+    <div className="mvp-task-card__time">
+      <select className="mvp-settings-input" aria-label="Hour" value={hour} onChange={(event) => change({ hour: event.target.value })}>
+        {HOURS_24.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+      <select className="mvp-settings-input" aria-label="Minutes" value={minute} onChange={(event) => change({ minute: event.target.value })}>
+        {MINUTES.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </div>
+  </div>;
 }
 
 function NoteForm({ leadId, onSaved }: { leadId: string; onSaved: () => Promise<void> }) {

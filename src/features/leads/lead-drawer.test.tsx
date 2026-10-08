@@ -25,7 +25,19 @@ const openTask = {
   startAt: "2026-10-05T04:00:00+00:00", dueAt: "2026-10-08T17:30:00+00:00", originalDueAt: "2026-10-08T17:30:00+00:00", repeatRule: "none",
   status: "open", closedAt: null, createdAt: "2026-10-05T04:00:00+00:00",
 };
-const dueAtOf = (body: Record<string, unknown> | undefined) => zonedDateTime(String(body?.dueDate), String(body?.dueTime), "Asia/Kolkata").toISOString();
+// The time field is two selects (hour 00-23, minutes) inside a labelled group; these read and set it as "HH:mm".
+const timeParts = (group: HTMLElement) => ({ hour: within(group).getByLabelText("Hour"), minutes: within(group).getByLabelText("Minutes") });
+const readTime = (group: HTMLElement) => {
+  const { hour, minutes } = timeParts(group);
+  return `${(hour as HTMLSelectElement).value}:${(minutes as HTMLSelectElement).value}`;
+};
+const setTime = (group: HTMLElement, time: string) => {
+  const [hour, minute] = time.split(":");
+  const { hour: hourSelect, minutes } = timeParts(group);
+  fireEvent.change(hourSelect, { target: { value: hour } });
+  fireEvent.change(minutes, { target: { value: minute } });
+};
+const dueAtOf =(body: Record<string, unknown> | undefined) => zonedDateTime(String(body?.dueDate), String(body?.dueTime), "Asia/Kolkata").toISOString();
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -283,9 +295,9 @@ describe("lead drawer notes and tasks", () => {
     expect((within(drawer).getByLabelText("Add a note") as HTMLTextAreaElement).value).toBe("");
   });
 
-  it("hides the add form while a task is open, and asks before cancelling it", async () => {
+  it("hides the add form while a task is open, and cancels it without a confirmation popup", async () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { hasOpenTask: true, status: "Working" })], openTask, pages: {} });
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    const confirmSpy = vi.spyOn(globalThis, "confirm");
     await renderPage();
     const drawer = await openDrawer();
     await within(drawer).findByText("Call back");
@@ -293,12 +305,8 @@ describe("lead drawer notes and tasks", () => {
     expect(within(drawer).getByText("Due Thu 08 Oct 2026, 11:00 PM")).toBeInTheDocument();
 
     fireEvent.click(within(drawer).getByRole("button", { name: "Cancel task" }));
-    expect(confirmSpy).toHaveBeenCalledWith('Cancel "Call back"? This cannot be undone.');
-    expect(calls.some((call) => call.url.includes("/tasks/"))).toBe(false);
-
-    confirmSpy.mockReturnValue(true);
-    fireEvent.click(within(drawer).getByRole("button", { name: "Cancel task" }));
     await within(drawer).findByText("Add next task or close the lead");
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(calls.find((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)?.body).toEqual({ action: "cancel" });
     expect(within(drawer).getByRole("button", { name: "Add task" })).toBeInTheDocument();
     // The table marker updates without a reload.
@@ -320,12 +328,12 @@ describe("lead drawer notes and tasks", () => {
     expect(within(repeat).getAllByRole("option").map((option) => option.textContent)).toEqual(["Everyday", "Weekly", "Monthly", "Yearly", "Don't Repeat"]);
     // Defaults: today, the next full hour, no repeat.
     expect(dueDate).toHaveValue("today");
-    expect(within(drawer).getByLabelText("Time")).toHaveValue("12:00");
+    expect(readTime(within(drawer).getByRole("group", { name: "Time" }))).toBe("12:00");
     expect(repeat).toHaveValue("none");
     expect(within(drawer).getByText("Due Wed 07 Oct 2026, 12:00 PM")).toBeInTheDocument();
 
     fireEvent.change(dueDate, { target: { value: "3_days" } });
-    fireEvent.change(within(drawer).getByLabelText("Time"), { target: { value: "15:00" } });
+    setTime(within(drawer).getByRole("group", { name: "Time" }), "15:00");
     fireEvent.change(repeat, { target: { value: "weekly" } });
     expect(within(drawer).getByText("Due Sat 10 Oct 2026, 3:00 PM · Repeats every week")).toBeInTheDocument();
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
@@ -358,7 +366,7 @@ describe("lead drawer notes and tasks", () => {
     await renderPage();
     const drawer = await openDrawer();
     fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
-    fireEvent.change(within(drawer).getByLabelText("Time"), { target: { value: "09:00" } });
+    setTime(within(drawer).getByRole("group", { name: "Time" }), "09:00");
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByText("Pick a due time later than now.");
     expect(calls.some((call) => call.method === "POST" && call.url.endsWith("/tasks"))).toBe(false);
@@ -370,7 +378,7 @@ describe("lead drawer notes and tasks", () => {
     await renderPage();
     const drawer = await openDrawer();
     expect(await within(drawer).findByLabelText("Due Date")).toHaveValue("tomorrow");
-    expect(within(drawer).getByLabelText("Time")).toHaveValue("00:00");
+    expect(readTime(within(drawer).getByRole("group", { name: "Time" }))).toBe("00:00");
     expect(within(drawer).getByText("Due Thu 08 Oct 2026, 12:00 AM")).toBeInTheDocument();
   });
 
@@ -389,15 +397,18 @@ describe("lead drawer notes and tasks", () => {
     await renderPage();
     const drawer = await openDrawer();
     fireEvent.click(await within(drawer).findByRole("button", { name: "Reschedule" }));
-    const date = within(drawer).getByLabelText("New due date");
-    const time = within(drawer).getByLabelText("New time");
+    const preset = within(drawer).getByLabelText("New due date");
+    const time = within(drawer).getByRole("group", { name: "New time" });
+    expect(preset).toHaveValue("tomorrow");
+    expect(readTime(time)).toBe("23:00");
+    expect(within(drawer).getByRole("button", { name: "Update" })).toBeDisabled();
+    fireEvent.change(preset, { target: { value: "custom" } });
+    const date = within(drawer).getByLabelText("Pick a date");
     expect(date).toHaveValue("2026-10-08");
-    expect(time).toHaveValue("23:00");
     expect(date).toHaveAttribute("min", "2026-10-07");
-    expect(within(drawer).getByRole("button", { name: "Save date" })).toBeDisabled();
     fireEvent.change(date, { target: { value: "2026-10-12" } });
-    fireEvent.change(time, { target: { value: "10:00" } });
-    fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
+    setTime(time, "10:00");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Update" }));
     await within(drawer).findByText("Due Mon 12 Oct 2026, 10:00 AM");
     expect(calls.find((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)?.body).toEqual({ dueDate: "2026-10-12", dueTime: "10:00" });
   });
@@ -408,9 +419,9 @@ describe("lead drawer notes and tasks", () => {
     await renderPage();
     const drawer = await openDrawer();
     fireEvent.click(await within(drawer).findByRole("button", { name: "Reschedule" }));
-    fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "2026-10-07" } });
-    fireEvent.change(within(drawer).getByLabelText("New time"), { target: { value: "09:00" } });
-    fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
+    fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "today" } });
+    setTime(within(drawer).getByRole("group", { name: "New time" }), "09:00");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Update" }));
     await within(drawer).findByText("Pick a due time later than now.");
     expect(calls.some((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)).toBe(false);
   });
@@ -518,8 +529,9 @@ describe("lead drawer: step 1, 2, 3", () => {
     expect(within(drawer).getByRole("button", { name: "Cancel task" })).toBeEnabled();
     expect(within(drawer).queryByText(LOCK_TEXT)).not.toBeInTheDocument();
     fireEvent.click(within(drawer).getByRole("button", { name: "Reschedule" }));
-    fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "2026-10-12" } });
-    fireEvent.click(within(drawer).getByRole("button", { name: "Save date" }));
+    fireEvent.change(within(drawer).getByLabelText("New due date"), { target: { value: "custom" } });
+    fireEvent.change(within(drawer).getByLabelText("Pick a date"), { target: { value: "2026-10-12" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Update" }));
     await within(drawer).findByText("Due Mon 12 Oct 2026, 11:00 PM");
     expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
   });

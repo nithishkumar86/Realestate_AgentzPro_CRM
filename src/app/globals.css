@@ -3302,10 +3302,13 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-task-card__dates { margin: 0; font-size: .84rem; font-weight: 600; }
 .mvp-task-card__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .mvp-task-card__form .mvp-task-card__actions { justify-content: flex-end; }
+.mvp-task-card__reschedule .mvp-task-card__actions { justify-content: space-between; margin-top: 6px; }
 .mvp-task-card__form, .mvp-task-card__reschedule { display: grid; gap: 10px; }
+.mvp-task-card__reschedule { gap: 18px; }
 .mvp-task-card__field { display: grid; gap: 6px; font-size: .78rem; font-weight: 700; color: var(--text-muted); }
 .mvp-task-card__field em { font-style: normal; font-weight: 500; }
 .mvp-task-card__field .mvp-settings-input { color: var(--text); }
+.mvp-task-card__time { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .mvp-task-card__dates-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .mvp-task-card__next { margin: 0; padding: 10px 12px; border: 1px solid var(--nav-active-border); border-radius: 8px; background: var(--nav-active-bg); color: var(--text); font-size: .86rem; font-weight: 800; }
 
@@ -3415,7 +3418,16 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-tasks__filters { display: flex; gap: 8px; }
 .mvp-tasks__filters select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
 .mvp-tasks__summary { margin: 0 0 12px; color: var(--text-muted); font-weight: 700; }
-.mvp-tasks__table { min-width: 720px; }
+.mvp-tasks__table { min-width: 720px; table-layout: fixed; }
+.mvp-tasks__table th:first-child, .mvp-tasks__table td:first-child { width: 22%; padding-right: 16px; }
+.mvp-tasks__table th:nth-child(2) { width: 30%; }
+.mvp-tasks__table th:nth-child(3) { width: 19%; }
+.mvp-tasks__table th:nth-child(4) { width: 15%; }
+.mvp-tasks__table th:nth-child(5) { width: 14%; }
+.mvp-tasks__table th, .mvp-tasks__table td { padding: 16px; }
+.mvp-tasks__table th:last-child, .mvp-tasks__table td:last-child { padding-right: 20px; }
+.mvp-tasks__table td:nth-child(2), .mvp-tasks__table td:nth-child(4), .mvp-tasks__table td.mvp-tasks__lead { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+.mvp-tasks__table td.mvp-tasks__lead { font-weight: 700; }
 .mvp-tasks__row { cursor: pointer; }
 .mvp-tasks__row:hover { background: var(--border); }
 .mvp-tasks__repeat { margin-left: 6px; vertical-align: -2px; color: var(--text-muted); }
