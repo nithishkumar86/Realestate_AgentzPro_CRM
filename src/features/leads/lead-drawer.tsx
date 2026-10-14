@@ -124,11 +124,13 @@ function message(cause: unknown, fallback: string): string {
  * timeline. Every write goes through the tenant-scoped API routes; the timeline rows themselves are written
  * by the database, so after each change the drawer only asks the timeline to refresh.
  */
-export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusChange, onOpenTaskChange, onAssigneeChange, initialPendingStatus, scrollToTimeline }: {
+export function LeadDrawer({ lead, timezone, assignees = [], isOwner = false, onClose, onStatusChange, onOpenTaskChange, onAssigneeChange, initialPendingStatus, scrollToTimeline }: {
   lead: DrawerLead;
   timezone: string;
   /** Active members the lead can be assigned to. The "Assigned to" card shows only when onAssigneeChange is given. */
   assignees?: AssigneeOption[];
+  /** Only the owner may change the assignee; everyone else sees a read-only chip. */
+  isOwner?: boolean;
   onClose: () => void;
   /**
    * A status picked in the leads table. It is NOT saved: the drawer opens with it as a pending choice, exactly as
@@ -272,7 +274,11 @@ export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusCh
             <FactTile icon={Mail} label="Email" wide>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}</FactTile>
             <FactTile icon={Megaphone} label="Ad" wide>{lead.adName}</FactTile>
           </dl>
-          {onAssigneeChange ? <AssigneeCard lead={lead} assignees={assignees} onChanged={(assignedUserId, assigneeName) => { onAssigneeChange(lead.id, assignedUserId, assigneeName); refreshTimeline(); }} /> : null}
+          {onAssigneeChange
+            ? (isOwner
+              ? <AssigneeCard lead={lead} assignees={assignees} onChanged={(assignedUserId, assigneeName) => { onAssigneeChange(lead.id, assignedUserId, assigneeName); refreshTimeline(); }} />
+              : <AssigneeReadOnly lead={lead} />)
+            : null}
         </section>
 
         <ol className="mvp-flow" aria-label="After every call">
@@ -298,9 +304,24 @@ export function LeadDrawer({ lead, timezone, assignees = [], onClose, onStatusCh
   </>;
 }
 
+/** Who owns the lead, for an employee: a read-only chip, same look as the leads table's Assigned To column. */
+function AssigneeReadOnly({ lead }: { lead: DrawerLead }) {
+  const name = lead.assigneeName ?? null;
+  return <div className="mvp-assign-card">
+    <span className="mvp-lead-drawer__section-title">Assigned to</span>
+    {name
+      ? <span className="mvp-assignee" title={name}>
+        <span className="mvp-assignee__avatar" aria-hidden="true">{name.trim().charAt(0).toUpperCase() || "?"}</span>
+        <span className="mvp-assignee__name">{name}</span>
+      </span>
+      : <span className="mvp-assignee mvp-assignee--none">Unassigned</span>}
+    <p className="mvp-assign-card__hint">Only your company owner can assign or reassign leads.</p>
+  </div>;
+}
+
 /**
- * Who owns the lead. Any member can reassign it (the database records who did, on the timeline). A person who
- * was assigned and has since been blocked is still shown, but cannot be picked again.
+ * Who owns the lead. Only the owner can reassign it (the database records who did, on the timeline). A
+ * person who was assigned and has since been blocked is still shown, but cannot be picked again.
  */
 function AssigneeCard({ lead, assignees, onChanged }: {
   lead: DrawerLead;
@@ -339,7 +360,7 @@ function AssigneeCard({ lead, assignees, onChanged }: {
       </select>
       <ChevronDown size={17} aria-hidden="true" />
     </div>
-    <p className="mvp-assign-card__hint">New leads from an ad go to the person your company owner chose for it. You can reassign this lead at any time.</p>
+    <p className="mvp-assign-card__hint">New leads from an ad go to the person you chose for it. You can reassign this lead at any time.</p>
   </div>;
 }
 

@@ -184,6 +184,6 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
         {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
       </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
     </tbody></table></section>
-    {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} scrollToTimeline={focusedLead?.id === drawerLead.id} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
+    {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} scrollToTimeline={focusedLead?.id === drawerLead.id} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} isOwner={filters.options.isOwner} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
   </div>;
 }

@@ -5,7 +5,7 @@ import type { LeadLabel, LeadStatus } from "@/features/leads/lead-options";
 
 export type Quick = "All Leads" | "Today Leads" | "This Month Leads";
 export type AssigneeOption = { userId: string; fullName: string };
-export type LeadFilterOptions = { pages: Array<{ id: string; name: string }>; ads: Array<{ id: string; name: string | null }>; defaultAdId: string | null; assignees: AssigneeOption[] };
+export type LeadFilterOptions = { pages: Array<{ id: string; name: string }>; ads: Array<{ id: string; name: string | null }>; defaultAdId: string | null; assignees: AssigneeOption[]; isOwner: boolean };
 type ApiError = { error?: { message?: string } };
 
 export async function readError(response: Response, fallback: string): Promise<string> {
@@ -22,7 +22,7 @@ export async function readError(response: Response, fallback: string): Promise<s
  * silently narrowed to one ad before the user chose any filter.
  */
 export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDefaultAd: boolean; onError?: (message: string) => void }) {
-  const [options, setOptions] = useState<LeadFilterOptions>({ pages: [], ads: [], defaultAdId: null, assignees: [] });
+  const [options, setOptions] = useState<LeadFilterOptions>({ pages: [], ads: [], defaultAdId: null, assignees: [], isOwner: false });
   const [pageRecordId, setPageRecordId] = useState("");
   const [adId, setAdId] = useState("");
   const [search, setSearch] = useState("");

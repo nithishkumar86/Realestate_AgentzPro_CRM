@@ -55,17 +55,22 @@ describe("listAssignableMembers", () => {
   });
 });
 
-describe("assignLead", () => {
-  it("assigns through assign_lead with the session's tenant and user as actor, and names the assignee", async () => {
+describe("assignLead (owner only)", () => {
+  it("rejects a non-owner before calling the database", async () => {
+    await expect(assignLead(EMPLOYEE, LEAD, PRIYA)).rejects.toMatchObject({ status: 403 });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("assigns through assign_lead with the session's tenant and owner as actor, and names the assignee", async () => {
     mocks.rpc.mockResolvedValue({ data: [{ lead_id: LEAD, lead_assignee_user_id: PRIYA }], error: null });
     mocks.from.mockImplementation(() => builder({ data: [{ user_id: PRIYA, full_name: "Priya" }], error: null }));
-    expect(await assignLead(context, LEAD, PRIYA)).toEqual({ id: LEAD, assignedUserId: PRIYA, assigneeName: "Priya" });
+    expect(await assignLead(OWNER, LEAD, PRIYA)).toEqual({ id: LEAD, assignedUserId: PRIYA, assigneeName: "Priya" });
     expect(mocks.rpc).toHaveBeenCalledWith("assign_lead", { p_tenant_id: "tenant-a", p_lead_id: LEAD, p_assignee_user_id: PRIYA, p_actor_user_id: context.userId });
   });
 
   it("unassigns with null and does not look up a name", async () => {
     mocks.rpc.mockResolvedValue({ data: [{ lead_id: LEAD, lead_assignee_user_id: null }], error: null });
-    expect(await assignLead(context, LEAD, null)).toEqual({ id: LEAD, assignedUserId: null, assigneeName: null });
+    expect(await assignLead(OWNER, LEAD, null)).toEqual({ id: LEAD, assignedUserId: null, assigneeName: null });
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
@@ -75,12 +80,12 @@ describe("assignLead", () => {
     ["any other failure", "XX000", 500, "LEAD_ASSIGN_FAILED"],
   ])("maps %s (%s) to %i %s", async (_label, code, status, appCode) => {
     mocks.rpc.mockResolvedValue({ data: null, error: { code } });
-    await expect(assignLead(context, LEAD, PRIYA)).rejects.toMatchObject({ status, code: appCode });
+    await expect(assignLead(OWNER, LEAD, PRIYA)).rejects.toMatchObject({ status, code: appCode });
   });
 
   it("maps a lead that is not this tenant's (no row) to 404", async () => {
     mocks.rpc.mockResolvedValue({ data: [], error: null });
-    await expect(assignLead(context, LEAD, PRIYA)).rejects.toMatchObject({ status: 404, code: "LEAD_NOT_FOUND" });
+    await expect(assignLead(OWNER, LEAD, PRIYA)).rejects.toMatchObject({ status: 404, code: "LEAD_NOT_FOUND" });
   });
 });
 

@@ -48,7 +48,7 @@ describe("tenant-scoped lead query contracts", () => {
       { ad_id: "ad-2", ad_name: "Same Name", lead_created_time: "2026-09-09T01:00:00Z" },
     ], error: null });
     mocks.from.mockImplementation((table: string) => table === "facebook_pages" ? pages : leads);
-    const result = await getLeadFilterOptions(context, "page-a");
+    const result = await getLeadFilterOptions(context, true, "page-a");
     expect(result.ads).toEqual([{ id: "ad-1", name: "Same Name" }, { id: "ad-2", name: "Same Name" }]);
     expect(leads.eq).toHaveBeenCalledWith("facebook_page_record_id", "page-a");
   });
@@ -182,8 +182,9 @@ describe("lead assignment in the leads list", () => {
     const memberships = builder({ data: [{ user_id: PRIYA }], error: null });
     const profiles = builder({ data: [{ user_id: PRIYA, full_name: "Priya" }], error: null });
     mocks.from.mockImplementation((table: string) => table === "facebook_pages" ? pages : table === "tenant_memberships" ? memberships : table === "profiles" ? profiles : leads);
-    const options = await getLeadFilterOptions(context);
+    const options = await getLeadFilterOptions(context, false);
     expect(options.assignees).toEqual([{ userId: PRIYA, fullName: "Priya" }]);
+    expect(options.isOwner).toBe(false);
     expect(memberships.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
     expect(memberships.eq).toHaveBeenCalledWith("membership_status", "active");
   });

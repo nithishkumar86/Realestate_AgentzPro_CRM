@@ -49,6 +49,7 @@ interface ApiState {
   openTask: typeof openTask | null;
   createTaskConflict?: boolean;
   assignees?: Array<{ userId: string; fullName: string }>;
+  isOwner?: boolean;
   failAssign?: boolean;
   failStatus?: boolean;
   failNote?: boolean;
@@ -62,7 +63,7 @@ function stubApi(state: ApiState) {
     const method = init?.method ?? "GET";
     const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ url, method, body });
-    if (url.startsWith("/api/leads/filters")) return json({ pages: [], ads: [], defaultAdId: null, assignees: state.assignees ?? [] });
+    if (url.startsWith("/api/leads/filters")) return json({ pages: [], ads: [], defaultAdId: null, assignees: state.assignees ?? [], isOwner: state.isOwner ?? true });
     if (url === "/api/leads/query") return json({ items: state.leads, total: state.leads.length, timezone: "Asia/Kolkata" });
     const activities = /^\/api\/leads\/[^/]+\/activities\?(.*)$/.exec(url);
     if (activities) {
@@ -804,5 +805,22 @@ describe("lead assignment", () => {
     fireEvent.change(select, { target: { value: RAVI } });
     expect(await within(drawer).findByText("Choose an active member of this company.")).toBeInTheDocument();
     expect(select).toHaveValue(PRIYA);
+  });
+
+  it("an employee sees a read-only assignee chip, not the dropdown", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { assignedUserId: PRIYA, assigneeName: "Priya" })], pages: {}, openTask: null, assignees: members, isOwner: false });
+    await renderPage();
+    const drawer = await openDrawer();
+    expect(within(drawer).queryByRole("combobox", { name: "Assigned to" })).not.toBeInTheDocument();
+    expect(within(drawer).getByText("Priya")).toBeInTheDocument();
+    expect(within(drawer).getByText("Only your company owner can assign or reassign leads.")).toBeInTheDocument();
+  });
+
+  it("an employee sees Unassigned as a read-only chip when no one is assigned", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, assignees: members, isOwner: false });
+    await renderPage();
+    const drawer = await openDrawer();
+    expect(within(drawer).queryByRole("combobox", { name: "Assigned to" })).not.toBeInTheDocument();
+    expect(within(drawer).getByText("Unassigned")).toBeInTheDocument();
   });
 });
