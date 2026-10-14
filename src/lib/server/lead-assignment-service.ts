@@ -3,16 +3,15 @@ import "server-only";
 import type { CrmAccessGranted } from "@/lib/server/auth/access";
 import { AppError } from "@/lib/server/app-error";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
-import type { TenantRequestContext } from "@/lib/server/tenant-context";
 
 /**
- * Lead assignment by ad (migration 20261006120000_lead_assignment_by_ad.sql).
+ * Lead assignment: by ad rule and by hand, both owner-only (migrations 20261006120000_lead_assignment_by_ad.sql
+ * and 20261014060000_lead_assign_owner_only.sql).
  *
  * New leads are assigned by a database trigger from the owner's per-ad rule; this module only reads the
  * rules and writes through the service-role RPCs. Every call is pinned to the tenant from the verified
  * session, and the actor comes from that session — never from the request. The RPCs re-check that the
- * actor is an active member (or the active owner, for rules) and that the assignee is an active member of
- * the same tenant.
+ * actor is the active owner and that the assignee is an active member of the same tenant.
  */
 
 export interface AssignableMember { userId: string; fullName: string; }
@@ -59,17 +58,18 @@ export async function loadProfileNames(userIds: string[]): Promise<Map<string, s
   return names;
 }
 
-/** Assigns (or, with null, unassigns) one lead. Any active member may do it, like a status change. */
+/** Owner only: assigns (or, with null, unassigns) one lead. The DB re-checks the actor is the active owner. */
 export async function assignLead(
-  context: TenantRequestContext,
+  access: CrmAccessGranted,
   leadId: string,
   assigneeUserId: string | null,
 ): Promise<{ id: string; assignedUserId: string | null; assigneeName: string | null }> {
+  assertOwner(access);
   const { data, error } = await getSupabaseAdminClient().rpc("assign_lead", {
-    p_tenant_id: context.tenantId, p_lead_id: leadId, p_assignee_user_id: assigneeUserId, p_actor_user_id: context.userId,
+    p_tenant_id: access.tenantId, p_lead_id: leadId, p_assignee_user_id: assigneeUserId, p_actor_user_id: access.userId,
   });
   if (error) {
-    if (error.code === "42501") throw new AppError("You are not allowed to assign leads for this company.", { status: 403, code: "LEAD_ASSIGN_FORBIDDEN" });
+    if (error.code === "42501") throw new AppError("Only the company owner can assign leads.", { status: 403, code: "LEAD_ASSIGN_FORBIDDEN" });
     if (error.code === "22023") throw new AppError("Choose an active member of this company.", { status: 400, code: "INVALID_ASSIGNEE" });
     throw new AppError("The lead could not be assigned.", { status: 500, code: "LEAD_ASSIGN_FAILED" });
   }

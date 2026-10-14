@@ -1,7 +1,8 @@
--- Regression for supabase/migrations/20261006120000_lead_assignment_by_ad.sql:
--- auto-assign by ad rule (active assignees only, never across tenants), manual assign/unassign, owner-only
--- rules, "apply to unassigned", the lead_assigned timeline row and its actor, member removal clean-up,
--- the tenant-membership FK, the rules overview, and grants.
+-- Regression for supabase/migrations/20261006120000_lead_assignment_by_ad.sql and
+-- 20261014060000_lead_assign_owner_only.sql:
+-- auto-assign by ad rule (active assignees only, never across tenants), manual assign/unassign (owner
+-- only), owner-only rules, "apply to unassigned", the lead_assigned timeline row and its actor, member
+-- removal clean-up, the tenant-membership FK, the rules overview, and grants.
 --
 -- Everything runs in one transaction that ends in ROLLBACK, so no fixture survives. A failed assertion
 -- raises 'Assertion failed: ...'; a clean run ends with the NOTICE 'LEAD_ASSIGNMENT_REGRESSION_PASSED'.
@@ -147,25 +148,28 @@ begin
   update public.tenant_memberships set membership_status = 'active' where tenant_id = t_a and user_id = emp_a1;
   perform pg_temp.assert_true(pg_temp.assignee_of(pg_temp.lead_a('ad-1')) = emp_a1, 'TC6: re-enabled assignee gets leads again');
 
-  -- TC7: manual assignment by any active member; the actor is recorded; the timeline says what changed.
-  v_rows := (select count(*) from public.assign_lead(t_a, v_lead, emp_a2, emp_a1));
-  perform pg_temp.assert_true(v_rows = 1 and (select assigned_user_id from public.lead_data where id = v_lead) = emp_a2, 'TC7: employee assigns a lead');
+  -- TC7: manual assignment is OWNER ONLY; a plain employee is rejected; the actor is recorded; the
+  -- timeline says what changed.
+  perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, emp_a2, emp_a1), '42501', 'TC7: employee cannot assign a lead');
+  v_rows := (select count(*) from public.assign_lead(t_a, v_lead, emp_a2, owner_a));
+  perform pg_temp.assert_true(v_rows = 1 and (select assigned_user_id from public.lead_data where id = v_lead) = emp_a2, 'TC7: owner assigns a lead');
   select * into v_act from public.lead_activities where lead_id = v_lead and type = 'lead_assigned';
-  perform pg_temp.assert_true(v_act.created_by = emp_a1 and v_act.summary like 'Assigned to %' and (v_act.metadata ->> 'auto')::boolean is false, 'TC7: actor is the person who assigned');
-  perform public.assign_lead(t_a, v_lead, owner_a, emp_a1);
+  perform pg_temp.assert_true(v_act.created_by = owner_a and v_act.summary like 'Assigned to %' and (v_act.metadata ->> 'auto')::boolean is false, 'TC7: actor is the owner who assigned');
+  perform public.assign_lead(t_a, v_lead, emp_a1, owner_a);
   perform pg_temp.assert_true((select count(*) from public.lead_activities where lead_id = v_lead and type = 'lead_assigned' and summary like 'Reassigned: % → %') = 1, 'TC7: reassignment text');
-  perform public.assign_lead(t_a, v_lead, owner_a, emp_a1);
-  perform pg_temp.assert_true(pg_temp.assign_count(v_lead) = 2, 'TC7: assigning the same person again logs nothing');
+  perform public.assign_lead(t_a, v_lead, emp_a1, owner_a);
+  perform pg_temp.assert_true(pg_temp.assign_count(v_lead) = 3, 'TC7: assigning the same person again logs nothing');
   perform public.assign_lead(t_a, v_lead, null, owner_a);
   perform pg_temp.assert_true((select assigned_user_id from public.lead_data where id = v_lead) is null
     and (select count(*) from public.lead_activities where lead_id = v_lead and type = 'lead_assigned' and summary like 'Unassigned (was %') = 1, 'TC7: unassign');
   perform pg_temp.assert_true(current_setting('app.current_user_id', true) in ('', null), 'TC7: actor setting does not leak');
 
-  -- TC8: manual assignment is tenant-safe.
-  perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, blocked_a, emp_a1), '22023', 'TC8: blocked assignee rejected');
-  perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, emp_b, emp_a1), '22023', 'TC8: other tenant''s member rejected as assignee');
+  -- TC8: manual assignment is tenant-safe and owner-only.
+  perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, blocked_a, owner_a), '22023', 'TC8: blocked assignee rejected');
+  perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, emp_b, owner_a), '22023', 'TC8: other tenant''s member rejected as assignee');
   perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, emp_a1, blocked_a), '42501', 'TC8: blocked actor rejected');
   perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, emp_a1, emp_b), '42501', 'TC8: another tenant''s member cannot act in tenant A');
+  perform pg_temp.expect_error(format('select public.assign_lead(%L,%L,%L,%L)', t_a, v_lead, emp_a1, emp_a1), '42501', 'TC8: an active employee of this tenant still cannot assign');
   perform pg_temp.assert_true((select count(*) from public.assign_lead(t_b, v_lead, emp_b, owner_b)) = 0, 'TC8: tenant B cannot touch tenant A''s lead');
   perform pg_temp.assert_true((select assigned_user_id from public.lead_data where id = v_lead) is null, 'TC8: nothing changed');
 

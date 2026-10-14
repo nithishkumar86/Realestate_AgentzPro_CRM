@@ -113,9 +113,11 @@ export type LeadFilterOptions = {
   defaultAdId: string | null;
   /** Active members a lead can be assigned to (also the Assignee filter's choices). */
   assignees: AssignableMember[];
+  /** Whether the caller may change a lead's assignee; only the owner can. */
+  isOwner: boolean;
 };
 
-export async function getLeadFilterOptions(context: TenantRequestContext, pageRecordId?: string): Promise<LeadFilterOptions> {
+export async function getLeadFilterOptions(context: TenantRequestContext, isOwner: boolean, pageRecordId?: string): Promise<LeadFilterOptions> {
   const db = getSupabaseAdminClient();
   const { data: pages, error: pagesError } = await db.from("facebook_pages")
     .select("id,facebook_page_name")
@@ -139,7 +141,7 @@ export async function getLeadFilterOptions(context: TenantRequestContext, pageRe
     if (typeof lead.ad_id === "string" && !ads.has(lead.ad_id)) ads.set(lead.ad_id, { id: lead.ad_id, name: asNullableString(lead.ad_name) });
   }
   const values = [...ads.values()].sort((left, right) => (left.name ?? left.id).localeCompare(right.name ?? right.id));
-  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null, assignees };
+  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null, assignees, isOwner };
 }
 
 /**
