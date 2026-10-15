@@ -2498,6 +2498,18 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-row-dropdown:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 1px; }
 .mvp-row-dropdown__value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mvp-row-dropdown__panel { position: fixed; right: auto; max-width: 300px; z-index: 60; }
+
+/* Add Task title picker: the options open inline under the field (never upward, never clipped), spaced like the other dropdowns but airier. */
+.mvp-option-picker { display: grid; gap: 8px; }
+.mvp-option-picker__trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; cursor: pointer; appearance: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.mvp-option-picker__trigger:hover { border-color: var(--primary); }
+.mvp-option-picker__trigger[aria-expanded="true"] { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent); }
+.mvp-option-picker__placeholder { color: var(--text-muted); opacity: .7; font-weight: 400; }
+.mvp-option-picker__panel { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 2px solid var(--field-outline); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-dropdown); animation: mvp-dropdown-in 120ms ease; scroll-margin-bottom: 16px; }
+.mvp-option-picker__panel .mvp-dropdown-option { min-height: 40px; border: 1.5px solid var(--text); }
+.mvp-option-picker__panel--scroll { max-height: 264px; overflow-y: auto; overscroll-behavior: contain; }
+.mvp-option-picker__panel--scroll .mvp-dropdown-option { flex-shrink: 0; }
+.mvp-option-picker__divider { height: 1px; margin: 0 4px; background: var(--border); }
 .mvp-label-source { display: inline-flex; padding: 3px 7px; border-radius: 999px; font-size: .68rem; font-weight: 800; white-space: nowrap; }
 .mvp-label-source--ai { color: #175cd3; background: #dbeafe; }
 .mvp-label-source--telecaller { color: #067647; background: #dcfae6; }
@@ -3308,7 +3320,8 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-task-card__field { display: grid; gap: 6px; font-size: .78rem; font-weight: 700; color: var(--text-muted); }
 .mvp-task-card__field em { font-style: normal; font-weight: 500; }
 .mvp-task-card__field .mvp-settings-input { color: var(--text); }
-.mvp-task-card__time { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.mvp-task-card__time { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: start; }
+.mvp-task-card__time-part { display: grid; min-width: 0; }
 .mvp-task-card__dates-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .mvp-task-card__next { margin: 0; padding: 10px 12px; border: 1px solid var(--nav-active-border); border-radius: 8px; background: var(--nav-active-bg); color: var(--text); font-size: .86rem; font-weight: 800; }
 

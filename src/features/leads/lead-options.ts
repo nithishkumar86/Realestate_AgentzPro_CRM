@@ -71,6 +71,19 @@ export const NOTE_MAX_LENGTH = 2000;
 export const TASK_TITLE_MAX_LENGTH = 200;
 export const TASK_DESCRIPTION_MAX_LENGTH = 2000;
 
+/** Ready-made task titles for the Add Task form. The chosen text is saved as the plain title, so nothing server-side depends on this list. */
+export const TASK_TITLE_PRESETS = [
+  "Call Back",
+  "Send WhatsApp",
+  "Follow Up",
+  "Send Brochure",
+  "Send Price List",
+  "Site Visit",
+] as const;
+
+/** Select value for "Other (type your own)". Not a title, so it can never collide with a preset or be saved by accident. */
+export const TASK_TITLE_OTHER = "__other__";
+
 // Task repeat rules. Keep in sync with the `lead_tasks.repeat_rule` check constraint in
 // supabase/migrations/20261007120000_lead_task_due_time_repeat.sql.
 export const TASK_REPEAT_RULES = ["none", "daily", "weekly", "monthly", "yearly"] as const;
