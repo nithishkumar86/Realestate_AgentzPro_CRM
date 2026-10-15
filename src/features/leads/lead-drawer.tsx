@@ -3,13 +3,14 @@
 import { BookOpen, Check, ChevronDown, Lock, Mail, Megaphone, Phone, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
-  DUE_DATE_PRESET_OPTIONS, LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_REPEAT_OPTIONS, TASK_TITLE_MAX_LENGTH,
+  DUE_DATE_PRESET_OPTIONS, LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_REPEAT_OPTIONS, TASK_TITLE_MAX_LENGTH, TASK_TITLE_OTHER, TASK_TITLE_PRESETS,
   isFinalLeadStatus, isTaskCreationLocked, type DueDatePreset, type LeadStatus, type TaskRepeatRule,
 } from "@/features/leads/lead-options";
 import { LeadRequestError, describeRepeat, fetchOpenTask, formatActivityTime, formatTaskDue, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
 import { TIME_PATTERN, defaultDueChoice, nowInZone, presetDueDate, zonedDateTime } from "@/features/leads/task-schedule";
 import { LeadTimeline, type LeadTimelineHandle } from "@/features/leads/lead-timeline";
 import { RowDropdown } from "@/features/leads/row-dropdown";
+import { OptionPicker, type PickerOption } from "@/features/leads/option-picker";
 import { readError, type AssigneeOption } from "@/features/leads/use-lead-filters";
 import type { LeadTask } from "@/lib/server/lead-timeline-service";
 
@@ -565,8 +566,19 @@ function TaskCard({ leadId, timezone, tasks, locked, pendingStatus, commitStatus
   </section>;
 }
 
+const TITLE_OPTIONS: readonly PickerOption[] = [
+  ...TASK_TITLE_PRESETS.map((preset) => ({ value: preset, label: preset })),
+  { value: TASK_TITLE_OTHER, label: "Other (type your own)" },
+];
+
 function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { leadId: string; timezone: string; tasks: LeadTaskState; pendingStatus: LeadStatus | null; onCreated: (savedStatus: LeadStatus | null) => void }) {
-  const [title, setTitle] = useState("");
+  // The title is picked from a list; "Other" reveals a text box for a custom one. Nothing is preselected so a title is always a conscious choice.
+  const titleLabelId = useId();
+  const dueDateLabelId = useId();
+  const repeatLabelId = useId();
+  const [titleChoice, setTitleChoice] = useState("");
+  const [customTitle, setCustomTitle] = useState("");
+  const title = titleChoice === TASK_TITLE_OTHER ? customTitle : titleChoice;
   const [description, setDescription] = useState("");
   // The task starts when it is saved; the user picks only when it is due (default: the next full hour).
   const [initial] = useState(() => defaultDueChoice(timezone));
@@ -620,27 +632,26 @@ function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { le
   return <form className="mvp-task-card__form" onSubmit={(event) => void submit(event)}>
     {tasks.justClosed ? <p className="mvp-task-card__next" role="status">Add next task or close the lead</p> : <p className="mvp-timeline__empty">No open task for this lead.</p>}
     {error ? <div className="mvp-inline-error" role="alert">{error}</div> : null}
-    <label className="mvp-task-card__field"><span>Title</span>
-      <input className="mvp-settings-input" required maxLength={TASK_TITLE_MAX_LENGTH} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Call back about site visit" />
-    </label>
+    <div className="mvp-task-card__field"><span id={titleLabelId}>Title</span>
+      <OptionPicker labelId={titleLabelId} value={titleChoice} options={TITLE_OPTIONS} placeholder="Select a title" dividerBeforeLast
+        handsFocusOnValue={TASK_TITLE_OTHER} onChange={setTitleChoice} />
+    </div>
+    {titleChoice === TASK_TITLE_OTHER ? <input className="mvp-settings-input" required autoFocus aria-label="Custom title" maxLength={TASK_TITLE_MAX_LENGTH}
+      value={customTitle} onChange={(event) => setCustomTitle(event.target.value)} placeholder="e.g. Call back about site visit" /> : null}
     <label className="mvp-task-card__field"><span>Description <em>(optional)</em></span>
       <textarea className="mvp-settings-input mvp-lead-drawer__textarea" rows={3} maxLength={TASK_DESCRIPTION_MAX_LENGTH} value={description}
         onChange={(event) => setDescription(event.target.value)} placeholder="What needs to be done by the due time" />
     </label>
-    <label className="mvp-task-card__field"><span>Due Date</span>
-      <select className="mvp-settings-input" value={preset} onChange={(event) => choosePreset(event.target.value as DueDatePreset)}>
-        {DUE_DATE_PRESET_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
+    <div className="mvp-task-card__field"><span id={dueDateLabelId}>Due Date</span>
+      <OptionPicker labelId={dueDateLabelId} value={preset} options={DUE_DATE_PRESET_OPTIONS} dividerBeforeLast onChange={(next) => choosePreset(next as DueDatePreset)} />
+    </div>
     {preset === "custom" ? <label className="mvp-task-card__field"><span>Pick a date</span>
       <input className="mvp-settings-input" type="date" required min={today} value={customDate} onChange={(event) => setCustomDate(event.target.value)} />
     </label> : null}
     <TimeField label="Time" value={dueTime} onChange={setDueTime} />
-    <label className="mvp-task-card__field"><span>Select Repeat this Task</span>
-      <select className="mvp-settings-input" value={repeat} onChange={(event) => setRepeat(event.target.value as TaskRepeatRule)}>
-        {TASK_REPEAT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
+    <div className="mvp-task-card__field"><span id={repeatLabelId}>Select Repeat this Task</span>
+      <OptionPicker labelId={repeatLabelId} value={repeat} options={TASK_REPEAT_OPTIONS} onChange={(next) => setRepeat(next as TaskRepeatRule)} />
+    </div>
     {dueAt ? <p className="mvp-task-card__dates">{dueLine(dueAt.toISOString(), repeat, timezone)}</p> : null}
     <div className="mvp-task-card__actions">
       <button type="submit" className="mvp-task-button mvp-task-button--primary" disabled={busy || !title.trim() || !dueAt}>{busy ? "Saving..." : "Add task"}</button>
@@ -648,11 +659,13 @@ function NewTaskForm({ leadId, timezone, tasks, pendingStatus, onCreated }: { le
   </form>;
 }
 
-const HOURS_24 = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
-const MINUTES = Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0"));
+const HOURS_24: readonly PickerOption[] = Array.from({ length: 24 }, (_, hour) => { const text = String(hour).padStart(2, "0"); return { value: text, label: text }; });
+const MINUTES: readonly PickerOption[] = Array.from({ length: 60 }, (_, minute) => { const text = String(minute).padStart(2, "0"); return { value: text, label: text }; });
 
 /** A 24-hour clock (hour 00-23, minutes). The value stays "HH:mm", the same as the time input it replaces. */
 function TimeField({ label, value, onChange }: { label: string; value: string; onChange: (time: string) => void }) {
+  const hourLabelId = useId();
+  const minuteLabelId = useId();
   const [rawHour, rawMinute] = value.split(":");
   const hour = (rawHour ?? "00").padStart(2, "0");
   const minute = (rawMinute ?? "00").padStart(2, "0");
@@ -663,12 +676,12 @@ function TimeField({ label, value, onChange }: { label: string; value: string; o
 
   return <div className="mvp-task-card__field" role="group" aria-label={label}><span>{label}</span>
     <div className="mvp-task-card__time">
-      <select className="mvp-settings-input" aria-label="Hour" value={hour} onChange={(event) => change({ hour: event.target.value })}>
-        {HOURS_24.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-      <select className="mvp-settings-input" aria-label="Minutes" value={minute} onChange={(event) => change({ minute: event.target.value })}>
-        {MINUTES.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
+      <div className="mvp-task-card__time-part"><span id={hourLabelId} hidden>Hour</span>
+        <OptionPicker labelId={hourLabelId} value={hour} options={HOURS_24} scrollable onChange={(next) => change({ hour: next })} />
+      </div>
+      <div className="mvp-task-card__time-part"><span id={minuteLabelId} hidden>Minutes</span>
+        <OptionPicker labelId={minuteLabelId} value={minute} options={MINUTES} scrollable onChange={(next) => change({ minute: next })} />
+      </div>
     </div>
   </div>;
 }

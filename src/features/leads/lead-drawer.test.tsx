@@ -25,17 +25,32 @@ const openTask = {
   startAt: "2026-10-05T04:00:00+00:00", dueAt: "2026-10-08T17:30:00+00:00", originalDueAt: "2026-10-08T17:30:00+00:00", repeatRule: "none",
   status: "open", closedAt: null, createdAt: "2026-10-05T04:00:00+00:00",
 };
-// The time field is two selects (hour 00-23, minutes) inside a labelled group; these read and set it as "HH:mm".
-const timeParts = (group: HTMLElement) => ({ hour: within(group).getByLabelText("Hour"), minutes: within(group).getByLabelText("Minutes") });
+// The time field is two pickers (hour 00-23, minutes) inside a labelled group; these read and set it as "HH:mm".
+const timeParts = (group: HTMLElement) => ({ hour: within(group).getByRole("button", { name: /^Hour/ }), minutes: within(group).getByRole("button", { name: /^Minutes/ }) });
 const readTime = (group: HTMLElement) => {
   const { hour, minutes } = timeParts(group);
-  return `${(hour as HTMLSelectElement).value}:${(minutes as HTMLSelectElement).value}`;
+  return `${hour.textContent}:${minutes.textContent}`;
 };
 const setTime = (group: HTMLElement, time: string) => {
   const [hour, minute] = time.split(":");
-  const { hour: hourSelect, minutes } = timeParts(group);
-  fireEvent.change(hourSelect, { target: { value: hour } });
-  fireEvent.change(minutes, { target: { value: minute } });
+  fireEvent.click(timeParts(group).hour);
+  fireEvent.click(within(group).getByRole("option", { name: hour }));
+  fireEvent.click(timeParts(group).minutes);
+  fireEvent.click(within(group).getByRole("option", { name: minute }));
+};
+// The Add Task repeat rule is a picker too: a button named "Select Repeat this Task" (plus its value), then a listbox.
+const repeatTrigger = (drawer: HTMLElement) => within(drawer).getByRole("button", { name: /^Select Repeat this Task/ });
+// The Add Task title is a picker whose options open under the field: a button named "Title" (plus its value), then a listbox.
+const titleTrigger = (drawer: HTMLElement) => within(drawer).findByRole("button", { name: /^Title/ });
+const pickTitle = async (drawer: HTMLElement, option: string) => {
+  fireEvent.click(await titleTrigger(drawer));
+  fireEvent.click(within(drawer).getByRole("option", { name: option }));
+};
+// The Add Task due date is a picker too: a button named "Due Date" (plus its value), then a listbox.
+const dueTrigger = (drawer: HTMLElement) => within(drawer).findByRole("button", { name: /^Due Date/ });
+const pickDue = async (drawer: HTMLElement, option: string) => {
+  fireEvent.click(await dueTrigger(drawer));
+  fireEvent.click(within(drawer).getByRole("option", { name: option }));
 };
 const dueAtOf =(body: Record<string, unknown> | undefined) => zonedDateTime(String(body?.dueDate), String(body?.dueTime), "Asia/Kolkata").toISOString();
 
@@ -320,27 +335,194 @@ describe("lead drawer notes and tasks", () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
-    fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     expect(within(drawer).getByLabelText(/Description/)).toHaveAttribute("placeholder", "What needs to be done by the due time");
     expect(within(drawer).queryByLabelText(/Start date/i)).not.toBeInTheDocument();
-    const dueDate = within(drawer).getByLabelText("Due Date");
-    expect(within(dueDate).getAllByRole("option").map((option) => option.textContent)).toEqual(["Today", "Tomorrow", "3 Days From Now", "1 Week From Now", "1 Month From Now", "Custom"]);
-    const repeat = within(drawer).getByLabelText("Select Repeat this Task");
-    expect(within(repeat).getAllByRole("option").map((option) => option.textContent)).toEqual(["Everyday", "Weekly", "Monthly", "Yearly", "Don't Repeat"]);
+    const dueDate = await dueTrigger(drawer);
+    const repeat = repeatTrigger(drawer);
+    fireEvent.click(repeat);
+    expect(within(within(drawer).getByRole("listbox", { name: "Select Repeat this Task" })).getAllByRole("option").map((option) => option.textContent)).toEqual(["Everyday", "Weekly", "Monthly", "Yearly", "Don't Repeat"]);
+    fireEvent.keyDown(document, { key: "Escape" });
     // Defaults: today, the next full hour, no repeat.
-    expect(dueDate).toHaveValue("today");
+    expect(dueDate).toHaveTextContent("Today");
     expect(readTime(within(drawer).getByRole("group", { name: "Time" }))).toBe("12:00");
-    expect(repeat).toHaveValue("none");
+    expect(repeat).toHaveTextContent("Don't Repeat");
     expect(within(drawer).getByText("Due Wed 07 Oct 2026, 12:00 PM")).toBeInTheDocument();
 
-    fireEvent.change(dueDate, { target: { value: "3_days" } });
+    fireEvent.click(dueDate);
+    expect(within(within(drawer).getByRole("listbox", { name: "Due Date" })).getAllByRole("option").map((option) => option.textContent)).toEqual(["Today", "Tomorrow", "3 Days From Now", "1 Week From Now", "1 Month From Now", "Custom"]);
+    fireEvent.click(within(drawer).getByRole("option", { name: "3 Days From Now" }));
+    // The field shows the label, never the stored code.
+    expect(dueDate).toHaveTextContent("3 Days From Now");
+    expect(dueDate).not.toHaveTextContent("3_days");
     setTime(within(drawer).getByRole("group", { name: "Time" }), "15:00");
-    fireEvent.change(repeat, { target: { value: "weekly" } });
+    fireEvent.click(repeat);
+    fireEvent.click(within(drawer).getByRole("option", { name: "Weekly" }));
+    expect(repeat).toHaveTextContent("Weekly");
     expect(within(drawer).getByText("Due Sat 10 Oct 2026, 3:00 PM · Repeats every week")).toBeInTheDocument();
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
-    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toEqual({ title: "Site visit", description: null, dueDate: "2026-10-10", dueTime: "15:00", repeat: "weekly" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toEqual({ title: "Site Visit", description: null, dueDate: "2026-10-10", dueTime: "15:00", repeat: "weekly" });
     expect(within(drawer).getByText("Due Sat 10 Oct 2026, 3:00 PM · Repeats every week")).toBeInTheDocument();
+  });
+
+  it("lists 24 hours and 60 minutes in scrolling lists under the Time field, one list open at a time", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    const time = await within(drawer).findByRole("group", { name: "Time" });
+    const { hour, minutes } = timeParts(time);
+    fireEvent.click(hour);
+    expect(within(within(time).getByRole("listbox", { name: "Hour" })).getAllByRole("option")).toHaveLength(24);
+    expect(within(time).getByRole("listbox", { name: "Hour" })).toHaveClass("mvp-option-picker__panel--scroll");
+    fireEvent.mouseDown(minutes);
+    fireEvent.click(minutes);
+    expect(within(time).queryByRole("listbox", { name: "Hour" })).not.toBeInTheDocument();
+    expect(within(within(time).getByRole("listbox", { name: "Minutes" })).getAllByRole("option")).toHaveLength(60);
+  });
+
+  it("offers ready-made titles under the field with nothing preselected, and keeps Add task disabled until one is picked", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    const trigger = await titleTrigger(drawer);
+    expect(trigger).toHaveTextContent("Select a title");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(within(drawer).queryByRole("listbox")).not.toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "Add task" })).toBeDisabled();
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const list = within(drawer).getByRole("listbox", { name: "Title" });
+    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Call Back", "Send WhatsApp", "Follow Up", "Send Brochure", "Send Price List", "Site Visit", "Other (type your own)",
+    ]);
+    expect(within(drawer).queryByLabelText("Custom title")).not.toBeInTheDocument();
+
+    fireEvent.click(within(list).getByRole("option", { name: "Call Back" }));
+    expect(within(drawer).queryByRole("listbox")).not.toBeInTheDocument();
+    expect(trigger).toHaveTextContent("Call Back");
+    expect(trigger).toHaveFocus();
+    expect(within(drawer).getByRole("button", { name: "Add task" })).toBeEnabled();
+    // Reopening marks the current choice.
+    fireEvent.click(trigger);
+    expect(within(drawer).getByRole("option", { name: "Call Back" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("shows a text box for Other, keeps Add task disabled while it is empty, and sends the typed title", async () => {
+    freezeClock();
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await pickTitle(drawer, "Other (type your own)");
+    const custom = within(drawer).getByLabelText("Custom title");
+    expect(custom).toHaveFocus();
+    expect(custom).toHaveAttribute("maxlength", "200");
+    expect(within(drawer).getByRole("button", { name: "Add task" })).toBeDisabled();
+    fireEvent.change(custom, { target: { value: "   " } });
+    expect(within(drawer).getByRole("button", { name: "Add task" })).toBeDisabled();
+    fireEvent.change(custom, { target: { value: "Ask about loan eligibility" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByRole("button", { name: "Mark complete" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toMatchObject({ title: "Ask about loan eligibility" });
+  });
+
+  it("hides the text box again when a ready-made title is picked after Other", async () => {
+    freezeClock();
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    await pickTitle(drawer, "Other (type your own)");
+    fireEvent.change(within(drawer).getByLabelText("Custom title"), { target: { value: "Something typed" } });
+    await pickTitle(drawer, "Send Brochure");
+    expect(within(drawer).queryByLabelText("Custom title")).not.toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
+    await within(drawer).findByRole("button", { name: "Mark complete" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toMatchObject({ title: "Send Brochure" });
+  });
+
+  it("closes only the title list on the first Escape and the drawer on the second", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    const trigger = await titleTrigger(drawer);
+    fireEvent.click(trigger);
+    expect(within(drawer).getByRole("listbox")).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(within(drawer).queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("closes the title list when clicking elsewhere in the drawer, without picking anything", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    const trigger = await titleTrigger(drawer);
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(within(drawer).getByRole("heading", { name: "Follow-up task" }));
+    expect(within(drawer).queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(trigger).toHaveTextContent("Select a title");
+  });
+
+  it("moves through the title options with the arrow keys, starting on the first one", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    fireEvent.click(await titleTrigger(drawer));
+    const option = (name: string) => within(drawer).getByRole("option", { name });
+    expect(option("Call Back")).toHaveFocus();
+    fireEvent.keyDown(option("Call Back"), { key: "ArrowDown" });
+    expect(option("Send WhatsApp")).toHaveFocus();
+    fireEvent.keyDown(option("Send WhatsApp"), { key: "End" });
+    expect(option("Other (type your own)")).toHaveFocus();
+    fireEvent.keyDown(option("Other (type your own)"), { key: "ArrowUp" });
+    expect(option("Site Visit")).toHaveFocus();
+    fireEvent.keyDown(option("Site Visit"), { key: "Home" });
+    expect(option("Call Back")).toHaveFocus();
+  });
+
+  it("sets the Due Date options apart like the title ones: a divider before Custom, the chosen one marked, and one list open at a time", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    const due = await dueTrigger(drawer);
+    fireEvent.click(due);
+    const list = within(drawer).getByRole("listbox", { name: "Due Date" });
+    expect(within(list).getByRole("separator")).toBeInTheDocument();
+    expect(within(list).getByRole("option", { name: "Today" })).toHaveAttribute("aria-selected", "true");
+    expect(within(list).getByRole("option", { name: "Today" })).toHaveFocus();
+    // Opening the title list closes this one.
+    fireEvent.mouseDown(await titleTrigger(drawer));
+    fireEvent.click(await titleTrigger(drawer));
+    expect(within(drawer).queryByRole("listbox", { name: "Due Date" })).not.toBeInTheDocument();
+    expect(within(drawer).getByRole("listbox", { name: "Title" })).toBeInTheDocument();
+  });
+
+  it("closes only the Due Date list on the first Escape, and choosing Custom returns focus to the field", async () => {
+    freezeClock();
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
+    await renderPage();
+    const drawer = await openDrawer();
+    const due = await dueTrigger(drawer);
+    fireEvent.click(due);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(within(drawer).queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(due).toHaveFocus();
+    await pickDue(drawer, "Custom");
+    expect(due).toHaveTextContent("Custom");
+    expect(due).toHaveFocus();
+    expect(within(drawer).getByLabelText("Pick a date")).toBeInTheDocument();
   });
 
   it("shows a calendar for Custom, starting on the date already picked, and sends the chosen day", async () => {
@@ -348,10 +530,10 @@ describe("lead drawer notes and tasks", () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
-    fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     expect(within(drawer).queryByLabelText("Pick a date")).not.toBeInTheDocument();
-    fireEvent.change(within(drawer).getByLabelText("Due Date"), { target: { value: "tomorrow" } });
-    fireEvent.change(within(drawer).getByLabelText("Due Date"), { target: { value: "custom" } });
+    await pickDue(drawer, "Tomorrow");
+    await pickDue(drawer, "Custom");
     const calendar = within(drawer).getByLabelText("Pick a date");
     expect(calendar).toHaveValue("2026-10-08");
     expect(calendar).toHaveAttribute("min", "2026-10-07");
@@ -366,7 +548,7 @@ describe("lead drawer notes and tasks", () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
-    fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     setTime(within(drawer).getByRole("group", { name: "Time" }), "09:00");
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByText("Pick a due time later than now.");
@@ -378,7 +560,7 @@ describe("lead drawer notes and tasks", () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
-    expect(await within(drawer).findByLabelText("Due Date")).toHaveValue("tomorrow");
+    expect(await dueTrigger(drawer)).toHaveTextContent("Tomorrow");
     expect(readTime(within(drawer).getByRole("group", { name: "Time" }))).toBe("00:00");
     expect(within(drawer).getByText("Due Thu 08 Oct 2026, 12:00 AM")).toBeInTheDocument();
   });
@@ -387,7 +569,7 @@ describe("lead drawer notes and tasks", () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Working" })], openTask: null, createTaskConflict: true, pages: {} });
     await renderPage();
     const drawer = await openDrawer();
-    fireEvent.change(await within(drawer).findByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByText("This lead already has an open task. Complete or cancel it before adding a new one.");
   });
@@ -449,7 +631,7 @@ describe("lead drawer: step 1, 2, 3", () => {
     const drawer = await openDrawer();
     await within(drawer).findByText(LOCK_TEXT);
     expect(within(drawer).queryByRole("button", { name: "Add task" })).not.toBeInTheDocument();
-    expect(within(drawer).queryByLabelText("Title")).not.toBeInTheDocument();
+    expect(within(drawer).queryByRole("button", { name: /^Title/ })).not.toBeInTheDocument();
     expect(within(drawer).getByLabelText("Add a note")).toBeEnabled();
     expect(stepState(drawer)).toEqual(["current", "todo", "todo"]);
   });
@@ -468,7 +650,7 @@ describe("lead drawer: step 1, 2, 3", () => {
     expect(within(drawer).queryByText(LOCK_TEXT)).not.toBeInTheDocument();
     expect(stepState(drawer)).toEqual(["done", "current", "todo"]);
 
-    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
     expect(stepState(drawer)).toEqual(["done", "done", "current"]);
@@ -646,11 +828,11 @@ describe("a status is saved only together with a task or a note", () => {
     const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], openTask: null, pages: {} });
     await renderPage();
     const drawer = await changeInTable("Working");
-    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
     expect(writesOf(calls)).toEqual(["POST /api/leads/:id/tasks"]);
-    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toMatchObject({ title: "Site visit", status: "Working" });
+    expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).toMatchObject({ title: "Site Visit", status: "Working" });
     expect(patches(calls)).toEqual([]);
     fireEvent.click(within(drawer).getByRole("button", { name: "Close lead details" }));
     expect(screen.getByRole("button", { name: "Change status for Kumar" })).toHaveTextContent("Working");
@@ -661,7 +843,7 @@ describe("a status is saved only together with a task or a note", () => {
     await renderPage();
     const drawer = await openDrawer();
     await within(drawer).findByRole("button", { name: "Add task" });
-    fireEvent.change(within(drawer).getByLabelText("Title"), { target: { value: "Site visit" } });
+    await pickTitle(drawer, "Site Visit");
     fireEvent.click(within(drawer).getByRole("button", { name: "Add task" }));
     await within(drawer).findByRole("button", { name: "Mark complete" });
     expect(calls.find((call) => call.method === "POST" && call.url.endsWith("/tasks"))?.body).not.toHaveProperty("status");
