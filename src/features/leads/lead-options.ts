@@ -15,6 +15,8 @@ export const LEAD_STATUSES = [
   "Didn't pick the call",
   "Details send via WhatsApp",
   "Disqualified",
+  // Appended last on purpose: the dashboard colours each status by its position (--status-N).
+  "Asking Time for Taking Decision",
 ] as const;
 
 export const LEAD_LABELS = ["Hot", "Warm", "Cold", "Not Interested"] as const;

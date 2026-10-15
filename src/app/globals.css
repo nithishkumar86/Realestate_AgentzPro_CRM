@@ -3131,6 +3131,7 @@ button.mvp-field-box__control:focus-visible { outline: none; }
   --status-11: #ea580c;
   --status-12: #65a30d;
   --status-13: #9f1239;
+  --status-14: #c026d3;
 }
 
 :root[data-theme="dark"] {
@@ -3147,6 +3148,7 @@ button.mvp-field-box__control:focus-visible { outline: none; }
   --status-11: #ff9a62;
   --status-12: #a3d65c;
   --status-13: #fb7185;
+  --status-14: #e879f9;
   --chart-1: #6aa5ff;
   --chart-2: #58c77c;
   --chart-3: #f3b95f;
