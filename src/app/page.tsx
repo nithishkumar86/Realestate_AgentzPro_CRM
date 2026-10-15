@@ -96,6 +96,9 @@ export default async function HomePage() {
           <Link href="/privacy-policy" className={styles.footerLink}>
             Privacy Policy
           </Link>
+          <Link href="/terms" className={styles.footerLink}>
+            Terms of Service
+          </Link>
         </div>
       </footer>
     </div>

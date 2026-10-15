@@ -38,6 +38,7 @@ function SiteFooter() {
         <nav className={styles.footerLinks}>
           <Link href="/">Home</Link>
           <Link href="/privacy-policy">Privacy Policy</Link>
+          <Link href="/terms">Terms of Service</Link>
         </nav>
       </div>
     </footer>
