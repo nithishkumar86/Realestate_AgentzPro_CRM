@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 const EFFECTIVE_DATE = "September 14, 2026";
-const LAST_UPDATED = "September 28, 2026";
+const LAST_UPDATED = "October 15, 2026";
 
 function SiteHeader() {
   return (
@@ -285,7 +285,7 @@ export default function PrivacyPolicyPage() {
               <strong>With infrastructure service providers</strong> who
               process data strictly on our behalf and under our instructions
               to operate the Service, namely our database provider (Supabase,
-              for secure data storage) and our hosting provider (Render, for
+              for secure data storage) and our hosting provider (Vercel, for
               running the application);
             </li>
             <li>
