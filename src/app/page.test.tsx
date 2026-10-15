@@ -25,7 +25,7 @@ it("shows the public landing page with a Login button to signed-out visitors", a
   mocks.requireCrmAccess.mockRejectedValue(new AppError("Signed out", { status: 401, code: "UNAUTHENTICATED" }));
   render(await HomePage());
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Your next opportunity\s*starts here\./);
-  expect(screen.getAllByRole("link")).toHaveLength(5);
+  expect(screen.getAllByRole("link")).toHaveLength(6);
   expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute("href", "/login");
   expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
   expect(screen.getByRole("link", { name: "Enter CRM Leads" })).toHaveAttribute("href", "/leads");
@@ -34,6 +34,7 @@ it("shows the public landing page with a Login button to signed-out visitors", a
     "href",
     "/privacy-policy"
   );
+  expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
   expect(mocks.redirect).not.toHaveBeenCalled();
 });
 

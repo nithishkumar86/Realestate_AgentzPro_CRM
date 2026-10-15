@@ -195,6 +195,9 @@ export function PricingView({ plans }: Readonly<{ plans: BillingPlanOption[] }>)
           <Link href="/privacy-policy" className={landing.footerLink}>
             Privacy Policy
           </Link>
+          <Link href="/terms" className={landing.footerLink}>
+            Terms of Service
+          </Link>
         </div>
       </footer>
     </div>
