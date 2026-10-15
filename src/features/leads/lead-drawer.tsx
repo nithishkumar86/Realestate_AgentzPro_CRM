@@ -19,7 +19,7 @@ export interface DrawerLead { id: string; leadName: string | null; phone: string
 /** Colour of the status banner: where the lead is in the pipeline at a glance (UI only). */
 const STATUS_TONES: Partial<Record<LeadStatus, "blue" | "green" | "yellow" | "red" | "gray">> = {
   "New Lead": "blue",
-  Working: "yellow", "Details send via WhatsApp": "yellow", "Site visit pending": "yellow", "Final call": "yellow", "Next project": "yellow",
+  Working: "yellow", "Details send via WhatsApp": "yellow", "Site visit pending": "yellow", "Final call": "yellow", "Next project": "yellow", "Asking Time for Taking Decision": "yellow",
   Sale: "green", "Site visit done": "green",
   "Not reachable": "red", "Didn't pick the call": "red", Disqualified: "red",
   Closed: "gray", Archived: "gray",

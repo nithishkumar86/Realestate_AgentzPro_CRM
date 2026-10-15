@@ -499,7 +499,7 @@ describe("editing a lead's label", () => {
 describe("editing a lead's status", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("offers all 13 statuses and defaults a new lead to New Lead", async () => {
+  it("offers all 14 statuses and defaults a new lead to New Lead", async () => {
     const sent = stubLeadApi(DUMMY_LEADS);
     await renderLeadsPage(sent);
 
@@ -507,7 +507,7 @@ describe("editing a lead's status", () => {
     fireEvent.click(triggerFor("status"));
     const names = screen.getAllByRole("option").map((option) => option.textContent);
     expect(names).toEqual([...LEAD_STATUSES]);
-    expect(names).toHaveLength(13);
+    expect(names).toHaveLength(14);
     expect(names).not.toContain("All statuses");
   });
 
