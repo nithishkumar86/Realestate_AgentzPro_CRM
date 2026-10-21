@@ -1,11 +1,11 @@
 import { LeadRecoveryService } from "@/lib/server/lead-recovery-service";
-import { verifyQstashRequest } from "@/lib/server/qstash-service";
+import { isAuthorizedWorkerRequest } from "@/lib/server/worker-auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request): Promise<Response> {
   const rawBody = await request.text();
-  if (!(await verifyQstashRequest(request, rawBody))) {
+  if (!(await isAuthorizedWorkerRequest(request, rawBody))) {
     return new Response(null, { status: 403 });
   }
 
