@@ -3456,12 +3456,16 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-bell__button:hover { background: var(--border); }
 .mvp-bell__badge { position: absolute; top: -6px; right: -6px; min-width: 18px; padding: 1px 5px; border-radius: 999px; background: #d92d20; color: #fff; font-size: .7rem; font-weight: 800; text-align: center; }
 .mvp-bell__panel { position: absolute; right: 0; top: 100%; z-index: 60; width: min(380px, calc(100vw - 32px)); max-height: 480px; overflow: auto; margin-top: 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); box-shadow: 0 18px 48px rgba(16, 24, 40, .18); }
-.mvp-bell__head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.mvp-bell__title { display: flex; align-items: center; gap: 8px; font-size: 1rem; }
+.mvp-bell__head { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; row-gap: 6px; justify-content: space-between; align-items: center; padding: 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.mvp-bell__title { display: flex; align-items: center; gap: 6px; font-size: 1rem; white-space: nowrap; }
 .mvp-bell__new { padding: 2px 9px; border-radius: 999px; background: #fee4e2; color: #b42318; font-size: .72rem; font-weight: 800; }
-.mvp-bell__actions { display: flex; align-items: center; gap: 6px; }
-.mvp-bell__markall { padding: 5px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--primary); font-size: .82rem; font-weight: 700; cursor: pointer; }
-.mvp-bell__markall:hover { background: var(--border); }
+/* On a narrow phone the buttons drop to their own row, kept at the right. */
+.mvp-bell__actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.mvp-bell__markall { padding: 5px 6px; white-space: nowrap; border: 0; border-radius: 8px; background: transparent; color: var(--primary); font-size: .82rem; font-weight: 700; cursor: pointer; }
+.mvp-bell__markall:hover:not(:disabled) { background: var(--border); }
+.mvp-bell__markall:disabled { opacity: .6; cursor: default; }
+/* Same width as "Clearing…", so the header does not shift while it clears. */
+.mvp-bell__clear { min-width: 6em; }
 .mvp-bell__close { display: inline-flex; padding: 6px; border: 0; border-radius: 8px; background: transparent; color: var(--text-muted); cursor: pointer; }
 .mvp-bell__close:hover { background: var(--border); }
 .mvp-bell__setting { display: flex; align-items: center; gap: 12px; margin: 12px 16px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }

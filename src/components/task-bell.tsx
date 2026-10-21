@@ -188,6 +188,8 @@ function timeAgo(iso: string, now = Date.now()): string {
 export function TaskBell() {
   const alerts = useContext(TaskAlertsContext);
   const [open, setOpen] = useState(false);
+  // "Clearing…" while the request runs, so the member sees it working and cannot press it twice.
+  const [clearing, setClearing] = useState(false);
   // The panel closes on Escape or a click anywhere outside it, as well as with its close button.
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -211,7 +213,8 @@ export function TaskBell() {
         <div className="mvp-bell__title"><strong>Task alerts</strong>{feed.unread > 0 ? <span className="mvp-bell__new">{feed.unread} new</span> : null}</div>
         <span className="mvp-bell__actions">
           {feed.unread > 0 ? <button type="button" className="mvp-bell__markall" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
-          {feed.items.length > 0 ? <button type="button" className="mvp-bell__markall" onClick={() => void clearAll()}>Clear all</button> : null}
+          {feed.items.length > 0 ? <button type="button" className="mvp-bell__markall mvp-bell__clear" disabled={clearing} aria-busy={clearing}
+            onClick={() => { setClearing(true); void clearAll().finally(() => setClearing(false)); }}>{clearing ? "Clearing…" : "Clear all"}</button> : null}
           <button type="button" className="mvp-bell__close" aria-label="Close alerts" onClick={() => setOpen(false)}><X size={16} aria-hidden="true" /></button>
         </span>
       </div>

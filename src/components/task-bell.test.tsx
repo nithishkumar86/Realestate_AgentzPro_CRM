@@ -100,7 +100,18 @@ describe("task reminder cards", () => {
     fireEvent.click(screen.getByRole("button", { name: /Task alerts/ }));
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
 
+    let finishClear = () => {};
+    fetchMock.mockImplementationOnce((url: string) => {
+      expect(url).toBe("/api/notifications/clear");
+      return new Promise<Response>((resolve) => { finishClear = () => { items = []; resolve(new Response("{}", { status: 200 })); }; });
+    });
     fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    // While the request runs the button says so and cannot be pressed again.
+    const busy = screen.getByRole("button", { name: "Clearing…" });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute("aria-busy", "true");
+
+    finishClear();
     await settle();
     expect(fetchMock).toHaveBeenCalledWith("/api/notifications/clear", expect.objectContaining({ method: "POST", body: JSON.stringify({ all: true }) }));
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
