@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listTaskNotifications, markTaskNotificationsRead } from "@/lib/server/task-notification-service";
+import { clearTaskNotifications, listTaskNotifications, markTaskNotificationsRead } from "@/lib/server/task-notification-service";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: () => ({ from: mocks.from }) }));
@@ -25,6 +25,7 @@ describe("task notifications", () => {
     expect(notifications.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
     expect(notifications.eq).toHaveBeenCalledWith("user_id", "user-a");
     expect(tasks.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(notifications.is).toHaveBeenCalledWith("cleared_at", null);
     expect(result.items[0]).toMatchObject({ id: "n1", kind: "due_now", taskTitle: "Call back", leadName: "Ravi", read: false });
   });
 
@@ -44,5 +45,24 @@ describe("task notifications", () => {
     mocks.from.mockReturnValue(all);
     await markTaskNotificationsRead(context, "all");
     expect(all.in).not.toHaveBeenCalled();
+  });
+
+  it("clear all marks the member's own alerts read, then hides them, inside their tenant and user only", async () => {
+    const read = builder({});
+    const hide = builder({});
+    mocks.from.mockReturnValueOnce(read).mockReturnValueOnce(hide);
+    await clearTaskNotifications(context);
+    expect(read.update).toHaveBeenCalledWith({ read_at: expect.any(String) });
+    expect(hide.update).toHaveBeenCalledWith({ cleared_at: expect.any(String) });
+    for (const query of [read, hide]) {
+      expect(query.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+      expect(query.eq).toHaveBeenCalledWith("user_id", "user-a");
+      expect(query.in).not.toHaveBeenCalled();
+    }
+  });
+
+  it("maps a failed clear to 500", async () => {
+    mocks.from.mockReturnValueOnce(builder({})).mockReturnValueOnce(builder({ error: { code: "XX" } }));
+    await expect(clearTaskNotifications(context)).rejects.toMatchObject({ status: 500, code: "NOTIFICATIONS_UPDATE_FAILED" });
   });
 });

@@ -35,6 +35,7 @@ interface TaskAlerts {
   enablePush: () => Promise<void>;
   disablePush: () => Promise<void>;
   markRead: (body: { all: true } | { ids: string[] }) => Promise<void>;
+  clearAll: () => Promise<void>;
 }
 const TaskAlertsContext = createContext<TaskAlerts | null>(null);
 
@@ -144,12 +145,17 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
     await load(false);
   }
 
+  async function clearAll() {
+    await fetch("/api/notifications/clear", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ all: true }) }).catch(() => undefined);
+    await load(false);
+  }
+
   function dismissToast(id: string) {
     setToasts((current) => current.filter((item) => item.id !== id));
     void markRead({ ids: [id] });
   }
 
-  return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead }}>
+  return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead, clearAll }}>
     {children}
     {/* Always mounted so screen readers announce a card the moment it is added. */}
     <div className="mvp-reminder-stack" aria-live="polite">
@@ -193,7 +199,7 @@ export function TaskBell() {
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onPointer); };
   }, [open]);
   if (!alerts) return null;
-  const { feed, pushState, enablePush, disablePush, markRead } = alerts;
+  const { feed, pushState, enablePush, disablePush, markRead, clearAll } = alerts;
 
   return <div className="mvp-bell" ref={root}>
     <button type="button" className="mvp-bell__button" aria-label={`Task alerts, ${feed.unread} unread`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
@@ -205,6 +211,7 @@ export function TaskBell() {
         <div className="mvp-bell__title"><strong>Task alerts</strong>{feed.unread > 0 ? <span className="mvp-bell__new">{feed.unread} new</span> : null}</div>
         <span className="mvp-bell__actions">
           {feed.unread > 0 ? <button type="button" className="mvp-bell__markall" onClick={() => void markRead({ all: true })}>Mark all read</button> : null}
+          {feed.items.length > 0 ? <button type="button" className="mvp-bell__markall" onClick={() => void clearAll()}>Clear all</button> : null}
           <button type="button" className="mvp-bell__close" aria-label="Close alerts" onClick={() => setOpen(false)}><X size={16} aria-hidden="true" /></button>
         </span>
       </div>
