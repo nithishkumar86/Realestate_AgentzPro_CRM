@@ -5,7 +5,10 @@ self.addEventListener("push", (event) => {
   try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
   event.waitUntil(self.registration.showNotification(data.title || "Task reminder", {
     body: data.body || "",
+    icon: "/logo-icon.png",
     tag: data.tag || "task-reminder",
+    // Stays on screen until the member clicks or closes it, where the browser supports that (desktop Chrome, Edge).
+    requireInteraction: true,
     data: { url: typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/tasks" },
   }));
 });
