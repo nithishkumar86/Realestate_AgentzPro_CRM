@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TaskAlertsProvider } from "@/components/task-bell";
+import { TaskAlertsProvider, TaskBell } from "@/components/task-bell";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
 
 class FakeEventSource {
@@ -18,6 +18,7 @@ function alert(id: string, overrides: Partial<TaskNotification> = {}): TaskNotif
 
 let items: TaskNotification[] = [];
 const fetchMock = vi.fn(async (url: string) => {
+  if (url === "/api/notifications/clear") items = [];
   if (url === "/api/notifications") return new Response(JSON.stringify({ items, unread: items.filter((item) => !item.read).length }), { status: 200 });
   return new Response("{}", { status: 200 });
 });
@@ -90,5 +91,20 @@ describe("task reminder cards", () => {
     await remind([alert("a", { read: true }), alert("b")]);
     expect(cards()).toHaveLength(1);
     expect(cards()[0]).toHaveTextContent("Task b");
+  });
+
+  it("Clear all empties the bell list and posts to the clear endpoint", async () => {
+    items = [alert("a"), alert("b", { read: true })];
+    render(<TaskAlertsProvider><TaskBell /></TaskAlertsProvider>);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: /Task alerts/ }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    await settle();
+    expect(fetchMock).toHaveBeenCalledWith("/api/notifications/clear", expect.objectContaining({ method: "POST", body: JSON.stringify({ all: true }) }));
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear all" })).not.toBeInTheDocument();
   });
 });

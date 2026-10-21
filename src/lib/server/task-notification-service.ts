@@ -15,12 +15,12 @@ export async function listTaskNotifications(context: TenantRequestContext, onlyI
   const db = getSupabaseAdminClient();
   let query = db.from("task_notifications")
     .select("id,kind,due_at,created_at,read_at,lead_id,task_id")
-    .eq("tenant_id", context.tenantId).eq("user_id", context.userId);
+    .eq("tenant_id", context.tenantId).eq("user_id", context.userId).is("cleared_at", null);
   if (onlyId) query = query.eq("id", onlyId);
   const [rows, unread] = await Promise.all([
     query.order("created_at", { ascending: false }).limit(LIMIT),
     db.from("task_notifications").select("id", { count: "exact", head: true })
-      .eq("tenant_id", context.tenantId).eq("user_id", context.userId).is("read_at", null),
+      .eq("tenant_id", context.tenantId).eq("user_id", context.userId).is("cleared_at", null).is("read_at", null),
   ]);
   if (rows.error || unread.error) throw new AppError("Notifications could not be loaded.", { status: 500, code: "NOTIFICATIONS_QUERY_FAILED" });
   const data = (rows.data ?? []) as Record<string, unknown>[];
@@ -50,4 +50,16 @@ export async function markTaskNotificationsRead(context: TenantRequestContext, i
   if (ids !== "all") query = query.in("id", ids);
   const { error } = await query;
   if (error) throw new AppError("Notifications could not be updated.", { status: 500, code: "NOTIFICATIONS_UPDATE_FAILED" });
+}
+
+/**
+ * "Clear all": empties the member's own list. Alerts are marked read first (so the badge and any open reminder card
+ * go too), then hidden. Rows are kept, so a cleared reminder is never created again for the same due time.
+ */
+export async function clearTaskNotifications(context: TenantRequestContext): Promise<void> {
+  await markTaskNotificationsRead(context, "all");
+  const { error } = await getSupabaseAdminClient().from("task_notifications")
+    .update({ cleared_at: new Date().toISOString() })
+    .eq("tenant_id", context.tenantId).eq("user_id", context.userId).is("cleared_at", null);
+  if (error) throw new AppError("Notifications could not be cleared.", { status: 500, code: "NOTIFICATIONS_UPDATE_FAILED" });
 }
