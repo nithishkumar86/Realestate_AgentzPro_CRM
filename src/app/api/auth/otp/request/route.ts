@@ -25,7 +25,12 @@ export async function POST(request: Request): Promise<Response> {
     const body = await parseJsonBody(request, requestSchema);
     const sourceIp = getRequestSourceIp(request);
 
-    await requestOtp({ email: body.email, turnstileToken: body.turnstileToken, sourceIp });
+    await requestOtp({
+      email: body.email,
+      turnstileToken: body.turnstileToken,
+      sourceIp,
+      expectedHostname: request.headers.get("host"),
+    });
 
     return createSuccessResponse({ message: "If this email is eligible, a verification code has been sent." });
   } catch (error) {

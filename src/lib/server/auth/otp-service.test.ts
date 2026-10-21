@@ -36,7 +36,12 @@ const { requestOtp, verifyOtp } = await import("@/lib/server/auth/otp-service");
 const ALLOWED = { allowed: true, bypassed: false };
 const DENIED = { allowed: false, bypassed: false, retryAfterSeconds: 60 };
 
-const PARAMS = { email: "Owner@Example.com", turnstileToken: "token-123", sourceIp: "203.0.113.1" };
+const PARAMS = {
+  email: "Owner@Example.com",
+  turnstileToken: "token-123",
+  sourceIp: "203.0.113.1",
+  expectedHostname: "crm.example.com",
+};
 
 describe("requestOtp", () => {
   beforeEach(() => {
@@ -46,6 +51,11 @@ describe("requestOtp", () => {
     checkOtpSendEmailWindowMock.mockResolvedValue(ALLOWED);
     checkOtpSendIpWindowMock.mockResolvedValue(ALLOWED);
     signInWithOtpMock.mockResolvedValue({ data: {}, error: null });
+  });
+
+  it("verifies the Turnstile token against the request's hostname", async () => {
+    await requestOtp(PARAMS);
+    expect(verifyTurnstileTokenMock).toHaveBeenCalledWith("token-123", "203.0.113.1", "crm.example.com");
   });
 
   it("does not call Supabase when Turnstile verification fails", async () => {

@@ -20,6 +20,8 @@ export interface OtpRequestParams {
   email: string;
   turnstileToken: string;
   sourceIp: string;
+  /** Host header of the incoming request; the Turnstile token must have been solved on this hostname. */
+  expectedHostname: string | null;
 }
 
 function logOtpEvent(operation: "otp_send" | "otp_verify", reason: string): void {
@@ -37,7 +39,7 @@ export async function requestOtp(params: OtpRequestParams): Promise<void> {
 
   let turnstileVerified: boolean;
   try {
-    turnstileVerified = (await verifyTurnstileToken(params.turnstileToken, params.sourceIp)).verified;
+    turnstileVerified = (await verifyTurnstileToken(params.turnstileToken, params.sourceIp, params.expectedHostname)).verified;
   } catch {
     // Turnstile's own service is unreachable. Treated the same as a failed
     // verification from the caller's perspective — the response must stay
