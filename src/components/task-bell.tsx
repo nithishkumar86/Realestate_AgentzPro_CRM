@@ -1,12 +1,16 @@
 "use client";
 
 import { AlarmClock, Bell, BellOff, BellRing, Clock, X } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { formatDateTime } from "@/lib/date-utils";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
+import logoIcon from "@/logo-icon.png";
 
 interface Feed { items: TaskNotification[]; unread: number }
-const TOAST_MS = 8_000;
+/** Reminder cards shown at once; older ones are still in the bell. */
+const MAX_TOASTS = 3;
 /** Fired on window when the live stream says tasks may have changed; the Tasks page refetches on it. */
 export const TASKS_CHANGED_EVENT = "agentz:tasks-changed";
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
@@ -24,10 +28,6 @@ export function reminderHeading(item: Pick<TaskNotification, "kind" | "leadName"
   return `Follow up with ${item.leadName ?? "this lead"} ${item.kind === "due_now" ? "now" : "in 15 min"}`;
 }
 
-export function reminderText(item: Pick<TaskNotification, "kind" | "taskTitle" | "leadName">): string {
-  return `${reminderHeading(item)}: ${item.taskTitle}`;
-}
-
 type PushState = "unsupported" | "ask" | "on" | "blocked";
 interface TaskAlerts {
   feed: Feed;
@@ -40,13 +40,12 @@ const TaskAlertsContext = createContext<TaskAlerts | null>(null);
 
 /**
  * Lives in the shell so reminders reach the member on every page: it owns the live stream, the alert list, browser
- * push and the toast. The bell that shows the list is `TaskBell`, placed on the Tasks page.
+ * push and the reminder cards. The bell that shows the list is `TaskBell`, placed on the Tasks page.
  */
 export function TaskAlertsProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [feed, setFeed] = useState<Feed>({ items: [], unread: 0 });
-  const [toast, setToast] = useState<TaskNotification | null>(null);
+  const [toasts, setToasts] = useState<TaskNotification[]>([]);
   const known = useRef<Set<string> | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const load = useCallback(async (announce: boolean) => {
     try {
@@ -54,10 +53,12 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
       if (!response.ok) return;
       const next = await response.json() as Feed;
       const seen = known.current;
-      if (announce && seen) {
-        const fresh = next.items.find((item) => !item.read && !seen.has(item.id));
-        if (fresh) { setToast(fresh); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), TOAST_MS); }
-      }
+      // Several can arrive together (a tab coming back from the background), newest first like the feed.
+      const fresh = announce && seen ? next.items.filter((item) => !item.read && !seen.has(item.id)) : [];
+      // A card stays until the member clicks OK or opens the lead; one marked read elsewhere (the bell, another tab)
+      // leaves too.
+      const unread = new Set(next.items.filter((item) => !item.read).map((item) => item.id));
+      setToasts((current) => [...fresh, ...current.filter((item) => unread.has(item.id))].slice(0, MAX_TOASTS));
       known.current = new Set(next.items.map((item) => item.id));
       setFeed(next);
     } catch {
@@ -84,7 +85,7 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
     };
     if (!document.hidden) open();
     document.addEventListener("visibilitychange", onVisibility);
-    return () => { clearTimeout(first); clearTimeout(toastTimer.current); document.removeEventListener("visibilitychange", onVisibility); source?.close(); };
+    return () => { clearTimeout(first); document.removeEventListener("visibilitychange", onVisibility); source?.close(); };
   }, [load]);
 
   // Browser push: offered only where the browser supports it and the member has not decided yet.
@@ -143,9 +144,29 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
     await load(false);
   }
 
+  function dismissToast(id: string) {
+    setToasts((current) => current.filter((item) => item.id !== id));
+    void markRead({ ids: [id] });
+  }
+
   return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead }}>
     {children}
-    {toast ? <Link className="mvp-bell__toast" href={`/leads?lead=${toast.leadId}`} role="status" onClick={() => { void markRead({ ids: [toast.id] }); setToast(null); }}>{reminderText(toast)}</Link> : null}
+    {/* Always mounted so screen readers announce a card the moment it is added. */}
+    <div className="mvp-reminder-stack" aria-live="polite">
+      {toasts.map((item) => <div key={item.id} className={item.kind === "due_now" ? "mvp-reminder mvp-reminder--now" : "mvp-reminder"} role="group" aria-label="Task reminder">
+        <div className="mvp-reminder__brand">
+          <Image className="mvp-reminder__logo" src={logoIcon} alt="" width={30} height={30} />
+          <span><strong>AgentzPro</strong><small>Task reminder</small></span>
+        </div>
+        <strong className="mvp-reminder__title">{reminderHeading(item)}</strong>
+        <p className="mvp-reminder__task">{item.taskTitle}</p>
+        <p className="mvp-reminder__due"><Clock size={13} aria-hidden="true" /> Due {formatDateTime(item.dueAt)}</p>
+        <div className="mvp-reminder__actions">
+          <Link className="mvp-reminder__open" href={`/leads?lead=${item.leadId}`} onClick={() => dismissToast(item.id)}>Open lead</Link>
+          <button type="button" className="mvp-reminder__ok" onClick={() => dismissToast(item.id)}>OK</button>
+        </div>
+      </div>)}
+    </div>
   </TaskAlertsContext.Provider>;
 }
 
