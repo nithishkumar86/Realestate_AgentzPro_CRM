@@ -5,6 +5,7 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
 import type { LeadLabel, LeadStatus } from "@/features/leads/lead-options";
 import { listAssignableMembers, loadProfileNames, type AssignableMember } from "@/lib/server/lead-assignment-service";
+import { EMAIL_FIELD_KEYS, NAME_FIELD_KEYS, PHONE_FIELD_KEYS } from "@/lib/server/lead-redaction";
 
 export type LeadSortField = "leadName" | "leadDate";
 export type QuickFilter = "all" | "today" | "month";
@@ -194,6 +195,40 @@ export async function deleteLead(context: TenantRequestContext, leadId: string):
   if (!data) throw new AppError("Lead not found for this tenant.", { status: 404, code: "LEAD_NOT_FOUND" });
   return { id: String(data.id) };
 }
+
+/** One question of the Meta lead form and what the lead answered, as Meta sent it (key, not the question's display text). */
+export interface LeadFormAnswer { name: string; values: string[] }
+
+/**
+ * Every answer on one lead's Meta form, in the form's order, for the lead drawer. Read-only and tenant-scoped.
+ * Name, email and phone are left out: the drawer already shows them, and they are the same keys
+ * extract_meta_lead_contact_fields reads. Questions with no non-empty answer are skipped.
+ */
+export async function getLeadFormAnswers(context: TenantRequestContext, leadId: string): Promise<{ answers: LeadFormAnswer[] }> {
+  const { data, error } = await getSupabaseAdminClient().from("lead_data")
+    .select("field_data")
+    .eq("tenant_id", context.tenantId)
+    .eq("id", leadId)
+    .maybeSingle();
+  if (error) throw new AppError("The form answers could not be loaded.", { status: 500, code: "LEAD_ANSWERS_FAILED" });
+  if (!data) throw new AppError("Lead not found for this tenant.", { status: 404, code: "LEAD_NOT_FOUND" });
+  return { answers: toFormAnswers(data.field_data) };
+}
+
+function toFormAnswers(fieldData: unknown): LeadFormAnswer[] {
+  if (!Array.isArray(fieldData)) return [];
+  const answers: LeadFormAnswer[] = [];
+  for (const field of fieldData) {
+    if (!field || typeof field !== "object") continue;
+    const { name, values } = field as { name?: unknown; values?: unknown };
+    if (typeof name !== "string" || !name.trim() || isContactField(name)) continue;
+    const answered = (Array.isArray(values) ? values : []).flatMap((value) => typeof value === "string" && value.trim() ? [value.trim()] : []);
+    if (answered.length) answers.push({ name, values: answered });
+  }
+  return answers;
+}
+
+function isContactField(name: string): boolean { return NAME_FIELD_KEYS.has(name) || EMAIL_FIELD_KEYS.has(name) || PHONE_FIELD_KEYS.has(name); }
 function asNullableString(value: unknown): string | null { return typeof value === "string" && value.trim() ? value : null; }
 
 export async function getTenantTimezone(tenantId: string): Promise<string> {
