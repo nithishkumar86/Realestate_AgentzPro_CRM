@@ -3248,7 +3248,7 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-lead-task-title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* "Profile" column: the person icon opens the lead's drawer (its full profile). The name beside it is plain text. */
 .mvp-table .mvp-lead-profile-cell { width: 1%; padding-right: 0; text-align: center; }
-.mvp-lead-profile-button { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text-muted); cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+.mvp-lead-profile-button { position: relative; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface); color: var(--text-muted); cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
 .mvp-lead-profile-button:hover { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); color: var(--primary); }
 .mvp-lead-profile-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }
 .mvp-lead-name { color: var(--text); font-weight: 700; }

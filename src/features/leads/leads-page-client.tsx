@@ -167,7 +167,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
       {loading ? <tr><td className="mvp-empty" colSpan={10}>Loading leads...</td></tr> : null}
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={10}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td className="mvp-lead-profile-cell">
-        <button type="button" className="mvp-lead-profile-button" onClick={() => { setDrawerPendingStatus(null); setDrawerLeadId(lead.id); }} aria-label={`Open profile of ${lead.leadName ?? "Unnamed Lead"}`}><UserRound size={16} aria-hidden="true" /><span className="mvp-lead-profile-tip" aria-hidden="true">Click to view the details</span></button>
+        <button type="button" className="mvp-lead-profile-button" onClick={() => { setDrawerPendingStatus(null); setDrawerLeadId(lead.id); }} aria-label={`Open profile of ${lead.leadName ?? "Unnamed Lead"}`}><UserRound size={20} aria-hidden="true" /><span className="mvp-lead-profile-tip" aria-hidden="true">Click to view the details</span></button>
       </td><td><span className="mvp-lead-name-cell">
         <span className="mvp-lead-name">{lead.leadName ?? "Unnamed Lead"}</span>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
