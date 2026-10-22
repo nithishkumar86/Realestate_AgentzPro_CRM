@@ -3246,9 +3246,16 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-lead-task-title { display: flex; flex: 1 0 100%; align-items: center; gap: 7px; min-width: 0; max-width: 280px; margin-top: 6px; padding: 6px 10px; border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border)); border-left: 3px solid var(--primary); border-radius: 8px; background: color-mix(in srgb, var(--primary) 9%, var(--surface)); color: var(--text); font-size: .8rem; font-weight: 700; line-height: 1.3; cursor: default; }
 .mvp-lead-task-title svg { flex: none; color: var(--primary); }
 .mvp-lead-task-title span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mvp-lead-name-button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
-.mvp-lead-name-button:hover { text-decoration: underline; }
-.mvp-lead-name-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; border-radius: 4px; }
+/* "Profile" column: the person icon opens the lead's drawer (its full profile). The name beside it is plain text. */
+.mvp-table .mvp-lead-profile-cell { width: 1%; padding-right: 0; text-align: center; }
+.mvp-lead-profile-button { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); color: var(--text-muted); cursor: pointer; transition: background 120ms ease, color 120ms ease, border-color 120ms ease; }
+.mvp-lead-profile-button:hover { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); color: var(--primary); }
+.mvp-lead-profile-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }
+.mvp-lead-name { color: var(--text); font-weight: 700; }
+/* Hover/keyboard-focus hint, shown to the right of the icon so the table's scroll box never clips it. */
+.mvp-lead-profile-tip { position: absolute; top: 50%; left: calc(100% + 8px); z-index: 5; padding: 5px 9px; border-radius: 6px; background: var(--text); color: var(--surface); font-size: .74rem; font-weight: 700; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-dropdown); opacity: 0; visibility: hidden; transform: translate(-4px, -50%); transition: opacity 120ms ease, transform 120ms ease, visibility 120ms; }
+.mvp-lead-profile-tip::before { content: ""; position: absolute; top: 50%; left: -4px; width: 8px; height: 8px; background: inherit; transform: translateY(-50%) rotate(45deg); }
+.mvp-lead-profile-button:hover .mvp-lead-profile-tip, .mvp-lead-profile-button:focus-visible .mvp-lead-profile-tip { opacity: 1; visibility: visible; transform: translate(0, -50%); }
 .mvp-no-task-marker { display: inline-flex; padding: 2px 7px; border: 1px dashed var(--border-strong); border-radius: 999px; color: var(--text-muted); font-size: .68rem; font-weight: 800; white-space: nowrap; }
 
 .mvp-lead-drawer-backdrop { position: fixed; inset: 0; z-index: 49; background: var(--profile-backdrop); animation: mvp-profile-backdrop-in 160ms ease both; }

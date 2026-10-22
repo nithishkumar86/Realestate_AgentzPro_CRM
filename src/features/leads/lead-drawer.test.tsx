@@ -129,11 +129,11 @@ class FakeEventSource {
 
 async function renderPage() {
   render(<LeadsPageClient />);
-  await screen.findByRole("button", { name: "Open details for Kumar" });
+  await screen.findByRole("button", { name: "Open profile of Kumar" });
 }
 
 async function openDrawer(name = "Kumar") {
-  fireEvent.click(screen.getByRole("button", { name: `Open details for ${name}` }));
+  fireEvent.click(screen.getByRole("button", { name: `Open profile of ${name}` }));
   return screen.findByRole("dialog", { name });
 }
 
@@ -152,11 +152,26 @@ function freezeClock(iso = "2026-10-07T06:00:00Z") {
   vi.setSystemTime(new Date(iso));
 }
 
+describe("Profile icon in the leads table", () => {
+  it("opens the drawer from the person icon; the client name is plain text, not a link", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    expect(screen.getByRole("columnheader", { name: "Profile" })).toBeInTheDocument();
+    const name = screen.getByText("Kumar", { selector: ".mvp-lead-name" });
+    expect(name.closest("button, a")).toBeNull();
+    fireEvent.click(name);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const icon = screen.getByRole("button", { name: "Open profile of Kumar" });
+    expect(within(icon).getByText("Click to view the details")).toBeInTheDocument();
+    expect(await openDrawer()).toBeInTheDocument();
+  });
+});
+
 describe("no open task marker in the leads table", () => {
   it("shows only for an active lead without a task, never for a lead with a task or in a final status", async () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar"), lead(LEAD_2, "Anitha", { hasOpenTask: true }), lead(LEAD_3, "Ravi", { status: "Sale" })], pages: {}, openTask: null });
     await renderPage();
-    const rowOf = (name: string) => screen.getByRole("button", { name: `Open details for ${name}` }).closest("tr")!;
+    const rowOf = (name: string) => screen.getByRole("button", { name: `Open profile of ${name}` }).closest("tr")!;
     expect(within(rowOf("Kumar")).getByText("No task")).toBeInTheDocument();
     expect(within(rowOf("Anitha")).queryByText("No task")).not.toBeInTheDocument();
     expect(within(rowOf("Ravi")).queryByText("No task")).not.toBeInTheDocument();
@@ -361,7 +376,7 @@ describe("lead drawer notes and tasks", () => {
     expect(calls.find((call) => call.url === `/api/leads/${LEAD_1}/tasks/${TASK}`)?.body).toEqual({ action: "cancel" });
     expect(within(drawer).getByRole("button", { name: "Add task" })).toBeInTheDocument();
     // The table marker updates without a reload.
-    const row = screen.getByRole("button", { name: "Open details for Kumar" }).closest("tr")!;
+    const row = screen.getByRole("button", { name: "Open profile of Kumar" }).closest("tr")!;
     expect(within(row).getByText("No task")).toBeInTheDocument();
   });
 
@@ -964,7 +979,7 @@ describe("lead assignment", () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar", { assignedUserId: PRIYA, assigneeName: "Priya" }), lead(LEAD_2, "Anitha")], pages: {}, openTask: null, assignees: members });
     await renderPage();
     expect(screen.getByRole("columnheader", { name: "Assigned To" })).toBeInTheDocument();
-    const rowOf = (name: string) => screen.getByRole("button", { name: `Open details for ${name}` }).closest("tr")!;
+    const rowOf = (name: string) => screen.getByRole("button", { name: `Open profile of ${name}` }).closest("tr")!;
     expect(within(rowOf("Kumar")).getByText("Priya")).toBeInTheDocument();
     expect(within(rowOf("Anitha")).getByText("Unassigned")).toBeInTheDocument();
   });
@@ -991,7 +1006,7 @@ describe("lead assignment", () => {
     fireEvent.change(select, { target: { value: RAVI } });
     await waitFor(() => expect(calls.some((call) => call.method === "PUT" && call.url === `/api/leads/${LEAD_1}/assignee` && call.body?.assigneeUserId === RAVI)).toBe(true));
     await waitFor(() => expect(select).toHaveValue(RAVI));
-    expect(within(screen.getByRole("button", { name: "Open details for Kumar", hidden: true }).closest("tr")!).getByText("Ravi")).toBeInTheDocument();
+    expect(within(screen.getByRole("button", { name: "Open profile of Kumar", hidden: true }).closest("tr")!).getByText("Ravi")).toBeInTheDocument();
     await waitFor(() => expect(activityCalls(calls).length).toBeGreaterThan(before));
   });
 
