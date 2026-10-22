@@ -180,6 +180,19 @@ describe("form answers in the drawer", () => {
     expect(details.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(card.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("puts Assigned to after the form answers, outside the lead details and before the 1-2-3 steps", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, assignees: [{ userId: "u-1", fullName: "Priya" }], isOwner: true });
+    await renderPage();
+    const drawer = await openDrawer();
+    const assign = await within(drawer).findByRole("combobox", { name: "Assigned to" });
+    const details = within(drawer).getByRole("region", { name: "Lead details" });
+    const card = within(drawer).getByRole("region", { name: "Form answers" });
+    const steps = within(drawer).getByRole("list", { name: "After every call" });
+    expect(details).not.toContainElement(assign);
+    expect(card.compareDocumentPosition(assign) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(assign.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe("resizing the drawer", () => {

@@ -3360,7 +3360,6 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-flow__item[data-current] .mvp-step-badge { border-color: var(--primary); color: var(--primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent); }
 .mvp-step-badge[data-done] { border-color: var(--success); background: var(--success); color: #fff; }
 :root[data-theme="dark"] .mvp-step-badge[data-done] { color: #0c1220; }
-.mvp-lead-profile .mvp-assign-card { padding: 10px 12px; gap: 8px; border-radius: 10px; }
 
 .mvp-note-form .mvp-lead-drawer__section-title { margin: 0; }
 .mvp-note-form__footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
