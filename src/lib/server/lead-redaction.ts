@@ -10,9 +10,9 @@ import "server-only";
  */
 export type LeadField = { name: string; values: string[] };
 
-const NAME_FIELD_KEYS = new Set(["full_name", "first_name", "last_name"]);
-const EMAIL_FIELD_KEYS = new Set(["email"]);
-const PHONE_FIELD_KEYS = new Set(["phone_number"]);
+export const NAME_FIELD_KEYS = new Set(["full_name", "first_name", "last_name"]);
+export const EMAIL_FIELD_KEYS = new Set(["email"]);
+export const PHONE_FIELD_KEYS = new Set(["phone_number"]);
 
 /**
  * Replaces only the name/email/phone values before a lead's answers are

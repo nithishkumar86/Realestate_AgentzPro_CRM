@@ -68,6 +68,8 @@ interface ApiState {
   failAssign?: boolean;
   failStatus?: boolean;
   failNote?: boolean;
+  /** The opened lead's Meta form answers (GET /api/leads/:id). */
+  answers?: Array<{ name: string; values: string[] }>;
 }
 
 /** One router for every endpoint the leads page and the drawer call; records each request. */
@@ -105,6 +107,7 @@ function stubApi(state: ApiState) {
       return json({ id: assignRoute[1], assignedUserId, assigneeName: state.assignees?.find((member) => member.userId === assignedUserId)?.fullName ?? null });
     }
     const patchLead = /^\/api\/leads\/([^/]+)$/.exec(url);
+    if (patchLead && method === "GET") return json({ answers: state.answers ?? [] });
     if (patchLead && method === "PATCH" && state.failStatus) return json({ error: { code: "UPDATE_FAILED", message: "The status could not be updated." } }, 500);
     if (patchLead && method === "PATCH") return json({ id: patchLead[1], status: body?.status, label: "Warm", labelSource: "default" });
     throw new Error(`Unexpected request: ${method} ${url}`);
@@ -157,6 +160,38 @@ describe("no open task marker in the leads table", () => {
     expect(within(rowOf("Kumar")).getByText("No task")).toBeInTheDocument();
     expect(within(rowOf("Anitha")).queryByText("No task")).not.toBeInTheDocument();
     expect(within(rowOf("Ravi")).queryByText("No task")).not.toBeInTheDocument();
+  });
+});
+
+describe("form answers in the drawer", () => {
+  it("shows the opened lead's form answers between the lead details and the 1-2-3 steps", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, answers: [
+      { name: "budget_range", values: ["70_lakhs"] },
+      { name: "home_loan_needed?", values: ["no"] },
+    ] });
+    await renderPage();
+    const drawer = await openDrawer();
+    const card = within(drawer).getByRole("region", { name: "Form answers" });
+    expect(await within(card).findByText("70 lakhs")).toBeInTheDocument();
+    expect(within(card).getByText("Home loan needed?")).toBeInTheDocument();
+    expect(calls.some((call) => call.method === "GET" && call.url === `/api/leads/${LEAD_1}`)).toBe(true);
+    const details = within(drawer).getByRole("region", { name: "Lead details" });
+    const steps = within(drawer).getByRole("list", { name: "After every call" });
+    expect(details.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("puts Assigned to after the form answers, outside the lead details and before the 1-2-3 steps", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, assignees: [{ userId: "u-1", fullName: "Priya" }], isOwner: true });
+    await renderPage();
+    const drawer = await openDrawer();
+    const assign = await within(drawer).findByRole("combobox", { name: "Assigned to" });
+    const details = within(drawer).getByRole("region", { name: "Lead details" });
+    const card = within(drawer).getByRole("region", { name: "Form answers" });
+    const steps = within(drawer).getByRole("list", { name: "After every call" });
+    expect(details).not.toContainElement(assign);
+    expect(card.compareDocumentPosition(assign) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(assign.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

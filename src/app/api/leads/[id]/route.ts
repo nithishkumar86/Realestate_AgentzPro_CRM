@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createErrorResponse, createSuccessResponse, parseJsonBody } from "@/app/api/meta/_lib/route-utils";
 import { LEAD_LABELS, LEAD_STATUSES } from "@/features/leads/lead-options";
 import { AppError } from "@/lib/server/app-error";
-import { deleteLead, updateLeadTriage } from "@/lib/server/lead-query-service";
+import { deleteLead, getLeadFormAnswers, updateLeadTriage } from "@/lib/server/lead-query-service";
 import { resolveTenantRequestContext } from "@/lib/server/tenant-context";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13,6 +13,18 @@ const bodySchema = z
   .refine((value) => (value.status !== undefined) !== (value.label !== undefined), {
     message: "Provide exactly one of status or label.",
   });
+
+// Read-only: the lead's Meta form answers (minus name/email/phone), for the lead drawer.
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    if (!UUID_PATTERN.test(id)) throw new AppError("A valid lead id is required.", { status: 400, code: "INVALID_LEAD_ID" });
+    const context = await resolveTenantRequestContext();
+    return createSuccessResponse(await getLeadFormAnswers(context, id));
+  } catch (error) {
+    return createErrorResponse(error, request);
+  }
+}
 
 // This route is the only place a lead's status/label may be written — it
 // persists straight to lead_data, tenant-scoped. It must never be driven by

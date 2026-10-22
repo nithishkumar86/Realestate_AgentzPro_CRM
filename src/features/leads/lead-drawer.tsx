@@ -9,6 +9,7 @@ import {
 import { LeadRequestError, describeRepeat, fetchOpenTask, formatActivityTime, formatTaskDue, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
 import { TIME_PATTERN, defaultDueChoice, nowInZone, presetDueDate, zonedDateTime } from "@/features/leads/task-schedule";
 import { LeadTimeline, type LeadTimelineHandle } from "@/features/leads/lead-timeline";
+import { LeadFormAnswers } from "@/features/leads/lead-form-answers";
 import { RowDropdown } from "@/features/leads/row-dropdown";
 import { OptionPicker, type PickerOption } from "@/features/leads/option-picker";
 import { readError, type AssigneeOption } from "@/features/leads/use-lead-filters";
@@ -275,12 +276,14 @@ export function LeadDrawer({ lead, timezone, assignees = [], isOwner = false, on
             <FactTile icon={Mail} label="Email" wide>{lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}</FactTile>
             <FactTile icon={Megaphone} label="Ad" wide>{lead.adName}</FactTile>
           </dl>
-          {onAssigneeChange
-            ? (isOwner
-              ? <AssigneeCard lead={lead} assignees={assignees} onChanged={(assignedUserId, assigneeName) => { onAssigneeChange(lead.id, assignedUserId, assigneeName); refreshTimeline(); }} />
-              : <AssigneeReadOnly lead={lead} />)
-            : null}
         </section>
+        <LeadFormAnswers leadId={lead.id} />
+        {/* Who owns the lead comes after what the lead asked for: the telecaller reads the answers before every call. */}
+        {onAssigneeChange
+          ? (isOwner
+            ? <AssigneeCard lead={lead} assignees={assignees} onChanged={(assignedUserId, assigneeName) => { onAssigneeChange(lead.id, assignedUserId, assigneeName); refreshTimeline(); }} />
+            : <AssigneeReadOnly lead={lead} />)
+          : null}
 
         <ol className="mvp-flow" aria-label="After every call">
           <StepItem number={1} done={shown.status} current={currentStep === "status"}>

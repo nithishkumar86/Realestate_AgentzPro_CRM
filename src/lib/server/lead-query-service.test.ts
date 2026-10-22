@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteLead, getLeadFilterOptions, queryLeads, updateLeadTriage } from "@/lib/server/lead-query-service";
+import { deleteLead, getLeadFilterOptions, getLeadFormAnswers, queryLeads, updateLeadTriage } from "@/lib/server/lead-query-service";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
 vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: () => ({ from: mocks.from, rpc: mocks.rpc }) }));
@@ -84,6 +84,56 @@ describe("deleteLead", () => {
     const leads = builder({ data: null, error: { code: "23503", message: "violates foreign key constraint" } });
     mocks.from.mockReturnValue(leads);
     await expect(deleteLead(context, "lead-1")).rejects.toMatchObject({ code: "LEAD_DELETE_BLOCKED", status: 409 });
+  });
+});
+
+describe("getLeadFormAnswers", () => {
+  it("reads only field_data of the tenant-scoped lead and keeps the form's order without name, email and phone", async () => {
+    const leads = builder({ data: { field_data: [
+      { name: "full_name", values: ["Kumar"] },
+      { name: "budget_range", values: ["70_lakhs"] },
+      { name: "email", values: ["kumar@example.com"] },
+      { name: "phone_number", values: ["+919999999999"] },
+      { name: "home_loan_needed?", values: ["no"] },
+      { name: "first_name", values: ["K"] },
+      { name: "preferred_areas", values: ["Anna Nagar", "  ", "Velachery"] },
+    ] }, error: null });
+    mocks.from.mockReturnValue(leads);
+    const result = await getLeadFormAnswers(context, "lead-1");
+    expect(mocks.from).toHaveBeenCalledWith("lead_data");
+    expect(leads.select).toHaveBeenCalledWith("field_data");
+    expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(leads.eq).toHaveBeenCalledWith("id", "lead-1");
+    expect(result).toEqual({ answers: [
+      { name: "budget_range", values: ["70_lakhs"] },
+      { name: "home_loan_needed?", values: ["no"] },
+      { name: "preferred_areas", values: ["Anna Nagar", "Velachery"] },
+    ] });
+  });
+
+  it("skips unanswered and malformed entries instead of failing", async () => {
+    const leads = builder({ data: { field_data: [
+      { name: "message", values: [""] },
+      { name: "city" },
+      { values: ["orphan"] },
+      null,
+      "garbage",
+      { name: "site_visit", values: [3, " this_weekend "] },
+    ] }, error: null });
+    mocks.from.mockReturnValue(leads);
+    expect(await getLeadFormAnswers(context, "lead-1")).toEqual({ answers: [{ name: "site_visit", values: ["this_weekend"] }] });
+  });
+
+  it("returns no answers when field_data is not an array", async () => {
+    mocks.from.mockReturnValue(builder({ data: { field_data: null }, error: null }));
+    expect(await getLeadFormAnswers(context, "lead-1")).toEqual({ answers: [] });
+  });
+
+  it("throws LEAD_NOT_FOUND for a lead outside this tenant, and LEAD_ANSWERS_FAILED on a database error", async () => {
+    mocks.from.mockReturnValue(builder({ data: null, error: null }));
+    await expect(getLeadFormAnswers(context, "other-tenant-lead")).rejects.toMatchObject({ code: "LEAD_NOT_FOUND", status: 404 });
+    mocks.from.mockReturnValue(builder({ data: null, error: { code: "57014", message: "timeout" } }));
+    await expect(getLeadFormAnswers(context, "lead-1")).rejects.toMatchObject({ code: "LEAD_ANSWERS_FAILED", status: 500 });
   });
 });
 
