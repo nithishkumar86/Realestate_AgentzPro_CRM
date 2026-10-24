@@ -34,6 +34,24 @@ export class LeadRecoveryService {
     await Promise.all(events.map((event) => this.dispatch(event)));
   }
 
+  /**
+   * Sends leads that stopped only because the Page's Facebook authorization failed back into the normal
+   * retrieval pipeline once these Pages are reconnected. The first lead to hit a dead token is the one that
+   * discovers it, so it is dead-lettered rather than held as pending_reconnect.
+   */
+  public async releaseReauthorizationDeadLetters(tenantId: string, facebookPageIds: string[]): Promise<void> {
+    const { data, error } = await getSupabaseAdminClient().rpc("release_reauthorization_dead_letter_meta_events", {
+      p_tenant_id: tenantId,
+      p_facebook_page_ids: facebookPageIds,
+    });
+    if (error) {
+      throw new Error("Leads stopped by a Facebook authorization failure could not be released.");
+    }
+
+    const events = (data ?? []) as RecoveryEvent[];
+    await Promise.all(events.map((event) => this.dispatch(event)));
+  }
+
   private async dispatch(event: RecoveryEvent): Promise<void> {
     const eventId = event.id;
     try {

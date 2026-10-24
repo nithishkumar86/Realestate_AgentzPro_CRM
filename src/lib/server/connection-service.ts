@@ -234,6 +234,13 @@ export class ConnectionService {
     } catch {
       console.error(JSON.stringify({ operation: "lead_reconnect_backfill", code: "BACKFILL_RELEASE_FAILED" }));
     }
+    // Separate from the release above so neither failure can stop the other. Unlike held leads, these
+    // have no recovery-worker fallback, so a failure is logged with its own code.
+    try {
+      await new LeadRecoveryService().releaseReauthorizationDeadLetters(tenantId, selectedPages.map((page) => page.facebookPageId));
+    } catch {
+      console.error(JSON.stringify({ operation: "lead_reconnect_backfill", code: "REAUTHORIZATION_DEAD_LETTER_RELEASE_FAILED" }));
+    }
 
     return this.getOverview();
   }
