@@ -13,6 +13,7 @@ const { BillingPageClient } = await import("@/features/billing/billing-page-clie
 
 function overview(razorpayStatus: "active" | "halted" | "cancelled", canSubscribe: boolean): BillingOverview {
   return {
+    tenantId: "tenant-1",
     companyName: "QA Test Co",
     isOwner: true,
     hasCrmAccess: true,
