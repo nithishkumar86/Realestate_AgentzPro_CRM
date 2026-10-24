@@ -63,7 +63,7 @@ vi.mock("@/lib/server/env", () => ({
   getRazorpayEnv: () => ({ RAZORPAY_KEY_ID: "rzp_test_key", RAZORPAY_KEY_SECRET: "s", RAZORPAY_WEBHOOK_SECRET: "w" }),
 }));
 
-const { startCheckout, cancelAtPeriodEnd } = await import("@/lib/server/billing-service");
+const { startCheckout, cancelAtPeriodEnd, getBillingOverview } = await import("@/lib/server/billing-service");
 
 const OWNER: BillingAccess = {
   userId: "owner-1",
@@ -182,6 +182,43 @@ describe("startCheckout", () => {
     expect(createSubscription).not.toHaveBeenCalled();
   });
 
+  it("retires a halted subscription before starting a new one, so reviving it later cannot double-charge", async () => {
+    existingSubscriptions = [{ billing_subscription_id: "bs-old", razorpay_subscription_id: "sub_HALTED", razorpay_status: "halted" }];
+    cancelSubscription.mockResolvedValueOnce({ id: "sub_HALTED", status: "cancelled" });
+
+    await startCheckout(OWNER, { planCode: "pro_monthly", seats: 3 });
+
+    const lookup = calls.find((call) => call.table === "billing_subscriptions" && call.operation === "select");
+    expect(lookup?.filters.razorpay_status).toEqual(["created", "halted", "authenticated", "active", "pending"]);
+    expect(cancelSubscription).toHaveBeenCalledWith("sub_HALTED", { atCycleEnd: false });
+    expect(calls).toContainEqual(
+      expect.objectContaining({ table: "billing_subscriptions", operation: "update", values: { razorpay_status: "cancelled" } }),
+    );
+    expect(createSubscription).toHaveBeenCalled();
+  });
+
+  it("still opens checkout when Razorpay refuses to cancel a halted subscription, and logs the leftover", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    existingSubscriptions = [{ billing_subscription_id: "bs-old", razorpay_subscription_id: "sub_HALTED", razorpay_status: "halted" }];
+    cancelSubscription.mockRejectedValueOnce(new Error("cancel refused"));
+    fetchSubscription.mockResolvedValueOnce({ id: "sub_HALTED", status: "halted" });
+
+    await startCheckout(OWNER, { planCode: "pro_monthly", seats: 3 });
+
+    expect(createSubscription).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("HALTED_SUBSCRIPTION_NOT_RETIRED"));
+    warn.mockRestore();
+  });
+
+  it("does not open a second checkout when the halted subscription was just revived", async () => {
+    existingSubscriptions = [{ billing_subscription_id: "bs-old", razorpay_subscription_id: "sub_HALTED", razorpay_status: "halted" }];
+    cancelSubscription.mockRejectedValueOnce(new Error("cancel refused"));
+    fetchSubscription.mockResolvedValueOnce({ id: "sub_HALTED", status: "active" });
+
+    await expect(startCheckout(OWNER, { planCode: "pro_monthly", seats: 3 })).rejects.toMatchObject({ code: "PREVIOUS_CHECKOUT_PENDING" });
+    expect(createSubscription).not.toHaveBeenCalled();
+  });
+
   it("cancels the new Razorpay subscription when it cannot be recorded, so it can never be paid unmapped", async () => {
     answer = (call) => {
       if (call.table === "billing_plans") return { data: PLAN };
@@ -252,5 +289,67 @@ describe("cancelAtPeriodEnd", () => {
 
   it("refuses an employee", async () => {
     await expect(cancelAtPeriodEnd({ ...OWNER, membershipRole: "employee" })).rejects.toMatchObject({ code: "BILLING_OWNER_REQUIRED" });
+  });
+});
+
+describe("getBillingOverview: when the owner may pay again", () => {
+  const FUTURE = new Date(Date.now() + 10 * 86_400_000).toISOString();
+  const PAST = new Date(Date.now() - 86_400_000).toISOString();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    calls.length = 0;
+    rpc.mockResolvedValue(usage(1));
+  });
+
+  function withSubscription(razorpayStatus: string | null) {
+    answer = (call) => {
+      if (call.table === "tenants_subscriptions") return { data: { active_billing_subscription_id: razorpayStatus ? "bs-1" : null } };
+      if (call.table === "billing_subscriptions") {
+        return {
+          data: {
+            billing_subscription_id: "bs-1",
+            razorpay_subscription_id: "sub_X",
+            razorpay_status: razorpayStatus,
+            seat_quantity: 1,
+            current_period_end: FUTURE,
+            cancel_at_period_end: false,
+            billing_plans: { plan_name: "Pro Monthly", billing_period: "monthly", price_per_seat_paise: 49900 },
+          },
+        };
+      }
+      return { data: [] };
+    };
+  }
+
+  it.each(["cancelled", "halted"])("hides Pay while the paid month is still running after autopay stopped (%s)", async (status) => {
+    withSubscription(status);
+    const overview = await getBillingOverview({ ...OWNER, subscriptionStatus: "active", currentPeriodEndsAt: FUTURE });
+    expect(overview.canSubscribe).toBe(false);
+    expect(overview.currentPlan?.razorpayStatus).toBe(status);
+  });
+
+  it("offers Pay again once the paid month has ended and autopay is cancelled", async () => {
+    withSubscription("cancelled");
+    const overview = await getBillingOverview({ ...OWNER, subscriptionStatus: "blocked", currentPeriodEndsAt: PAST, hasCrmAccess: false });
+    expect(overview.canSubscribe).toBe(true);
+  });
+
+  it("offers Pay again when the period ended but the hourly status job has not run yet", async () => {
+    withSubscription("cancelled");
+    const overview = await getBillingOverview({ ...OWNER, subscriptionStatus: "active", currentPeriodEndsAt: PAST, hasCrmAccess: false });
+    expect(overview.canSubscribe).toBe(true);
+  });
+
+  it("offers Pay during the free trial", async () => {
+    withSubscription(null);
+    const overview = await getBillingOverview(OWNER);
+    expect(overview.canSubscribe).toBe(true);
+  });
+
+  it("does not offer Pay while autopay is active", async () => {
+    withSubscription("active");
+    const overview = await getBillingOverview({ ...OWNER, subscriptionStatus: "active", currentPeriodEndsAt: FUTURE });
+    expect(overview.canSubscribe).toBe(false);
   });
 });

@@ -3,11 +3,12 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { isAppError } from "@/lib/server/app-error";
-import { getRazorpayClient, unixSecondsToIso } from "@/lib/server/razorpay-client";
+import { getRazorpayClient, unixSecondsToIso, type RazorpaySubscription } from "@/lib/server/razorpay-client";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 /**
- * Handles a signature-verified Razorpay webhook. We subscribe to `payment.captured` only.
+ * Handles a signature-verified Razorpay webhook. We subscribe to `payment.captured`,
+ * `subscription.halted` and `subscription.cancelled`.
  *
  *   1. record the event once (billing_webhook_events.razorpay_event_id is unique) — a redelivery of an
  *      event we already finished is acknowledged without doing anything
@@ -16,6 +17,10 @@ import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
  *      alone carries no tenant, plan, seats or period; the API lookup is also a second, independent
  *      confirmation that the payment is real
  *   4. apply_subscription_payment(): receipt + subscription state + tenant access in one transaction
+ *
+ * `subscription.halted` (charge retries exhausted) and `subscription.cancelled` (mandate ended, by us
+ * or by the customer) only record that autopay has stopped, in billing_subscriptions.razorpay_status.
+ * They never change access: the paid period still runs to current_period_ends_at.
  *
  * Returned HTTP status is what Razorpay sees. 200 = done, do not resend (also for events we will never
  * be able to process — resending cannot fix them). 500 = something that may work later (Razorpay API,
@@ -34,11 +39,18 @@ const paymentEntitySchema = z.object({
   created_at: z.number().int(),
 });
 
+const subscriptionEntitySchema = z.object({
+  id: z.string().regex(/^sub_[A-Za-z0-9]+$/),
+});
+
+const AUTOPAY_STOPPED_EVENTS: ReadonlySet<string> = new Set(["subscription.halted", "subscription.cancelled"]);
+
 const webhookSchema = z.object({
   event: z.string().min(1),
   payload: z
     .object({
       payment: z.object({ entity: z.unknown() }).optional(),
+      subscription: z.object({ entity: z.unknown() }).optional(),
     })
     .passthrough(),
 });
@@ -108,7 +120,9 @@ export async function handleRazorpayWebhook(rawBody: string, suppliedEventId: st
     // write below is idempotent.
   }
 
-  const result = await processEvent(envelope.data.event, payment.success ? payment.data : null, payment.success);
+  const result = AUTOPAY_STOPPED_EVENTS.has(envelope.data.event)
+    ? await processAutopayStoppedEvent(envelope.data.payload.subscription?.entity)
+    : await processEvent(envelope.data.event, payment.success ? payment.data : null, payment.success);
   await markEvent(eventId, result.processingStatus, result.reason);
   return result;
 }
@@ -204,6 +218,52 @@ async function processEvent(
     });
     return { httpStatus: 500, processingStatus: "failed", reason: "RAZORPAY_LOOKUP_FAILED" };
   }
+}
+
+/**
+ * Stores Razorpay's CURRENT status for one of our subscriptions, re-read from the API rather than taken
+ * from the payload: deliveries can arrive out of order (a late `halted` after a payment already revived
+ * the subscription), and the API is the source of truth.
+ */
+async function processAutopayStoppedEvent(entity: unknown): Promise<WebhookResult & { processingStatus: ProcessingStatus }> {
+  const parsed = subscriptionEntitySchema.safeParse(entity);
+  if (!parsed.success) {
+    log("SUBSCRIPTION_ENTITY_UNEXPECTED_SHAPE");
+    return { httpStatus: 200, processingStatus: "failed", reason: "SUBSCRIPTION_ENTITY_UNEXPECTED_SHAPE" };
+  }
+  const subscriptionId = parsed.data.id;
+
+  let subscription: RazorpaySubscription;
+  try {
+    subscription = await getRazorpayClient().fetchSubscription(subscriptionId);
+  } catch (error) {
+    if (isAppError(error) && error.code === "RAZORPAY_UNEXPECTED_RESPONSE") {
+      log("RAZORPAY_UNEXPECTED_RESPONSE", { subscriptionId, ...(error.details ?? {}) });
+      return { httpStatus: 200, processingStatus: "failed", reason: "RAZORPAY_UNEXPECTED_RESPONSE" };
+    }
+    log("RAZORPAY_LOOKUP_FAILED", {
+      subscriptionId,
+      ...(isAppError(error) ? { errorCode: error.code, ...(error.details ?? {}) } : { errorMessage: String(error) }),
+    });
+    return { httpStatus: 500, processingStatus: "failed", reason: "RAZORPAY_LOOKUP_FAILED" };
+  }
+
+  const { data, error } = await getSupabaseAdminClient()
+    .from("billing_subscriptions")
+    .update({ razorpay_status: subscription.status })
+    .eq("razorpay_subscription_id", subscriptionId)
+    .select("billing_subscription_id");
+
+  if (error) {
+    log("SUBSCRIPTION_STATUS_WRITE_FAILED", { subscriptionId, dbCode: error.code });
+    return { httpStatus: 500, processingStatus: "failed", reason: "SUBSCRIPTION_STATUS_WRITE_FAILED" };
+  }
+  if (!data || data.length === 0) {
+    // Not started from our app (e.g. another integration on the same Razorpay account).
+    log("SUBSCRIPTION_UNKNOWN", { subscriptionId });
+    return { httpStatus: 200, processingStatus: "ignored", reason: "SUBSCRIPTION_UNKNOWN" };
+  }
+  return { httpStatus: 200, processingStatus: "processed", reason: `RAZORPAY_STATUS_${subscription.status.toUpperCase()}` };
 }
 
 async function markEvent(eventId: string, status: ProcessingStatus, reason: string | undefined): Promise<void> {

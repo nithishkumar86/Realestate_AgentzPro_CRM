@@ -4,7 +4,7 @@ import { verifyRazorpayWebhookSignature } from "@/lib/server/webhook-security";
 export const runtime = "nodejs";
 
 /**
- * Razorpay webhook (Dashboard: active event `payment.captured` only).
+ * Razorpay webhook (Dashboard: active events `payment.captured`, `subscription.halted`, `subscription.cancelled`).
  *
  * The raw bytes are read BEFORE any parsing: the signature is an HMAC of exactly those bytes, and a
  * parsed-then-restringified body would never match.
