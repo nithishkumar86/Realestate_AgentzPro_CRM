@@ -52,6 +52,29 @@ describe("classifyLead", () => {
     await expect(classifyLead(input)).rejects.toMatchObject({ retryable: true, code: "AI_RESPONSE_NOT_JSON" });
   });
 
+  it.each([
+    ["a lowercase label", { label: "hot", confidence: 0.8, reason: "x" }, { label: "Hot", confidence: 0.8 }],
+    ["an upper-case, padded label", { label: " WARM ", confidence: 0.5, reason: "x" }, { label: "Warm", confidence: 0.5 }],
+    ["a confidence sent as a string", { label: "Cold", confidence: "0.7", reason: "x" }, { label: "Cold", confidence: 0.7 }],
+  ])("accepts %s", async (_case, reply, expected) => {
+    fetchMock.mockResolvedValue(respondWithContent(JSON.stringify(reply)));
+    await expect(classifyLead(input)).resolves.toMatchObject(expected);
+  });
+
+  it("extracts the JSON object when the model adds text around it", async () => {
+    fetchMock.mockResolvedValue(respondWithContent('Here is the result: {"label": "Hot", "confidence": 0.9, "reason": "Ready"} Hope this helps.'));
+    await expect(classifyLead(input)).resolves.toEqual({ label: "Hot", confidence: 0.9, reason: "Ready" });
+  });
+
+  it.each([
+    ["a non-numeric confidence string", { label: "Hot", confidence: "high", reason: "x" }],
+    ["an empty confidence string", { label: "Hot", confidence: "", reason: "x" }],
+    ["a label outside Hot/Warm/Cold", { label: "Not Interested", confidence: 0.9, reason: "x" }],
+  ])("still rejects %s", async (_case, reply) => {
+    fetchMock.mockResolvedValue(respondWithContent(JSON.stringify(reply)));
+    await expect(classifyLead(input)).rejects.toMatchObject({ retryable: true, code: "AI_RESPONSE_SCHEMA_INVALID" });
+  });
+
   it("throws a retryable error when the JSON does not match the expected schema (belt-and-suspenders against a guardrail misconfiguration)", async () => {
     fetchMock.mockImplementation(() => respondWithContent(JSON.stringify({ label: "Very Hot", confidence: 2, reason: "x" })));
     const error = await classifyLead(input).catch((caught: unknown) => caught);

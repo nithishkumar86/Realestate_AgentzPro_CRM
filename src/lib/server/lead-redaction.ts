@@ -14,27 +14,69 @@ export const NAME_FIELD_KEYS = new Set(["full_name", "first_name", "last_name"])
 export const EMAIL_FIELD_KEYS = new Set(["email"]);
 export const PHONE_FIELD_KEYS = new Set(["phone_number"]);
 
+// Bounds on what one lead can send to the LLM, applied only AFTER redaction
+// (so a cut can never split a name or phone number out of the PII scan).
+// Real Meta forms sit far below these; they exist so one oversized lead
+// cannot push a request past the model's context window and fail forever.
+const MAX_FIELDS = 100;
+const MAX_VALUES_PER_FIELD = 20;
+const MAX_NAME_LENGTH = 200;
+const MAX_VALUE_LENGTH = 1_000;
+
+/**
+ * Turns a lead's stored field_data into clean {name, values} entries,
+ * whatever shape it arrived in. field_data is Meta's raw payload stored
+ * as-is, and real leads carry entries that break the documented shape —
+ * e.g. Meta's own `inbox_url` field arrives as {name} with no `values` at
+ * all. Any entry without a usable name or a non-empty answer is skipped;
+ * a lone string or number answer is accepted as a one-item list. Never
+ * throws, so no lead's data can stop it from being classified.
+ */
+export function normalizeLeadFields(fieldData: unknown): LeadField[] {
+  if (!Array.isArray(fieldData)) return [];
+  const fields: LeadField[] = [];
+  for (const field of fieldData) {
+    if (!field || typeof field !== "object") continue;
+    const { name, values } = field as { name?: unknown; values?: unknown };
+    if (typeof name !== "string" || !name.trim()) continue;
+    const answered = (Array.isArray(values) ? values : [values]).flatMap((value) => {
+      const text = typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : "";
+      return text.trim() ? [text.trim()] : [];
+    });
+    if (answered.length) fields.push({ name: name.trim(), values: answered });
+  }
+  return fields;
+}
+
 /**
  * Replaces only the name/email/phone values before a lead's answers are
  * sent to the LLM. Every other field's key and value is passed through
- * completely unchanged — no dropping, no truncation, no scrubbing beyond
- * the literal PII values themselves, since the classifier needs the full
- * text of every other answer to do its job.
+ * unchanged apart from the size bounds above — no scrubbing beyond the
+ * literal PII values themselves, since the classifier needs the full text
+ * of every other answer to do its job.
  *
  * PII can also leak into an unrelated free-text answer (a lead typing their
  * own name or number into a "message" field), so every field is also
  * scanned for the PII values collected from the dedicated contact fields
  * and those occurrences are replaced too. Nothing else in that text moves.
+ *
+ * Accepts the raw stored field_data (any shape) and normalizes it first.
  */
-export function redactLeadFieldsForAi(fieldData: LeadField[]): LeadField[] {
-  const piiEntries = collectPiiEntries(fieldData);
+export function redactLeadFieldsForAi(fieldData: unknown): LeadField[] {
+  const fields = normalizeLeadFields(fieldData);
+  const piiEntries = collectPiiEntries(fields);
 
-  return fieldData.map((field) => {
+  const redacted = fields.map((field) => {
     if (NAME_FIELD_KEYS.has(field.name)) return { name: field.name, values: field.values.map(() => "[NAME]") };
     if (EMAIL_FIELD_KEYS.has(field.name)) return { name: field.name, values: field.values.map(() => "[EMAIL]") };
     if (PHONE_FIELD_KEYS.has(field.name)) return { name: field.name, values: field.values.map(() => "[PHONE]") };
     return { name: field.name, values: field.values.map((value) => scrubPii(value, piiEntries)) };
   });
+
+  return redacted.slice(0, MAX_FIELDS).map((field) => ({
+    name: field.name.slice(0, MAX_NAME_LENGTH),
+    values: field.values.slice(0, MAX_VALUES_PER_FIELD).map((value) => value.slice(0, MAX_VALUE_LENGTH)),
+  }));
 }
 
 type PiiEntry = { pattern: RegExp; placeholder: string };

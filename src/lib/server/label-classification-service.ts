@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
-import { redactLeadFieldsForAi, type LeadField } from "@/lib/server/lead-redaction";
+import { redactLeadFieldsForAi } from "@/lib/server/lead-redaction";
 import { AiClassificationError, classifyLead } from "@/lib/server/label-ai-client";
 
 const RETRY_DELAYS_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 15 * 60_000] as const;
@@ -21,7 +21,8 @@ type ClaimedClassification = {
 type ClassifiableLead = {
   id: string;
   tenant_id: string;
-  field_data: LeadField[];
+  // Meta's raw payload, stored as-is: not guaranteed to match LeadField (see normalizeLeadFields).
+  field_data: unknown;
   ad_name: string | null;
   status: string;
 };
@@ -87,24 +88,35 @@ export class LabelClassificationService {
     return data as ClassifiableLead;
   }
 
+  /**
+   * Never throws: if even the retry can't be recorded, the failure is logged
+   * and the sweep moves on to other tenants' leads. This lead's claim lease
+   * then expires and recover_label_classifications re-queues it, so one
+   * lead's bad luck can never stall labelling for every other company.
+   */
   private async recordFailure(claimed: ClaimedClassification, error: unknown): Promise<void> {
     const outcome = classifyFailure(error);
-    const nextRetryAt = new Date(Date.now() + calculateClassificationRetryDelayMs(claimed.retry_count)).toISOString();
-    const { error: persistenceError } = await getSupabaseAdminClient().rpc("schedule_label_classification_retry", {
-      p_lead_id: claimed.lead_id,
-      p_tenant_id: claimed.tenant_id,
-      p_claim_token: claimed.claim_token,
-      p_status: "retry_scheduled",
-      p_next_retry_at: nextRetryAt,
-      p_error_code: outcome.code,
-      p_error_message: outcome.message,
-    });
-    if (persistenceError) throw new Error("Label classification failure could not be recorded.");
+    logWorkerIssue("LEAD_CLASSIFICATION_FAILED", { error_code: outcome.code, lead_id: claimed.lead_id, tenant_id: claimed.tenant_id });
+    try {
+      const nextRetryAt = new Date(Date.now() + calculateClassificationRetryDelayMs(claimed.retry_count)).toISOString();
+      const { error: persistenceError } = await getSupabaseAdminClient().rpc("schedule_label_classification_retry", {
+        p_lead_id: claimed.lead_id,
+        p_tenant_id: claimed.tenant_id,
+        p_claim_token: claimed.claim_token,
+        p_status: "retry_scheduled",
+        p_next_retry_at: nextRetryAt,
+        p_error_code: outcome.code,
+        p_error_message: outcome.message,
+      });
+      if (persistenceError) logWorkerIssue("RETRY_RECORD_FAILED", { lead_id: claimed.lead_id, tenant_id: claimed.tenant_id });
+    } catch {
+      logWorkerIssue("RETRY_RECORD_FAILED", { lead_id: claimed.lead_id, tenant_id: claimed.tenant_id });
+    }
   }
 }
 
-function logWorkerIssue(code: string): void {
-  console.error(JSON.stringify({ operation: "label_classification_worker", code }));
+function logWorkerIssue(code: string, details: Record<string, string> = {}): void {
+  console.error(JSON.stringify({ operation: "label_classification_worker", code, ...details }));
 }
 
 function classifyFailure(error: unknown): { code: string; message: string } {

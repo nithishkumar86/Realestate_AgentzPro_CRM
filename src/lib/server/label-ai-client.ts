@@ -13,9 +13,19 @@ const REQUEST_TIMEOUT_MS = 20_000;
 
 const LEAD_LABEL_VALUES = ["Hot", "Warm", "Cold"] as const;
 
+// The label and confidence tolerate harmless formatting drift ("hot", " Warm ",
+// "0.8" as a string) — otherwise a model that consistently answers that way
+// would fail every retry of every lead. Anything outside the allowed values
+// is still rejected.
 const classificationResponseSchema = z.object({
-  label: z.enum(LEAD_LABEL_VALUES),
-  confidence: z.number().min(0).max(1),
+  label: z.preprocess(
+    (label) => (typeof label === "string" ? label.trim().charAt(0).toUpperCase() + label.trim().slice(1).toLowerCase() : label),
+    z.enum(LEAD_LABEL_VALUES),
+  ),
+  confidence: z.preprocess(
+    (confidence) => (typeof confidence === "string" && confidence.trim() ? Number(confidence) : confidence),
+    z.number().min(0).max(1),
+  ),
   // Cut rather than rejected: an over-long reason shouldn't fail an otherwise valid label.
   reason: z.string().transform((reason) => reason.slice(0, 200)),
 });
@@ -115,10 +125,8 @@ export async function classifyLead(input: LeadClassificationInput): Promise<Lead
     throw new AiClassificationError("The AI gateway response did not include a message.", { code: "AI_RESPONSE_MALFORMED", retryable: true });
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripCodeFences(content));
-  } catch {
+  const parsed = parseJsonObject(stripCodeFences(content));
+  if (parsed === undefined) {
     throw new AiClassificationError("The AI gateway response was not valid JSON.", { code: "AI_RESPONSE_NOT_JSON", retryable: true });
   }
 
@@ -134,6 +142,22 @@ export async function classifyLead(input: LeadClassificationInput): Promise<Lead
 function stripCodeFences(content: string): string {
   const fenced = content.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   return fenced ? fenced[1] : content;
+}
+
+/** Parses the reply as JSON; failing that, the outermost {...} in it, for a model that adds a sentence around the object. undefined when neither parses. */
+function parseJsonObject(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    const start = content.indexOf("{");
+    const end = content.lastIndexOf("}");
+    if (start === -1 || end <= start) return undefined;
+    try {
+      return JSON.parse(content.slice(start, end + 1));
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 function buildUserPrompt(input: LeadClassificationInput): string {
