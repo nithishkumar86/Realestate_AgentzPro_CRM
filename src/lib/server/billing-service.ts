@@ -293,6 +293,7 @@ export interface BillingPaymentRecord {
 }
 
 export interface BillingOverview {
+  tenantId: string;
   companyName: string;
   isOwner: boolean;
   hasCrmAccess: boolean;
@@ -334,6 +335,7 @@ export async function getBillingOverview(access: BillingAccess): Promise<Billing
     new Date(access.currentPeriodEndsAt).getTime() > Date.now();
 
   return {
+    tenantId: access.tenantId,
     companyName: access.tenantName,
     isOwner,
     hasCrmAccess: access.hasCrmAccess,
