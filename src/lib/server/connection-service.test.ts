@@ -57,6 +57,7 @@ beforeEach(() => {
   vi.spyOn(MetaClient.prototype, "subscribePageToLeadgen").mockResolvedValue();
   vi.spyOn(MetaClient.prototype, "confirmPageLeadgenSubscription").mockResolvedValue();
   vi.spyOn(LeadRecoveryService.prototype, "backfillReconnectedPages").mockResolvedValue();
+  vi.spyOn(LeadRecoveryService.prototype, "releaseReauthorizationDeadLetters").mockResolvedValue();
   vi.spyOn(ConnectionService.prototype, "getOverview").mockResolvedValue({ connectionStatus: "active", pages: [], canManage: true });
 });
 
@@ -184,6 +185,28 @@ describe("connectSelectedPages", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(new ConnectionService().connectSelectedPages("connection-a", ["page-1"])).resolves.toEqual({ connectionStatus: "active", pages: [], canManage: true });
     expect(log).toHaveBeenCalledWith(expect.stringContaining("BACKFILL_RELEASE_FAILED"));
+  });
+
+  it("re-releases leads stopped by the authorization failure only after the Pages are saved", async () => {
+    await new ConnectionService().connectSelectedPages("connection-a", ["page-1"]);
+    const release = vi.mocked(LeadRecoveryService.prototype.releaseReauthorizationDeadLetters);
+    expect(release).toHaveBeenCalledExactlyOnceWith("tenant-a", ["page-1"]);
+    expect(release.mock.invocationCallOrder[0]).toBeGreaterThan(rpc.mock.invocationCallOrder[0]);
+  });
+
+  it("still re-releases stopped leads when releasing held leads fails", async () => {
+    vi.mocked(LeadRecoveryService.prototype.backfillReconnectedPages).mockRejectedValue(new Error("release failed"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await new ConnectionService().connectSelectedPages("connection-a", ["page-1"]);
+    expect(LeadRecoveryService.prototype.releaseReauthorizationDeadLetters).toHaveBeenCalledExactlyOnceWith("tenant-a", ["page-1"]);
+  });
+
+  it("keeps the Pages connected when re-releasing stopped leads fails", async () => {
+    vi.mocked(LeadRecoveryService.prototype.releaseReauthorizationDeadLetters).mockRejectedValue(new Error("release failed"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(new ConnectionService().connectSelectedPages("connection-a", ["page-1"])).resolves.toEqual({ connectionStatus: "active", pages: [], canManage: true });
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("REAUTHORIZATION_DEAD_LETTER_RELEASE_FAILED"));
+    expect(LeadRecoveryService.prototype.backfillReconnectedPages).toHaveBeenCalledExactlyOnceWith("tenant-a", ["page-1"]);
   });
 
   it("refuses to load Pages with an expired user token", async () => {

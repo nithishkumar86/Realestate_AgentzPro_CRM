@@ -112,6 +112,29 @@ describe("lead processing RPC protocol", () => {
       expect(mocks.rpc).toHaveBeenCalledWith("complete_meta_lead_retrieval_event", expect.objectContaining({ p_event_id: "event", p_claim_token: "attempt-b" }));
     });
 
+    it("re-releases leads stopped by an authorization failure when the Page reconnects and processes them normally", async () => {
+      mocks.rpc.mockImplementation(async (name: string) => ({
+        data: name === "release_reauthorization_dead_letter_meta_events" ? [{ id: "event", tenant_id: "tenant", dispatch_generation: "dispatch-released" }]
+          : name === "claim_meta_webhook_notification_event" ? event : true,
+        error: null,
+      }));
+      await new LeadRecoveryService().releaseReauthorizationDeadLetters("tenant", ["page"]);
+      expect(mocks.rpc).toHaveBeenCalledWith("release_reauthorization_dead_letter_meta_events", { p_tenant_id: "tenant", p_facebook_page_ids: ["page"] });
+      expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ webhook_notification_event_id: "event" }, "tenant");
+      expect(mocks.rpc).toHaveBeenCalledWith("mark_meta_webhook_event_dispatched", { p_event_id: "event", p_dispatch_generation: "dispatch-released" });
+
+      vi.spyOn(MetaClient.prototype, "retrieveLead").mockResolvedValue({ id: "lead", form_id: "form", created_time: event.lead_created_time, field_data: [], rawPayload: {} });
+      await new LeadRetrievalService().process(mocks.publish.mock.calls[0][0].webhook_notification_event_id);
+      expect(MetaClient.prototype.retrieveLead).toHaveBeenCalledWith("lead", "token-a");
+      expect(mocks.rpc).toHaveBeenCalledWith("complete_meta_lead_retrieval_event", expect.objectContaining({ p_event_id: "event", p_claim_token: "attempt-b" }));
+    });
+
+    it("reports a failed re-release instead of dispatching anything", async () => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { message: "down" } });
+      await expect(new LeadRecoveryService().releaseReauthorizationDeadLetters("tenant", ["page"])).rejects.toThrow();
+      expect(mocks.publish).not.toHaveBeenCalled();
+    });
+
     it("ignores the same leadgen_id re-delivered during backfill instead of storing or dispatching it twice", async () => {
       // ON CONFLICT (leadgen_id) DO NOTHING returns no row for a lead that is already held or released.
       const events = query(null);

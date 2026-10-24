@@ -2072,6 +2072,8 @@ button.mvp-user-menu__item:focus-visible { background: var(--surface-muted); }
 
 :root[data-theme="dark"] .mvp-sidebar { box-shadow: 1px 0 0 rgba(0, 0, 0, .3), 6px 0 20px rgba(0, 0, 0, .25); }
 .mvp-main { min-width: 0; padding: 32px clamp(20px, 4vw, 52px); }
+/* Facebook token-expired warning above every CRM page. */
+.mvp-reconnect-banner { margin-bottom: 20px; }
 
 .sidebar-collapse-btn {
   position: absolute;
