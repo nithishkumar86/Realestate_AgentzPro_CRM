@@ -2,6 +2,7 @@
 
 import { Check, Loader2, Plug, RefreshCw, Unplug, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { notifyFacebookConnectionChanged } from "@/components/facebook-reconnect-banner";
 import { EmptyState, LoadingState, Notice, PageHeader, StatusBadge, displayValue } from "@/components/ui";
 import { loadFacebookSdk } from "@/features/connection/facebook-sdk";
 import { formatDateTime } from "@/lib/date-utils";
@@ -93,6 +94,7 @@ export function ConnectionPageClient() {
     try {
       setActionState({ action: "select" });
       setOverview(await connectSelectedPages(connectionId, selectedPageIds));
+      notifyFacebookConnectionChanged();
       clearPageSelection();
       setMessage({ tone: "success", text: "Selected Facebook Pages are connected." });
     } catch (error) {
@@ -108,6 +110,7 @@ export function ConnectionPageClient() {
     try {
       setActionState({ action, pageId: page.id });
       setOverview(await disconnectFacebookPage(page.id));
+      notifyFacebookConnectionChanged();
       setMessage({ tone: "success", text: "Facebook Page disconnected locally." });
     } catch (error) {
       setMessage({ tone: "danger", text: getErrorMessage(error, "Facebook Page could not be disconnected.") });
@@ -121,6 +124,7 @@ export function ConnectionPageClient() {
     try {
       setActionState({ action: "disconnect_all" });
       setOverview(await disconnectMetaConnection(activeConnectionId));
+      notifyFacebookConnectionChanged();
       setMessage({ tone: "success", text: "Facebook connection disconnected locally." });
     } catch (error) {
       setMessage({ tone: "danger", text: getErrorMessage(error, "Facebook connection could not be disconnected.") });

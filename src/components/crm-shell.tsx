@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, CalendarCheck, ClipboardList, Link2 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { CompanySwitcher } from "@/components/company-switcher";
+import { FacebookReconnectBanner } from "@/components/facebook-reconnect-banner";
 import { TaskAlertsProvider } from "@/components/task-bell";
 import { SidebarCollapseButton, SidebarExpandButton } from "@/components/sidebar-toggle";
 import { UserMenu } from "@/components/user-menu";
@@ -50,7 +51,10 @@ export function CrmShell({ children, fullName, tenantName }: Readonly<CrmShellPr
         </nav>
         <UserMenu fullName={fullName} tenantName={tenantName} />
       </aside>
-      <main className="mvp-main">{children}</main>
+      <main className="mvp-main">
+        <FacebookReconnectBanner />
+        {children}
+      </main>
     </div>
     </TaskAlertsProvider>
   );
