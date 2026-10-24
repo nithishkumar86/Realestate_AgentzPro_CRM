@@ -219,7 +219,11 @@ export function BillingPageClient({ overview, embedded = false, onChanged }: Rea
   }
 
   const currentPlan = overview.currentPlan;
-  const periodLabel = currentPlan?.cancelAtPeriodEnd ? "Access ends on" : "Renews on";
+  // Autopay has stopped (cancelled here, on the customer's phone, or halted after failed charges).
+  const planEnding =
+    currentPlan !== null &&
+    (currentPlan.cancelAtPeriodEnd || currentPlan.razorpayStatus === "halted" || currentPlan.razorpayStatus === "cancelled");
+  const periodLabel = planEnding ? "Access ends on" : "Renews on";
 
   return (
     <div className={embedded ? "billing-panel" : "auth-card billing-card"}>
@@ -299,7 +303,7 @@ export function BillingPageClient({ overview, embedded = false, onChanged }: Rea
               <h2 id="billing-current-title" className="billing-offer__name">
                 {tierName(currentPlan.planName)}
               </h2>
-              <span className="billing-offer__badge">{currentPlan.cancelAtPeriodEnd ? "Ending" : "Your plan"}</span>
+              <span className="billing-offer__badge">{planEnding ? "Ending" : "Your plan"}</span>
             </div>
             <p className="billing-offer__unit">
               {formatRupees(currentPlan.pricePerSeatPaise)} / seat / {currentPlan.billingPeriod === "yearly" ? "year" : "month"} ·{" "}

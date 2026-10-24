@@ -5,15 +5,23 @@ const insertEvent = vi.fn();
 const selectEvent = vi.fn();
 const updateEvent = vi.fn();
 const rpc = vi.fn();
+const updateSubscription = vi.fn();
 
 vi.mock("@/lib/server/supabase-admin", () => ({
   getSupabaseAdminClient: () => ({
     rpc,
-    from: () => ({
-      insert: insertEvent,
-      select: () => ({ eq: () => ({ maybeSingle: selectEvent }) }),
-      update: (values: unknown) => ({ eq: (column: string, value: unknown) => updateEvent(values, column, value) }),
-    }),
+    from: (table: string) =>
+      table === "billing_subscriptions"
+        ? {
+            update: (values: unknown) => ({
+              eq: (column: string, value: unknown) => ({ select: () => updateSubscription(values, column, value) }),
+            }),
+          }
+        : {
+            insert: insertEvent,
+            select: () => ({ eq: () => ({ maybeSingle: selectEvent }) }),
+            update: (values: unknown) => ({ eq: (column: string, value: unknown) => updateEvent(values, column, value) }),
+          },
   }),
 }));
 
@@ -208,5 +216,110 @@ describe("handleRazorpayWebhook", () => {
     const result = await handleRazorpayWebhook("{not json", "evt_10");
     expect(result).toMatchObject({ httpStatus: 200, reason: "PAYLOAD_UNPARSEABLE" });
     expect(insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+// Shape from razorpay.com/docs/webhooks/subscriptions (subscription.halted / subscription.cancelled samples).
+function autopayStoppedBody(event: string, status: string, entity: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    entity: "event",
+    account_id: "acc_X",
+    event,
+    contains: ["subscription"],
+    payload: {
+      subscription: {
+        entity: { id: "sub_ABC", entity: "subscription", plan_id: "plan_PRO", status, quantity: 3, notes: { tenant_id: TENANT_ID }, ...entity },
+      },
+    },
+    created_at: PERIOD_START + 20,
+  });
+}
+
+describe("handleRazorpayWebhook: autopay stopped (subscription.halted / subscription.cancelled)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    insertEvent.mockResolvedValue({ error: null });
+    updateEvent.mockResolvedValue({ error: null });
+    fetchSubscription.mockResolvedValue({ ...SUBSCRIPTION, status: "cancelled" });
+    updateSubscription.mockResolvedValue({ data: [{ billing_subscription_id: "bs_1" }], error: null });
+  });
+
+  it.each([
+    ["subscription.halted", "halted"],
+    ["subscription.cancelled", "cancelled"],
+  ])("%s records Razorpay's status on our subscription row and never touches access", async (event, status) => {
+    fetchSubscription.mockResolvedValue({ ...SUBSCRIPTION, status });
+
+    const result = await handleRazorpayWebhook(autopayStoppedBody(event, status), "evt_s1");
+
+    expect(result).toMatchObject({ httpStatus: 200, processingStatus: "processed" });
+    expect(fetchSubscription).toHaveBeenCalledWith("sub_ABC");
+    expect(updateSubscription).toHaveBeenCalledTimes(1);
+    expect(updateSubscription).toHaveBeenCalledWith({ razorpay_status: status }, "razorpay_subscription_id", "sub_ABC");
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetchInvoice).not.toHaveBeenCalled();
+    expect(updateEvent).toHaveBeenCalledWith(expect.objectContaining({ processing_status: "processed" }), "razorpay_event_id", "evt_s1");
+  });
+
+  it("writes Razorpay's live status, not the payload's, when a late halted arrives after the subscription was revived", async () => {
+    fetchSubscription.mockResolvedValue({ ...SUBSCRIPTION, status: "active" });
+
+    await handleRazorpayWebhook(autopayStoppedBody("subscription.halted", "halted"), "evt_s2");
+
+    expect(updateSubscription).toHaveBeenCalledWith({ razorpay_status: "active" }, "razorpay_subscription_id", "sub_ABC");
+  });
+
+  it("ignores a subscription that was not started from our app, without asking for a resend", async () => {
+    updateSubscription.mockResolvedValue({ data: [], error: null });
+
+    const result = await handleRazorpayWebhook(autopayStoppedBody("subscription.cancelled", "cancelled"), "evt_s3");
+
+    expect(result).toMatchObject({ httpStatus: 200, processingStatus: "ignored", reason: "SUBSCRIPTION_UNKNOWN" });
+  });
+
+  it("asks Razorpay to redeliver when the Razorpay API is unavailable", async () => {
+    fetchSubscription.mockRejectedValue(new AppError("Razorpay could not be reached.", { status: 502, code: "RAZORPAY_UNAVAILABLE", retryable: true }));
+
+    const result = await handleRazorpayWebhook(autopayStoppedBody("subscription.cancelled", "cancelled"), "evt_s4");
+
+    expect(result).toMatchObject({ httpStatus: 500, processingStatus: "failed", reason: "RAZORPAY_LOOKUP_FAILED" });
+    expect(updateSubscription).not.toHaveBeenCalled();
+  });
+
+  it("does not ask for a resend when Razorpay returns a subscription shape we do not understand", async () => {
+    fetchSubscription.mockRejectedValue(
+      new AppError("Razorpay returned an unexpected response.", { status: 502, code: "RAZORPAY_UNEXPECTED_RESPONSE", retryable: false }),
+    );
+
+    const result = await handleRazorpayWebhook(autopayStoppedBody("subscription.halted", "halted"), "evt_s5");
+
+    expect(result).toMatchObject({ httpStatus: 200, processingStatus: "failed", reason: "RAZORPAY_UNEXPECTED_RESPONSE" });
+    expect(updateSubscription).not.toHaveBeenCalled();
+  });
+
+  it("asks Razorpay to redeliver when the status write fails", async () => {
+    updateSubscription.mockResolvedValue({ data: null, error: { code: "40001" } });
+
+    const result = await handleRazorpayWebhook(autopayStoppedBody("subscription.cancelled", "cancelled"), "evt_s6");
+
+    expect(result).toMatchObject({ httpStatus: 500, processingStatus: "failed", reason: "SUBSCRIPTION_STATUS_WRITE_FAILED" });
+  });
+
+  it("does not ask for a resend when the payload has no usable subscription id", async () => {
+    const result = await handleRazorpayWebhook(autopayStoppedBody("subscription.cancelled", "cancelled", { id: "not-a-sub" }), "evt_s7");
+
+    expect(result).toMatchObject({ httpStatus: 200, processingStatus: "failed", reason: "SUBSCRIPTION_ENTITY_UNEXPECTED_SHAPE" });
+    expect(fetchSubscription).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges a redelivered status event that was already processed without doing anything", async () => {
+    insertEvent.mockResolvedValue({ error: { code: "23505" } });
+    selectEvent.mockResolvedValue({ data: { processing_status: "processed" }, error: null });
+
+    const result = await handleRazorpayWebhook(autopayStoppedBody("subscription.cancelled", "cancelled"), "evt_s1");
+
+    expect(result).toEqual({ httpStatus: 200, processingStatus: "duplicate" });
+    expect(fetchSubscription).not.toHaveBeenCalled();
+    expect(updateSubscription).not.toHaveBeenCalled();
   });
 });

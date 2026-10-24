@@ -73,8 +73,8 @@ async function loadSeatUsage(tenantId: string): Promise<SeatUsageRow> {
  * Starts a checkout for the owner's active tenant. Steps, in order:
  *   1. validate plan + seats (seats can never be fewer than people already in the company)
  *   2. refuse if a live subscription already exists (no double billing)
- *   3. cancel this tenant's abandoned `created` subscriptions, so a late payment on an old checkout
- *      cannot start a second subscription
+ *   3. cancel this tenant's abandoned `created` and stalled `halted` subscriptions, so a late payment on
+ *      an old checkout (or a revived halted one) cannot charge alongside the new subscription
  *   4. create the Razorpay subscription with notes.tenant_id
  *   5. record sub_… -> tenant in billing_subscriptions, and only then hand the id to the browser
  */
@@ -115,7 +115,7 @@ export async function startCheckout(access: BillingAccess, rawInput: unknown): P
     .from("billing_subscriptions")
     .select("billing_subscription_id,razorpay_subscription_id,razorpay_status")
     .eq("tenant_id", access.tenantId)
-    .in("razorpay_status", ["created", ...LIVE_STATUSES]);
+    .in("razorpay_status", ["created", "halted", ...LIVE_STATUSES]);
 
   if (existingError) {
     throw new AppError("Billing details could not be loaded.", { status: 500, code: "BILLING_LOAD_FAILED", retryable: true });
@@ -128,7 +128,7 @@ export async function startCheckout(access: BillingAccess, rawInput: unknown): P
 
   const razorpay = getRazorpayClient();
 
-  for (const abandoned of rows.filter((row) => row.razorpay_status === "created")) {
+  for (const abandoned of rows.filter((row) => row.razorpay_status === "created" || row.razorpay_status === "halted")) {
     await retireAbandonedSubscription(abandoned.billing_subscription_id, abandoned.razorpay_subscription_id);
   }
 
@@ -182,6 +182,12 @@ async function retireAbandonedSubscription(billingSubscriptionId: string, razorp
   }
 
   await db.from("billing_subscriptions").update({ razorpay_status: status }).eq("billing_subscription_id", billingSubscriptionId);
+
+  if (status === "halted") {
+    // Razorpay's docs do not confirm a halted subscription can be cancelled. Refusing the new checkout
+    // here would lock the owner out for good, so it goes ahead and the leftover is logged for follow-up.
+    logBillingEvent("HALTED_SUBSCRIPTION_NOT_RETIRED", { razorpaySubscriptionId });
+  }
 
   if (status === "created" || (LIVE_STATUSES as readonly string[]).includes(status)) {
     // Could not retire it (or it was just paid). Opening a second checkout now risks double billing.
@@ -302,7 +308,7 @@ export interface BillingOverview {
     razorpayStatus: RazorpaySubscriptionStatus;
     cancelAtPeriodEnd: boolean;
   } | null;
-  /** True when the owner may start a new checkout (no live subscription). */
+  /** True when the owner may start a new checkout (no live subscription and no paid period still running). */
   canSubscribe: boolean;
   plans: BillingPlanOption[];
   /** Owner only; empty for employees. */
@@ -320,6 +326,12 @@ export async function getBillingOverview(access: BillingAccess): Promise<Billing
   ]);
 
   const isLive = current !== null && (LIVE_STATUSES as readonly string[]).includes(current.razorpay_status);
+  // Autopay can stop (halted/cancelled) while the paid month is still running; a new checkout waits until
+  // that month ends so the customer never pays twice for the same days.
+  const paidPeriodRunning =
+    access.subscriptionStatus === "active" &&
+    access.currentPeriodEndsAt !== null &&
+    new Date(access.currentPeriodEndsAt).getTime() > Date.now();
 
   return {
     companyName: access.tenantName,
@@ -344,7 +356,7 @@ export async function getBillingOverview(access: BillingAccess): Promise<Billing
             cancelAtPeriodEnd: current.cancel_at_period_end,
           }
         : null,
-    canSubscribe: isOwner && !isLive,
+    canSubscribe: isOwner && !isLive && !paidPeriodRunning,
     plans,
     payments,
   };
