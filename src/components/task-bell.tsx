@@ -28,31 +28,10 @@ export function reminderHeading(item: Pick<TaskNotification, "kind" | "leadName"
   return `Follow up with ${item.leadName ?? "this lead"} ${item.kind === "due_now" ? "now" : "in 15 min"}`;
 }
 
-/**
- * Set on this device when the member turns browser notifications off. The browser keeps its push subscription so
- * turning them back on skips the slow push-service signup; this flag stops the next page load from saving it again.
- */
-const PUSH_OFF_KEY = "agentzpro-push-off";
-function isPushOff(): boolean {
-  try { return localStorage.getItem(PUSH_OFF_KEY) === "1"; } catch { return false; }
-}
-function setPushOff(off: boolean): boolean {
-  try { if (off) localStorage.setItem(PUSH_OFF_KEY, "1"); else localStorage.removeItem(PUSH_OFF_KEY); return true; } catch { return false; }
-}
-/** A subscription made with another VAPID key cannot receive this server's pushes, so it is not reused. */
-function hasKey(subscription: PushSubscription, key: Uint8Array): boolean {
-  const current = subscription.options.applicationServerKey;
-  if (!current) return false;
-  const bytes = new Uint8Array(current);
-  return bytes.length === key.length && bytes.every((value, index) => value === key[index]);
-}
-
 type PushState = "unsupported" | "ask" | "on" | "blocked";
 interface TaskAlerts {
   feed: Feed;
   pushState: PushState;
-  /** The state the switch is moving to while the browser and server catch up; null when idle. */
-  pushPending: "on" | "off" | null;
   enablePush: () => Promise<void>;
   disablePush: () => Promise<void>;
   markRead: (body: { all: true } | { ids: string[] }) => Promise<void>;
@@ -112,83 +91,52 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
 
   // Browser push: offered only where the browser supports it and the member has not decided yet.
   const [pushState, setPushState] = useState<PushState>("unsupported");
-  // Whether this device's subscription is saved for the member signed in now. Turning off waits for it: a hand-over
-  // still running (or failed) would leave the row behind the DELETE, so pushes would keep coming to a switch shown off.
-  const handover = useRef<Promise<boolean>>(Promise.resolve(true));
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) return;
-      // Turned off on this device: the subscription is still in the browser but must not be saved again.
-      const off = isPushOff();
-      setPushState(Notification.permission === "granted" ? (off ? "ask" : "on") : Notification.permission === "denied" ? "blocked" : "ask");
+      setPushState(Notification.permission === "granted" ? "on" : Notification.permission === "denied" ? "blocked" : "ask");
       // Already allowed on this device: hand the existing subscription to whoever is signed in now, so a second
       // member on a shared device gets their own pushes (and the previous member stops getting them).
-      if (Notification.permission === "granted" && !off) {
-        handover.current = navigator.serviceWorker.register("/sw.js").then(() => navigator.serviceWorker.ready)
+      if (Notification.permission === "granted") {
+        void navigator.serviceWorker.register("/sw.js").then(() => navigator.serviceWorker.ready)
           .then((registration) => registration.pushManager.getSubscription())
-          .then(async (subscription) => {
+          .then((subscription) => {
             const json = subscription?.toJSON();
             // Allowed but turned off here (no subscription): offer to enable again instead of claiming it is on.
-            if (!json?.endpoint) { setPushState("ask"); return true; }
-            const response = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
-            return response.ok;
+            if (!json?.endpoint) { setPushState("ask"); return; }
+            return fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
           })
-          .catch(() => false);
+          .catch(() => undefined);
       }
     }, 0);
     return () => clearTimeout(timer);
   }, []);
 
-  // The switch moves at once and stays locked until the work finishes, so a quick second click cannot race the first.
-  const [pushPending, setPushPending] = useState<"on" | "off" | null>(null);
-  const pushBusy = useRef(false);
-
   async function enablePush() {
-    if (pushBusy.current) return;
-    pushBusy.current = true;
-    setPushPending("on");
     try {
       if (await Notification.requestPermission() !== "granted") { setPushState("blocked"); return; }
       const registration = await navigator.serviceWorker.register("/sw.js");
       await navigator.serviceWorker.ready;
-      const key = urlBase64ToBytes(VAPID_PUBLIC_KEY);
-      // Reuse the subscription kept when notifications were turned off: signing up with the push service again is
-      // what made turning on take seconds. Only a device without one (or with an old key) signs up.
-      let subscription = await registration.pushManager.getSubscription();
-      if (subscription && !hasKey(subscription, key)) { await subscription.unsubscribe(); subscription = null; }
-      subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToBytes(VAPID_PUBLIC_KEY) });
       const json = subscription.toJSON();
       const response = await fetch("/api/push/subscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }) });
-      if (response.ok) { setPushOff(false); handover.current = Promise.resolve(true); }
       setPushState(response.ok ? "on" : "ask");
     } catch {
       setPushState("ask");
-    } finally {
-      pushBusy.current = false;
-      setPushPending(null);
     }
   }
 
   async function disablePush() {
-    if (pushBusy.current) return;
-    pushBusy.current = true;
-    setPushPending("off");
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
-        const handedOver = await handover.current;
-        const response = await fetch("/api/push/subscribe", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint }) });
-        // Keep the subscription for a quick turn-on, remembered as off. If it was not saved for this member, the server
-        // did not remove it, or the flag cannot be stored, drop it from the browser as before so no push can arrive.
-        if (!(handedOver && response.ok && setPushOff(true))) await subscription.unsubscribe();
+        await fetch("/api/push/subscribe", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint }) });
+        await subscription.unsubscribe();
       }
       setPushState("ask");
     } catch {
       // Stay "on" so the button does not claim a state change that did not happen.
-    } finally {
-      pushBusy.current = false;
-      setPushPending(null);
     }
   }
 
@@ -207,7 +155,7 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
     void markRead({ ids: [id] });
   }
 
-  return <TaskAlertsContext.Provider value={{ feed, pushState, pushPending, enablePush, disablePush, markRead, clearAll }}>
+  return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead, clearAll }}>
     {children}
     {/* Always mounted so screen readers announce a card the moment it is added. */}
     <div className="mvp-reminder-stack" aria-live="polite">
@@ -253,13 +201,11 @@ export function TaskBell() {
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", onPointer); };
   }, [open]);
   if (!alerts) return null;
-  const { feed, pushState, pushPending, enablePush, disablePush, markRead, clearAll } = alerts;
-  // While turning on or off the switch already shows where it is going.
-  const pushShownOn = pushPending ? pushPending === "on" : pushState === "on";
+  const { feed, pushState, enablePush, disablePush, markRead, clearAll } = alerts;
 
   return <div className="mvp-bell" ref={root}>
     {/* Shown only while browser notifications are off here; it opens this panel, where the switch is. */}
-    {(pushState === "ask" || pushState === "blocked") && pushPending !== "on" ? <button type="button" className="mvp-bell__nudge" onClick={() => setOpen(true)}>Turn on notifications to get task reminders</button> : null}
+    {pushState === "ask" || pushState === "blocked" ? <button type="button" className="mvp-bell__nudge" onClick={() => setOpen(true)}>Turn on notifications to get task reminders</button> : null}
     <button type="button" className="mvp-bell__button" aria-label={`Task alerts, ${feed.unread} unread`} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
       <Bell size={20} aria-hidden="true" />
       {feed.unread > 0 ? <span className="mvp-bell__badge">{feed.unread > 9 ? "9+" : feed.unread}</span> : null}
@@ -276,9 +222,8 @@ export function TaskBell() {
       </div>
       {pushState === "ask" || pushState === "on" ? <div className="mvp-bell__setting">
         <span className="mvp-bell__setting-icon"><BellRing size={16} aria-hidden="true" /></span>
-        <span className="mvp-bell__setting-text"><strong>Browser notifications</strong><small>{pushPending === "on" ? "Turning on…" : pushPending === "off" ? "Turning off…" : pushState === "on" ? "On: alerts reach you even when this tab is in the background." : "Get alerts even when this tab is in the background."}</small></span>
-        <button type="button" role="switch" aria-checked={pushShownOn} aria-label="Browser notifications" className="mvp-bell__switch"
-          disabled={pushPending !== null} aria-busy={pushPending !== null}
+        <span className="mvp-bell__setting-text"><strong>Browser notifications</strong><small>{pushState === "on" ? "On: alerts reach you even when this tab is in the background." : "Get alerts even when this tab is in the background."}</small></span>
+        <button type="button" role="switch" aria-checked={pushState === "on"} aria-label="Browser notifications" className="mvp-bell__switch"
           onClick={() => void (pushState === "on" ? disablePush() : enablePush())}><span /></button>
       </div> : null}
       {pushState === "blocked" ? <p className="mvp-bell__hint"><BellOff size={14} aria-hidden="true" /> Notifications are blocked in this browser. Allow them in the site settings to get alerts in the background.</p> : null}
