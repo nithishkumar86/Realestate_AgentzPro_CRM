@@ -66,6 +66,17 @@ export const TIMELINE_FILTER_TYPES: Record<Exclude<TimelineFilter, "all">, reado
   tasks: ["task_created", "task_rescheduled", "task_completed", "task_cancelled"],
 };
 
+// Where a lead came from. Keep in sync with the `lead_data.lead_source` check constraint in
+// supabase/migrations/20261026170000_lead_source_telecaller_leads.sql.
+export const LEAD_SOURCES = ["facebook", "telecaller"] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = { facebook: "Facebook", telecaller: "Telecaller" };
+
+// Call-in lead form limits; the create_telecaller_lead RPC enforces the same.
+export const CALL_IN_TEXT_MAX_LENGTH = 200;
+export const CALL_IN_PHONE_MAX_LENGTH = 30;
+export const CALL_IN_PHONE_MIN_DIGITS = 10;
+
 // The Leads page "Assignee" filter: one of these two shortcuts, or a member's user id.
 export const ASSIGNEE_FILTER_SHORTCUTS = ["me", "unassigned"] as const;
 

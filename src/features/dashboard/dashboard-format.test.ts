@@ -94,5 +94,11 @@ describe("display helpers", () => {
     expect(adLabel({ adId: "6302-aruvi", name: null })).toBe("Name pending (ruvi)");
     expect(adLabel({ adId: "other", name: "Other" })).toBe("Other");
     expect(adLabel({ adId: "unattributed", name: "Unattributed" })).toBe("Unattributed");
+    expect(adLabel({ adId: "telecaller", name: "Telecaller" })).toBe("Telecaller");
+  });
+
+  it("colours the Telecaller row grey like the other catch-all rows", () => {
+    const bars = adBarData([{ adId: "6301-a", name: "A", count: 5 }, { adId: "telecaller", name: "Telecaller", count: 2 }]);
+    expect(bars.map((bar) => bar.color)).toEqual([CHART_COLORS[0], "var(--chart-muted)"]);
   });
 });

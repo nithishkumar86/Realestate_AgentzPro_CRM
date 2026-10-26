@@ -70,6 +70,8 @@ interface ApiState {
   failNote?: boolean;
   /** The opened lead's Meta form answers (GET /api/leads/:id). */
   answers?: Array<{ name: string; values: string[] }>;
+  /** POST /api/leads/telecaller answers 409 "already exists". */
+  callInDuplicate?: boolean;
 }
 
 /** One router for every endpoint the leads page and the drawer call; records each request. */
@@ -82,6 +84,10 @@ function stubApi(state: ApiState) {
     calls.push({ url, method, body });
     if (url.startsWith("/api/leads/filters")) return json({ pages: [], ads: [], defaultAdId: null, assignees: state.assignees ?? [], isOwner: state.isOwner ?? true });
     if (url === "/api/leads/query") return json({ items: state.leads, total: state.leads.length, timezone: "Asia/Kolkata" });
+    if (url === "/api/leads/telecaller" && method === "POST") {
+      if (state.callInDuplicate) return json({ error: { code: "LEAD_PHONE_EXISTS", message: "This phone number already exists as a lead." } }, 409);
+      return json({ id: "call-in-1" }, 201);
+    }
     const activities = /^\/api\/leads\/[^/]+\/activities\?(.*)$/.exec(url);
     if (activities) {
       const params = new URLSearchParams(activities[1]);
@@ -1069,5 +1075,62 @@ describe("lead assignment", () => {
     const drawer = await openDrawer();
     expect(within(drawer).queryByRole("combobox", { name: "Assigned to" })).not.toBeInTheDocument();
     expect(within(drawer).getByText("Unassigned")).toBeInTheDocument();
+  });
+});
+
+describe("call-in leads", () => {
+  const queryCalls = (calls: ReturnType<typeof stubApi>) => calls.filter((call) => call.url === "/api/leads/query");
+
+  it("filters by Source and shows it as a removable chip", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    const list = await screen.findByRole("listbox");
+    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["All sources", "Facebook", "Telecaller"]);
+    fireEvent.click(within(list).getByRole("option", { name: "Telecaller" }));
+    await waitFor(() => expect(queryCalls(calls).at(-1)?.body).toMatchObject({ source: "telecaller" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Remove Source filter: Telecaller" }));
+    await waitFor(() => expect(queryCalls(calls).at(-1)?.body).not.toHaveProperty("source"));
+  });
+
+  it("shows - for a lead with no Lead ID", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { leadgenId: "", facebookPage: "-", adName: "-" })], pages: {}, openTask: null });
+    await renderPage();
+    const cells = within(screen.getByRole("button", { name: "Open profile of Kumar" }).closest("tr")!).getAllByRole("cell");
+    expect(cells[2]).toHaveTextContent("-");
+  });
+
+  it("validates the + form, saves the lead and reloads the table", async () => {
+    const calls = stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Add call-in lead" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add call-in lead" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save lead" }));
+    expect(await within(dialog).findByText("Enter the lead's name.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Enter a phone number with at least 10 digits.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Enter the project name.")).toBeInTheDocument();
+    expect(calls.some((call) => call.url === "/api/leads/telecaller")).toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText(/Lead Name/), { target: { value: " Ravi " } });
+    fireEvent.change(within(dialog).getByLabelText(/^Phone/), { target: { value: "98765 43210" } });
+    fireEvent.change(within(dialog).getByLabelText(/Project Name/), { target: { value: "Karuvi" } });
+    const before = queryCalls(calls).length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save lead" }));
+    await waitFor(() => expect(calls.find((call) => call.url === "/api/leads/telecaller")?.body).toEqual({ leadName: "Ravi", phone: "98765 43210", whatsapp: "", projectName: "Karuvi" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add call-in lead" })).not.toBeInTheDocument());
+    await waitFor(() => expect(queryCalls(calls).length).toBeGreaterThan(before));
+  });
+
+  it("keeps the form open and shows the message when the phone number already exists", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null, callInDuplicate: true });
+    await renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Add call-in lead" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add call-in lead" });
+    fireEvent.change(within(dialog).getByLabelText(/Lead Name/), { target: { value: "Ravi" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Phone/), { target: { value: "9876543210" } });
+    fireEvent.change(within(dialog).getByLabelText(/Project Name/), { target: { value: "Karuvi" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save lead" }));
+    expect(await within(dialog).findByText("This phone number already exists as a lead.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save lead" })).toBeEnabled();
   });
 });

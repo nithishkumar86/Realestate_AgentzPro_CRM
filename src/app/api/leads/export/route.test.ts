@@ -61,4 +61,16 @@ describe("authenticated lead CSV route", () => {
       expect(mocks.query).toHaveBeenLastCalledWith({ tenantId: "tenant-a", userId: "user-a" }, body, true);
     }
   });
+
+  it("accepts the Source filter and writes empty Lead ID, Page and Ad cells for a call-in lead", async () => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.query.mockResolvedValue({
+      timezone: "Asia/Kolkata", total: 1,
+      items: [{ leadgenId: "", leadName: "Caller", email: null, phone: "9876543210", facebookPage: "-", adName: "-", adId: null, source: "telecaller", status: "New Lead", label: "Warm", leadDate: "2026-10-26T05:00:00Z", assigneeName: "Ravi" }],
+    });
+    const response = await POST(new Request("http://localhost/api/leads/export", { method: "POST", body: JSON.stringify({ quickFilter: "all", source: "telecaller" }), headers: { "content-type": "application/json" } }));
+    expect(response.status).toBe(200);
+    const date = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-10-26T05:00:00Z"));
+    expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`,Caller,"${date}",,9876543210,,,,New Lead,Warm,Ravi`);
+  });
 });

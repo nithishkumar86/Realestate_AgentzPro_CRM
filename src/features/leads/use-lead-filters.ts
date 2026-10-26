@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { LeadLabel, LeadStatus } from "@/features/leads/lead-options";
+import type { LeadLabel, LeadSource, LeadStatus } from "@/features/leads/lead-options";
 
 export type Quick = "All Leads" | "Today Leads" | "This Month Leads";
 export type AssigneeOption = { userId: string; fullName: string };
@@ -31,6 +31,8 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
   const [label, setLabel] = useState<LeadLabel | "">("");
   // "me", "unassigned", a member's user id, or "" for everyone. Only the leads page offers it; the dashboard never sets it.
   const [assignee, setAssignee] = useState("");
+  // "facebook", "telecaller", or "" for both. Leads page only, like assignee: the dashboard never sets it.
+  const [source, setSource] = useState<LeadSource | "">("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const onErrorRef = useRef(onError);
@@ -59,13 +61,13 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
    */
   const filterBody = () => ({
     quickFilter: quick === "Today Leads" ? "today" : quick === "This Month Leads" ? "month" : "all",
-    ...(status ? { status } : {}), ...(label ? { label } : {}), ...(assignee ? { assignee } : {}),
+    ...(status ? { status } : {}), ...(label ? { label } : {}), ...(assignee ? { assignee } : {}), ...(source ? { source } : {}),
     ...(from ? { dateFrom: from } : {}), ...(to ? { dateTo: to } : {}),
     ...(pageRecordId ? { pageRecordId } : {}), ...(adId ? { adId } : {}),
     ...(search.trim() ? { search: search.trim() } : {}),
   });
 
-  const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setAssignee(""); setFrom(""); setTo(""); };
+  const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setAssignee(""); setSource(""); setFrom(""); setTo(""); };
   /**
    * Today's Leads and a From/To range are two ways of naming the same thing — a date window — and
    * the query service resolves that collision by letting the quick range win (see resolveDateRange).
@@ -80,11 +82,11 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
   };
   const applyDateRange = (nextFrom: string, nextTo: string) => { setFrom(nextFrom); setTo(nextTo); setQuick("All Leads"); };
   const clearPage = () => { setPageRecordId(""); setAdId(""); };
-  const hasActiveFilters = Boolean(pageRecordId || adId || search.trim() || quick !== "All Leads" || status || label || assignee || from || to);
+  const hasActiveFilters = Boolean(pageRecordId || adId || search.trim() || quick !== "All Leads" || status || label || assignee || source || from || to);
 
   return {
-    options, pageRecordId, adId, search, quick, status, label, assignee, from, to,
-    setPageRecordId, setAdId, setSearch, setQuick, setStatus, setLabel, setAssignee, setFrom, setTo,
+    options, pageRecordId, adId, search, quick, status, label, assignee, source, from, to,
+    setPageRecordId, setAdId, setSearch, setQuick, setStatus, setLabel, setAssignee, setSource, setFrom, setTo,
     filterBody, reset, toggleQuickRange, applyDateRange, clearPage, hasActiveFilters,
   };
 }

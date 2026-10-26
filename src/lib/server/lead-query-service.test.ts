@@ -61,6 +61,33 @@ describe("tenant-scoped lead query contracts", () => {
     expect(leads.range).not.toHaveBeenCalled();
     expect(result.items[0]).toMatchObject({ adId: "ad-1", adName: "Campaign", facebookPage: "Page A" });
   });
+
+  it("filters by lead source, and Unattributed only matches Facebook leads", async () => {
+    const leads = builder({ data: [], error: null, count: 0 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    await queryLeads(context, { source: "telecaller" });
+    expect(leads.eq).toHaveBeenCalledWith("lead_source", "telecaller");
+    leads.eq.mockClear();
+    await queryLeads(context, { adId: "unattributed" });
+    expect(leads.is).toHaveBeenCalledWith("ad_id", null);
+    expect(leads.eq).toHaveBeenCalledWith("lead_source", "facebook");
+    leads.eq.mockClear();
+    await queryLeads(context, {});
+    expect(leads.eq).not.toHaveBeenCalledWith("lead_source", expect.anything());
+  });
+
+  it("shows a call-in lead with no Lead ID, Page or Ad, and leaves Facebook rows unchanged", async () => {
+    const leads = builder({ data: [
+      { id: "lead-1", leadgen_id: null, lead_name: "Caller", lead_phone: "9876543210", ad_id: null, ad_name: null, lead_created_time: "2026-10-26T10:00:00Z", status: "New Lead", label: "Warm", label_source: "telecaller", lead_source: "telecaller", facebook_pages: null },
+      { id: "lead-2", leadgen_id: "123", lead_name: "Meta", lead_phone: "9999999999", ad_id: null, ad_name: null, lead_created_time: "2026-10-26T09:00:00Z", status: "New Lead", label: "Warm", label_source: "ai", lead_source: "facebook", facebook_pages: { facebook_page_name: "Page A" } },
+    ], error: null, count: 2 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    const result = await queryLeads(context, {}, true);
+    expect(result.items[0]).toMatchObject({ source: "telecaller", leadgenId: "", facebookPage: "-", adName: "-", leadName: "Caller" });
+    expect(result.items[1]).toMatchObject({ source: "facebook", leadgenId: "123", facebookPage: "Page A", adName: "Unattributed" });
+  });
 });
 
 describe("deleteLead", () => {

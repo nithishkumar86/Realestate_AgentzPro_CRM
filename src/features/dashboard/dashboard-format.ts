@@ -63,9 +63,12 @@ export function rankStatuses(byStatus: Array<{ status: string; count: number }>)
     .map(({ status, count }) => ({ status, count, share: total ? Math.round((count / total) * 100) : 0 }));
 }
 
+/** The non-ad rows get_dashboard_stats adds to topAds: totals, not a ranked ad. */
+const CATCH_ALL_AD_IDS = new Set(["other", "unattributed", "telecaller"]);
+
 /** "Name pending (1234)" — the same wording the Ad filter dropdown uses. */
 export function adLabel(ad: { adId: string; name: string | null }): string {
-  if (ad.adId === "other" || ad.adId === "unattributed") return ad.name ?? ad.adId;
+  if (CATCH_ALL_AD_IDS.has(ad.adId)) return ad.name ?? ad.adId;
   return `${ad.name ?? "Name pending"} (${ad.adId.slice(-4)})`;
 }
 
@@ -88,7 +91,7 @@ const AD_COLORS = [...CHART_COLORS.slice(0, 7), "var(--status-12)"];
 export function adBarData(ads: Array<{ adId: string; name: string | null; count: number }>): AdBar[] {
   let rank = 0;
   return ads.map((ad) => {
-    const isCatchAll = ad.adId === "other" || ad.adId === "unattributed";
+    const isCatchAll = CATCH_ALL_AD_IDS.has(ad.adId);
     return { name: adLabel(ad), count: ad.count, color: isCatchAll ? "var(--chart-muted)" : AD_COLORS[rank++ % AD_COLORS.length] };
   });
 }
