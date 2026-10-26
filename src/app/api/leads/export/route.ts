@@ -9,7 +9,7 @@ const requestSchema = z.object({ search: z.string().max(200).optional(), quickFi
 export async function POST(request: Request) {
   try {
     const result = await queryLeads(await resolveTenantRequestContext(), await parseJsonBody(request, requestSchema), true);
-    const csv = ["Lead Name,Lead Date,Email,Phone,Facebook Page,Ad Name,Ad ID,Status,Label,Assigned To", ...result.items.map((row) => [row.leadName, new Intl.DateTimeFormat("en-IN", { timeZone: result.timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(row.leadDate)), row.email, row.phone, row.facebookPage, row.adName, row.adId, row.status, row.label, row.assigneeName].map(csvValue).join(","))].join("\r\n");
+    const csv = ["Lead ID,Lead Name,Lead Date,Email,Phone,Facebook Page,Ad Name,Ad ID,Status,Label,Assigned To", ...result.items.map((row) => [row.leadgenId, row.leadName, new Intl.DateTimeFormat("en-IN", { timeZone: result.timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(row.leadDate)), row.email, row.phone, row.facebookPage, row.adName, row.adId, row.status, row.label, row.assigneeName].map(csvValue).join(","))].join("\r\n");
     return new NextResponse(`\uFEFF${csv}`, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename=leads-${new Date().toISOString().slice(0, 10)}.csv` } });
   } catch (error) { return createErrorResponse(error); }
 }

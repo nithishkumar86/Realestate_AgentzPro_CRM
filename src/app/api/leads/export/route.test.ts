@@ -14,8 +14,8 @@ describe("authenticated lead CSV route", () => {
       timezone: "Asia/Kolkata",
       total: 2,
       items: [
-        { leadName: "First", email: "first@example.com", phone: "111", facebookPage: "Page A", adName: "Ad A", adId: "ad-a", status: "New Lead", label: "Warm", leadDate: "2026-09-09T02:00:00Z" },
-        { leadName: "Second", email: "second@example.com", phone: "222", facebookPage: "Page A", adName: "Ad B", adId: "ad-b", status: "Contacted", label: "Hot", leadDate: "2026-09-09T03:00:00Z" },
+        { leadgenId: "lg-1", leadName: "First", email: "first@example.com", phone: "111", facebookPage: "Page A", adName: "Ad A", adId: "ad-a", status: "New Lead", label: "Warm", leadDate: "2026-09-09T02:00:00Z" },
+        { leadgenId: "lg-2", leadName: "Second", email: "second@example.com", phone: "222", facebookPage: "Page A", adName: "Ad B", adId: "ad-b", status: "Contacted", label: "Hot", leadDate: "2026-09-09T03:00:00Z" },
       ],
     });
     const filters = { pageRecordId: "00000000-0000-4000-8000-000000000001", adId: "ad-a", dateFrom: "2026-09-01", dateTo: "2026-09-10", search: "First" };
@@ -24,10 +24,10 @@ describe("authenticated lead CSV route", () => {
     expect(response.status).toBe(200);
     expect(mocks.query).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, expect.objectContaining(filters), true);
     const lines = csv.replace(/^﻿/, "").split("\r\n");
-    expect(lines[0]).toBe("Lead Name,Lead Date,Email,Phone,Facebook Page,Ad Name,Ad ID,Status,Label,Assigned To");
+    expect(lines[0]).toBe("Lead ID,Lead Name,Lead Date,Email,Phone,Facebook Page,Ad Name,Ad ID,Status,Label,Assigned To");
     // The date sits right after the name in every row too, formatted on the company clock.
     const firstDate = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-09-09T02:00:00Z"));
-    expect(lines[1]).toBe(`First,"${firstDate}",first@example.com,111,Page A,Ad A,ad-a,New Lead,Warm,`);
+    expect(lines[1]).toBe(`lg-1,First,"${firstDate}",first@example.com,111,Page A,Ad A,ad-a,New Lead,Warm,`);
     expect(csv).toContain("First");
     expect(csv).toContain("Second");
     expect(csv).not.toContain("Project");
