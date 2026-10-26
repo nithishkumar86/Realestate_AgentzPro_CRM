@@ -167,6 +167,20 @@ describe("Profile icon in the leads table", () => {
   });
 });
 
+describe("leads table column order", () => {
+  it("shows Date right after Client Name and Label last, with each row's cells under the matching heading", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
+    await renderPage();
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Profile", "Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"]);
+    const cells = within(screen.getByRole("button", { name: "Open profile of Kumar" }).closest("tr")!).getAllByRole("cell");
+    expect(cells).toHaveLength(10);
+    expect(cells[2]).toHaveTextContent("Kumar");
+    expect(cells[3]).toHaveTextContent(new Date("2026-10-01T05:00:00Z").toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }));
+    expect(cells[4]).toHaveTextContent("9999999999");
+    expect(cells[9]).toHaveClass("mvp-label-cell");
+  });
+});
+
 describe("no open task marker in the leads table", () => {
   it("shows only for an active lead without a task, never for a lead with a task or in a final status", async () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar"), lead(LEAD_2, "Anitha", { hasOpenTask: true }), lead(LEAD_3, "Ravi", { status: "Sale" })], pages: {}, openTask: null });
