@@ -1,8 +1,9 @@
 "use client";
 
-import { Download, ListTodo, Trash2, UserRound } from "lucide-react";
+import { Download, ListTodo, Plus, Trash2, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
+import { AddCallInLeadDialog } from "@/features/leads/add-call-in-lead-dialog";
 import { LeadDrawer } from "@/features/leads/lead-drawer";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
 import { RowDropdown } from "@/features/leads/row-dropdown";
@@ -34,9 +35,12 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   // A status picked in the table row. It is not saved: the drawer opens with it as a pending choice, and it is saved
   // only together with a task or a note (so the timeline never shows a status change nobody followed up).
   const [drawerPendingStatus, setDrawerPendingStatus] = useState<LeadStatus | null>(null);
+  const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
+  // Bumped after a call-in lead is saved, so the table reloads with the current filters.
+  const [reloadKey, setReloadKey] = useState(0);
   // The leads page opens on ALL leads with no filter applied; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setError });
-  const { quick, status, label, assignee, from, to, pageRecordId, adId, search } = filters;
+  const { quick, status, label, assignee, source, from, to, pageRecordId, adId, search } = filters;
 
   useEffect(() => {
     let active = true;
@@ -53,7 +57,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     void loadLeads();
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filterBody() is a pure function of exactly these values
-  }, [quick, status, label, assignee, from, to, pageRecordId, adId, search]);
+  }, [quick, status, label, assignee, source, from, to, pageRecordId, adId, search, reloadKey]);
 
   async function download(): Promise<void> {
     try {
@@ -138,6 +142,8 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     setLeads((current) => current.map((existing) => existing.id === leadId ? { ...existing, assignedUserId, assigneeName } : existing));
   }, []);
   const closeDrawer = useCallback(() => setDrawerLeadId(null), []);
+  const closeAddLead = useCallback(() => setIsAddLeadOpen(false), []);
+  const handleLeadAdded = useCallback(() => { setIsAddLeadOpen(false); setReloadKey((key) => key + 1); }, []);
   // A task alert links here with ?lead=<id>: fetch that lead on its own (it may be filtered out or past the first
   // page) and open its drawer.
   const [focusedLead, setFocusedLead] = useState<Lead | null>(null);
@@ -153,7 +159,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? (focusedLead?.id === drawerLeadId ? focusedLead : null) : null;
 
   return <div className="mvp-leads">
-    <LeadFilterBar filters={filters} showAssignee actions={<>
+    <LeadFilterBar filters={filters} showAssignee showSource actions={<>
       <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
         <Trash2 size={16} />{isDeleting ? "Deleting..." : selectedLeadIds.length > 0 ? `Delete (${selectedLeadIds.length})` : "Delete"}
       </button>
@@ -168,7 +174,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={11}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td className="mvp-lead-profile-cell">
         <button type="button" className="mvp-lead-profile-button" onClick={() => { setDrawerPendingStatus(null); setDrawerLeadId(lead.id); }} aria-label={`Open profile of ${lead.leadName ?? "Unnamed Lead"}`}><UserRound size={20} aria-hidden="true" /><span className="mvp-lead-profile-tip" aria-hidden="true">Click to view the details</span></button>
-      </td><td>{lead.leadgenId}</td><td><span className="mvp-lead-name-cell">
+      </td><td>{lead.leadgenId || "-"}</td><td><span className="mvp-lead-name-cell">
         <span className="mvp-lead-name">{lead.leadName ?? "Unnamed Lead"}</span>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
@@ -187,5 +193,9 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
       </td></tr>)}
     </tbody></table></section>
     {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} scrollToTimeline={focusedLead?.id === drawerLead.id} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} isOwner={filters.options.isOwner} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
+    <button className="mvp-fab-add" type="button" aria-label="Add call-in lead" title="Add call-in lead" onClick={() => setIsAddLeadOpen(true)}>
+      <Plus size={26} aria-hidden="true" />
+    </button>
+    {isAddLeadOpen ? <AddCallInLeadDialog onClose={closeAddLead} onSaved={handleLeadAdded} /> : null}
   </div>;
 }

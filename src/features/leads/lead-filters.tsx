@@ -1,8 +1,8 @@
 "use client";
 
-import { BookOpen, CalendarDays, ChevronDown, Filter, LayoutGrid, Megaphone, Search, Tag, UserRound, X } from "lucide-react";
+import { BookOpen, CalendarDays, ChevronDown, Filter, LayoutGrid, Megaphone, PhoneIncoming, Search, Tag, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { LEAD_LABELS, LEAD_STATUSES, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
+import { LEAD_LABELS, LEAD_SOURCE_LABELS, LEAD_SOURCES, LEAD_STATUSES, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import type { LeadFilters } from "@/features/leads/use-lead-filters";
 
 type DropdownOption = { value: string; label: string };
@@ -85,8 +85,8 @@ function FilterChip({ chipLabel, value, onRemove }: { chipLabel: string; value: 
  * dashboard has none). The dashboard also hides the search box and the Today's Leads toggle, and
  * does not offer the Assignee filter (`showAssignee`, leads page only).
  */
-export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true, showAssignee = false }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean; showAssignee?: boolean }) {
-  const { options, pageRecordId, adId, search, quick, status, label, assignee, from, to } = filters;
+export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true, showAssignee = false, showSource = false }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean; showAssignee?: boolean; showSource?: boolean }) {
+  const { options, pageRecordId, adId, search, quick, status, label, assignee, source, from, to } = filters;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isDateOpen, setIsDateOpen] = useState(false);
   const [draftFrom, setDraftFrom] = useState("");
@@ -129,6 +129,10 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
         onChange={filters.setAssignee} /> : null}
     </div>
     <div className="mvp-filter-row mvp-filter-row--secondary">
+      {showSource ? <FieldDropdown id="source" icon={<PhoneIncoming size={16} />} label="Source" placeholder="All sources" value={source}
+        options={LEAD_SOURCES.map((item) => ({ value: item, label: LEAD_SOURCE_LABELS[item] }))}
+        openField={openDropdown} onOpenChange={setOpenDropdown}
+        onChange={(next) => filters.setSource(next as LeadSource | "")} /> : null}
       <div className="mvp-date-filter">
         <button type="button" className={`mvp-field-box__control mvp-date-filter__trigger${from || to ? " mvp-date-filter__trigger--active" : ""}`} aria-haspopup="dialog" aria-expanded={isDateOpen} onClick={() => (isDateOpen ? cancelDateFilter() : openDateFilter())}>
           <span className="mvp-field-box__icon"><CalendarDays size={16} /></span>
@@ -166,7 +170,7 @@ function assigneeFilterOptions(assignees: LeadFilters["options"]["assignees"]): 
 
 /** The "Active Filters" bar: one removable chip per active filter, plus Clear all. */
 export function LeadActiveFilters({ filters }: { filters: LeadFilters }) {
-  const { options, pageRecordId, adId, search, quick, status, label, assignee, from, to } = filters;
+  const { options, pageRecordId, adId, search, quick, status, label, assignee, source, from, to } = filters;
   if (!filters.hasActiveFilters) return null;
   const pageName = options.pages.find((page) => page.id === pageRecordId)?.name ?? pageRecordId;
   const adName = adId === "unattributed" ? "Unattributed" : (() => {
@@ -182,6 +186,7 @@ export function LeadActiveFilters({ filters }: { filters: LeadFilters }) {
     {status ? <FilterChip chipLabel="Status" value={status} onRemove={() => filters.setStatus("")} /> : null}
     {label ? <FilterChip chipLabel="Label" value={label} onRemove={() => filters.setLabel("")} /> : null}
     {assignee ? <FilterChip chipLabel="Assignee" value={assigneeName} onRemove={() => filters.setAssignee("")} /> : null}
+    {source ? <FilterChip chipLabel="Source" value={LEAD_SOURCE_LABELS[source]} onRemove={() => filters.setSource("")} /> : null}
     {quick !== "All Leads" ? <FilterChip chipLabel="Range" value={quick} onRemove={() => filters.setQuick("All Leads")} /> : null}
     {from ? <FilterChip chipLabel="From" value={from} onRemove={() => filters.setFrom("")} /> : null}
     {to ? <FilterChip chipLabel="To" value={to} onRemove={() => filters.setTo("")} /> : null}
