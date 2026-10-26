@@ -9,7 +9,7 @@ import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
-type Lead = { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; assignedUserId?: string | null; assigneeName?: string | null; hasOpenTask?: boolean; openTaskTitle?: string | null };
+type Lead = { id: string; leadgenId: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; assignedUserId?: string | null; assigneeName?: string | null; hasOpenTask?: boolean; openTaskTitle?: string | null };
 
 /** Who owns the lead: initial + name, or a quiet "Unassigned". Changed from the lead's detail drawer. */
 function AssigneeCell({ name }: { name: string | null }) {
@@ -163,12 +163,12 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     </>} />
     {error ? <div className="mvp-inline-error">{error}</div> : null}
     <LeadActiveFilters filters={filters} />
-    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" /><th className="mvp-lead-profile-cell">Profile</th>{["Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
-      {loading ? <tr><td className="mvp-empty" colSpan={10}>Loading leads...</td></tr> : null}
-      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={10}>No leads match these filters.</td></tr> : null}
+    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" /><th className="mvp-lead-profile-cell">Profile</th>{["Lead ID", "Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
+      {loading ? <tr><td className="mvp-empty" colSpan={11}>Loading leads...</td></tr> : null}
+      {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={11}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td className="mvp-lead-profile-cell">
         <button type="button" className="mvp-lead-profile-button" onClick={() => { setDrawerPendingStatus(null); setDrawerLeadId(lead.id); }} aria-label={`Open profile of ${lead.leadName ?? "Unnamed Lead"}`}><UserRound size={20} aria-hidden="true" /><span className="mvp-lead-profile-tip" aria-hidden="true">Click to view the details</span></button>
-      </td><td><span className="mvp-lead-name-cell">
+      </td><td>{lead.leadgenId}</td><td><span className="mvp-lead-name-cell">
         <span className="mvp-lead-name">{lead.leadName ?? "Unnamed Lead"}</span>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}

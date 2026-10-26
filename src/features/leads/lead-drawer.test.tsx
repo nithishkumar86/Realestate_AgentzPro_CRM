@@ -13,8 +13,8 @@ const LEAD_2 = "22222222-2222-4222-8222-222222222222";
 const LEAD_3 = "33333333-3333-4333-8333-333333333333";
 const TASK = "44444444-4444-4444-8444-444444444444";
 
-type Lead = { id: string; leadName: string; phone: string; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource: string; hasOpenTask: boolean; assignedUserId?: string | null; assigneeName?: string | null };
-const lead = (id: string, leadName: string, extra: Partial<Lead> = {}): Lead => ({ id, leadName, phone: "9999999999", facebookPage: "Chennai Homes", adName: "karuvi", leadDate: "2026-10-01T05:00:00Z", status: "New Lead", label: "Warm", labelSource: "default", hasOpenTask: false, ...extra });
+type Lead = { id: string; leadgenId: string; leadName: string; phone: string; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource: string; hasOpenTask: boolean; assignedUserId?: string | null; assigneeName?: string | null };
+const lead = (id: string, leadName: string, extra: Partial<Lead> = {}): Lead => ({ id, leadgenId: `lg-${id}`, leadName, phone: "9999999999", facebookPage: "Chennai Homes", adName: "karuvi", leadDate: "2026-10-01T05:00:00Z", status: "New Lead", label: "Warm", labelSource: "default", hasOpenTask: false, ...extra });
 
 type Activity = { id: string; type: string; summary: string; metadata: Record<string, unknown>; actorName: string; createdAt: string; backfilled: boolean; noteBody?: string };
 const act = (id: string, type: string, summary: string, extra: Partial<Activity> = {}): Activity => ({ id, type, summary, metadata: {}, actorName: "Priya", createdAt: "2026-10-05T04:00:00.123456+00:00", backfilled: false, ...extra });
@@ -168,16 +168,17 @@ describe("Profile icon in the leads table", () => {
 });
 
 describe("leads table column order", () => {
-  it("shows Date right after Client Name and Label last, with each row's cells under the matching heading", async () => {
+  it("shows Lead ID right after Profile, Date right after Client Name and Label last, with each row's cells under the matching heading", async () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
     await renderPage();
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Profile", "Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"]);
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Profile", "Lead ID", "Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"]);
     const cells = within(screen.getByRole("button", { name: "Open profile of Kumar" }).closest("tr")!).getAllByRole("cell");
-    expect(cells).toHaveLength(10);
-    expect(cells[2]).toHaveTextContent("Kumar");
-    expect(cells[3]).toHaveTextContent(new Date("2026-10-01T05:00:00Z").toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }));
-    expect(cells[4]).toHaveTextContent("9999999999");
-    expect(cells[9]).toHaveClass("mvp-label-cell");
+    expect(cells).toHaveLength(11);
+    expect(cells[2]).toHaveTextContent(`lg-${LEAD_1}`);
+    expect(cells[3]).toHaveTextContent("Kumar");
+    expect(cells[4]).toHaveTextContent(new Date("2026-10-01T05:00:00Z").toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }));
+    expect(cells[5]).toHaveTextContent("9999999999");
+    expect(cells[10]).toHaveClass("mvp-label-cell");
   });
 });
 

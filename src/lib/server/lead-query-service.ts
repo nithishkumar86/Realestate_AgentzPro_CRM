@@ -29,7 +29,7 @@ export interface LeadSearchRequest {
 }
 export type LeadLabelSource = "default" | "ai" | "telecaller";
 export interface LeadRow {
-  id: string; leadName: string | null; email: string | null; phone: string | null;
+  id: string; leadgenId: string; leadName: string | null; email: string | null; phone: string | null;
   adId: string | null; facebookPage: string; adName: string; leadDate: string;
   status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource;
   /** Who owns the lead; null = Unassigned. The name is resolved from the member's profile. */
@@ -48,7 +48,7 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const sortField = request.sortField ?? "leadDate";
   const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
+    .select("id,leadgen_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.leadId) query = query.eq("id", request.leadId);
   if (request.pageRecordId) query = query.eq("facebook_page_record_id", request.pageRecordId);
@@ -105,7 +105,7 @@ function toLeadRow(lead: Record<string, unknown>): LeadRow {
   const page = lead.facebook_pages as { facebook_page_name?: string } | null;
   const adId = typeof lead.ad_id === "string" ? lead.ad_id : null;
   const adName = asNullableString(lead.ad_name);
-  return { id: String(lead.id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default", assignedUserId: typeof lead.assigned_user_id === "string" ? lead.assigned_user_id : null, assigneeName: null };
+  return { id: String(lead.id), leadgenId: String(lead.leadgen_id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default", assignedUserId: typeof lead.assigned_user_id === "string" ? lead.assigned_user_id : null, assigneeName: null };
 }
 
 export type LeadFilterOptions = {
