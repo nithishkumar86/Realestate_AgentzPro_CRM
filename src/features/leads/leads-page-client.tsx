@@ -163,7 +163,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     </>} />
     {error ? <div className="mvp-inline-error">{error}</div> : null}
     <LeadActiveFilters filters={filters} />
-    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" /><th className="mvp-lead-profile-cell">Profile</th>{["Client Name", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label", "Date"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
+    <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" /><th className="mvp-lead-profile-cell">Profile</th>{["Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
       {loading ? <tr><td className="mvp-empty" colSpan={10}>Loading leads...</td></tr> : null}
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={10}>No leads match these filters.</td></tr> : null}
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td className="mvp-lead-profile-cell">
@@ -172,7 +172,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
         <span className="mvp-lead-name">{lead.leadName ?? "Unnamed Lead"}</span>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
-      </span></td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
+      </span></td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
         <AssigneeCell name={lead.assigneeName ?? null} />
       </td><td>
         <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
@@ -184,7 +184,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
           onChange={(next) => void updateLabel(lead.id, lead.label, next)} />
         {lead.labelSource === "ai" ? <span className="mvp-label-source mvp-label-source--ai" title="Set by AI">AI</span> : null}
         {lead.labelSource === "telecaller" ? <span className="mvp-label-source mvp-label-source--telecaller" title="Set by a telecaller">Telecaller</span> : null}
-      </td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td></tr>)}
+      </td></tr>)}
     </tbody></table></section>
     {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} scrollToTimeline={focusedLead?.id === drawerLead.id} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} isOwner={filters.options.isOwner} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
   </div>;

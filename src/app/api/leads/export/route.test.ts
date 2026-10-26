@@ -23,7 +23,11 @@ describe("authenticated lead CSV route", () => {
     const csv = await response.text();
     expect(response.status).toBe(200);
     expect(mocks.query).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, expect.objectContaining(filters), true);
-    expect(csv).toContain("Lead Name,Email,Phone,Facebook Page,Ad Name,Ad ID");
+    const lines = csv.replace(/^﻿/, "").split("\r\n");
+    expect(lines[0]).toBe("Lead Name,Lead Date,Email,Phone,Facebook Page,Ad Name,Ad ID,Status,Label,Assigned To");
+    // The date sits right after the name in every row too, formatted on the company clock.
+    const firstDate = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-09-09T02:00:00Z"));
+    expect(lines[1]).toBe(`First,"${firstDate}",first@example.com,111,Page A,Ad A,ad-a,New Lead,Warm,`);
     expect(csv).toContain("First");
     expect(csv).toContain("Second");
     expect(csv).not.toContain("Project");
