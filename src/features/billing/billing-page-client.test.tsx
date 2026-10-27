@@ -27,6 +27,7 @@ function overview(patch: Partial<BillingOverview> = {}): BillingOverview {
     companyName: "QA Test Co",
     isOwner: true,
     hasCrmAccess: true,
+    isInternal: false,
     subscriptionStatus: "trialing",
     trialEndsAt: "2026-10-30T00:00:00Z",
     currentPeriodEndsAt: null,

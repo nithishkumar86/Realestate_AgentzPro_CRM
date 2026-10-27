@@ -17,6 +17,7 @@ function overview(razorpayStatus: "active" | "halted" | "cancelled", canSubscrib
     companyName: "QA Test Co",
     isOwner: true,
     hasCrmAccess: true,
+    isInternal: false,
     subscriptionStatus: "active",
     trialEndsAt: null,
     currentPeriodEndsAt: "2026-11-22T18:30:00Z",

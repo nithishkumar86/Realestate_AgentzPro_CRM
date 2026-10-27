@@ -81,6 +81,11 @@ async function loadSeatUsage(tenantId: string): Promise<SeatUsageRow> {
 export async function startCheckout(access: BillingAccess, rawInput: unknown): Promise<CheckoutSession> {
   requireOwner(access);
 
+  // AgentzPro's own company never pays, so no Razorpay subscription is ever created for it.
+  if (access.isInternal) {
+    throw new AppError("This is an internal company account; no payment is needed.", { status: 409, code: "INTERNAL_ACCOUNT" });
+  }
+
   const parsed = checkoutInputSchema.safeParse(rawInput);
   if (!parsed.success) {
     throw new AppError("Choose a plan and a valid number of seats.", { status: 400, code: "INVALID_CHECKOUT_INPUT" });
@@ -297,6 +302,8 @@ export interface BillingOverview {
   companyName: string;
   isOwner: boolean;
   hasCrmAccess: boolean;
+  /** AgentzPro's own company: free access with a fixed seat count, nothing to pay or cancel. */
+  isInternal: boolean;
   subscriptionStatus: string;
   trialEndsAt: string | null;
   currentPeriodEndsAt: string | null;
@@ -339,6 +346,7 @@ export async function getBillingOverview(access: BillingAccess): Promise<Billing
     companyName: access.tenantName,
     isOwner,
     hasCrmAccess: access.hasCrmAccess,
+    isInternal: access.isInternal,
     subscriptionStatus: access.subscriptionStatus,
     trialEndsAt: access.trialEndsAt,
     currentPeriodEndsAt: access.currentPeriodEndsAt,
@@ -358,7 +366,7 @@ export async function getBillingOverview(access: BillingAccess): Promise<Billing
             cancelAtPeriodEnd: current.cancel_at_period_end,
           }
         : null,
-    canSubscribe: isOwner && !isLive && !paidPeriodRunning,
+    canSubscribe: isOwner && !access.isInternal && !isLive && !paidPeriodRunning,
     plans,
     payments,
   };

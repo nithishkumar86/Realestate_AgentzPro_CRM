@@ -10,6 +10,7 @@ const READY_BASE = {
   membershipStatus: "active",
   tenantStatus: "active",
   currentPeriodEndsAt: null as string | null,
+  isInternal: false,
 };
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
@@ -60,6 +61,26 @@ describe("evaluateCrmAccess", () => {
 
   it("denies access for a blocked membership even with a valid trial", () => {
     const state: LoginState = { ...READY_BASE, membershipStatus: "blocked", subscriptionStatus: "trialing", trialEndsAt: future(ONE_HOUR_MS) };
+    expect(evaluateCrmAccess(state)).toBe(false);
+  });
+
+  it("grants access to the internal company even after its trial has ended", () => {
+    const state: LoginState = { ...READY_BASE, isInternal: true, subscriptionStatus: "trialing", trialEndsAt: past(1000) };
+    expect(evaluateCrmAccess(state)).toBe(true);
+  });
+
+  it("grants access to the internal company even when its status is blocked", () => {
+    const state: LoginState = { ...READY_BASE, isInternal: true, subscriptionStatus: "blocked", trialEndsAt: past(1000) };
+    expect(evaluateCrmAccess(state)).toBe(true);
+  });
+
+  it("still denies a blocked member of the internal company", () => {
+    const state: LoginState = { ...READY_BASE, isInternal: true, membershipStatus: "blocked", subscriptionStatus: "trialing", trialEndsAt: past(1000) };
+    expect(evaluateCrmAccess(state)).toBe(false);
+  });
+
+  it("still denies the internal company when the tenant is suspended", () => {
+    const state: LoginState = { ...READY_BASE, isInternal: true, tenantStatus: "suspended", subscriptionStatus: "trialing", trialEndsAt: past(1000) };
     expect(evaluateCrmAccess(state)).toBe(false);
   });
 
@@ -174,6 +195,13 @@ describe("billing access", () => {
     vi.mocked(verifySession).mockResolvedValue({ userId: "removed" });
     vi.mocked(resolveLoginState).mockResolvedValue({ status: "no_company" });
     await expect(requireBillingMember()).rejects.toMatchObject({ code: "NO_COMPANY" });
+  });
+
+  it("passes the internal flag to billing", async () => {
+    vi.mocked(verifySession).mockResolvedValue({ userId: "owner-a" });
+    vi.mocked(resolveLoginState).mockResolvedValue({ ...READY_BASE, isInternal: true, subscriptionStatus: "trialing", trialEndsAt: past(ONE_HOUR_MS) });
+
+    await expect(requireBillingOwner()).resolves.toMatchObject({ isInternal: true, hasCrmAccess: true });
   });
 
   it("refuses a suspended tenant", async () => {
