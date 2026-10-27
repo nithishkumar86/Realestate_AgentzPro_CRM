@@ -381,8 +381,8 @@ export default function PrivacyPolicyPage() {
                 </li>
                 <li>
                   <strong>Portkey</strong> — an AI gateway that passes a lead to
-                  an AI model provider (Google, using the Gemini 3.8 Flash
-                  model) to produce the AI lead label described in Section 4.
+                  an AI model provider (Google Gemini models) to produce the
+                  AI lead label described in Section 4.
                   Google uses the data only to return the label and does not
                   use it to train its models. Before anything is sent, we replace the name,
                   email address, and phone number from the form&apos;s contact
