@@ -10,8 +10,6 @@ export const metadata: Metadata = {
 
 const EFFECTIVE_DATE = "September 14, 2026";
 const LAST_UPDATED = "October 27, 2026";
-// The AI provider named in Section 5 is chosen in the Portkey dashboard
-// config, not in code — update the "Portkey and OpenAI" item if it changes.
 const GOOGLE_USER_DATA_POLICY_URL =
   "https://developers.google.com/terms/api-services-user-data-policy";
 
@@ -382,13 +380,9 @@ export default function PrivacyPolicyPage() {
                   payments (see Section 13); and
                 </li>
                 <li>
-                  <strong>Portkey and OpenAI</strong> — Portkey is an AI gateway
-                  that passes a lead to OpenAI&apos;s API to produce the AI lead
-                  label described in Section 4. OpenAI processes the data only
-                  to return the label. Under OpenAI&apos;s API terms, data sent
-                  through its API is not used to train its models, and it may
-                  be kept for up to 30 days solely for abuse monitoring before
-                  it is deleted. Before anything is sent, we replace the name,
+                  <strong>Portkey</strong> — an AI gateway that passes a lead to
+                  an AI model provider to produce the AI lead label described
+                  in Section 4. Before anything is sent, we replace the name,
                   email address, and phone number from the form&apos;s contact
                   fields (full name, first and last name, email, and phone
                   number) with placeholders (such as [NAME], [EMAIL], and
