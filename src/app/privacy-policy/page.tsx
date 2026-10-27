@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import styles from "./privacy-policy.module.css";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | AgentzPro CRM",
+  title: "Privacy Policy",
   description:
     "Privacy Policy for AgentzPro CRM, operated by AI Digital Tamizha. Learn what data we collect from Meta and Google Ads, how we use it, and how to request deletion of your data.",
 };
@@ -126,7 +126,7 @@ export default function PrivacyPolicyPage() {
               </tr>
               <tr>
                 <th>Nature of Work</th>
-                <td>Product selling</td>
+                <td>Software (SaaS)</td>
               </tr>
               <tr>
                 <th>Registered Location</th>
@@ -301,7 +301,7 @@ export default function PrivacyPolicyPage() {
             <li>
               Give each lead an AI lead label (Hot, Warm, or Cold) shown to the
               tenant in their CRM, to help them decide which leads to contact
-              first. Before a lead is sent for labelling, we remove the name,
+              first. Before a lead is sent for labeling, we remove the name,
               email address, and phone number the lead entered in the
               form&apos;s contact fields, as described in Section 5;
             </li>
@@ -468,7 +468,7 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               We never use Google user data to serve ads, including
-              retargeting, personalised, or interest-based advertising.
+              retargeting, personalized, or interest-based advertising.
             </li>
             <li>
               We never use Google user data to determine credit-worthiness or
@@ -476,7 +476,7 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               We never use Google user data to develop, improve, or train
-              generalised artificial intelligence or machine-learning models.
+              generalized artificial intelligence or machine-learning models.
             </li>
           </ul>
           <p>
