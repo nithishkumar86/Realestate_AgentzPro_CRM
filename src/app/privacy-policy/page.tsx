@@ -301,9 +301,9 @@ export default function PrivacyPolicyPage() {
             <li>
               Give each lead an AI lead label (Hot, Warm, or Cold) shown to the
               tenant in their CRM, to help them decide which leads to contact
-              first. Before a lead is sent for labelling, we remove the
-              lead&apos;s name, email address, and phone number, as described
-              in Section 5;
+              first. Before a lead is sent for labelling, we remove the name,
+              email address, and phone number the lead entered in the
+              form&apos;s contact fields, as described in Section 5;
             </li>
             <li>
               Recognize a returning tenant user and keep their account
@@ -382,9 +382,11 @@ export default function PrivacyPolicyPage() {
                 <li>
                   <strong>Portkey</strong> — an AI gateway that passes a lead to
                   an AI model provider to produce the AI lead label described
-                  in Section 4. Before anything is sent, we replace the
-                  lead&apos;s name, email address, and phone number with
-                  placeholders (such as [NAME], [EMAIL], and [PHONE]),
+                  in Section 4. Before anything is sent, we replace the name,
+                  email address, and phone number from the form&apos;s contact
+                  fields (full name, first and last name, email, and phone
+                  number) with placeholders (such as [NAME], [EMAIL], and
+                  [PHONE]),
                   including anywhere those same details are repeated inside
                   other answers. Only the remaining form answers, the ad name,
                   and the lead&apos;s current status are sent. The resulting
