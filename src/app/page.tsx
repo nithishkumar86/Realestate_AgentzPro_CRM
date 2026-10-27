@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireCrmAccess } from "@/lib/server/auth/access";
 import { isAppError } from "@/lib/server/app-error";
 import Link from "next/link";
-import { ArrowRight, ChartNoAxesCombined, Layers3, UsersRound } from "lucide-react";
+import { ArrowRight, ChartNoAxesCombined, Inbox, Layers3, ShieldCheck, Sparkles, UsersRound } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import styles from "./landing.module.css";
 
@@ -85,23 +85,34 @@ export default async function HomePage() {
         </section>
 
         <section className={styles.about} aria-labelledby="about-title">
-          <h2 id="about-title">What AgentzPro CRM does</h2>
-          <ul>
-            <li>
-              <strong>Receives your ad leads.</strong> Leads from your Meta (Facebook and
-              Instagram) and Google Ads lead forms arrive in your CRM automatically.
-            </li>
-            <li>
-              <strong>Labels each lead with AI.</strong> Every lead gets a Hot, Warm, or Cold
-              label. Before a lead is labeled, the name, email address, and phone number from
-              the form&apos;s contact fields are removed.
-            </li>
-            <li>
-              <strong>Read-only Google Ads access.</strong> We ask for read-only access to your
-              Google Ads account, used only to receive your leads and show which campaign and
-              ad each lead came from. We never change your campaigns, budgets, or billing.
-            </li>
-          </ul>
+          <h2 id="about-title" className={styles.aboutTitle}>What AgentzPro CRM does</h2>
+          <div className={styles.aboutGrid}>
+            <div className={styles.feature}>
+              <span className={styles.icon}><Inbox size={22} aria-hidden="true" /></span>
+              <h3>Receives your ad leads</h3>
+              <p>
+                Leads from your Meta (Facebook and Instagram) and Google Ads lead forms arrive
+                in your CRM automatically.
+              </p>
+            </div>
+            <div className={styles.feature}>
+              <span className={styles.icon}><Sparkles size={22} aria-hidden="true" /></span>
+              <h3>Labels each lead with AI</h3>
+              <p>
+                Every lead gets a Hot, Warm, or Cold label. Before a lead is labeled, the name,
+                email address, and phone number from the form&apos;s contact fields are removed.
+              </p>
+            </div>
+            <div className={styles.feature}>
+              <span className={styles.icon}><ShieldCheck size={22} aria-hidden="true" /></span>
+              <h3>Read-only Google Ads access</h3>
+              <p>
+                We ask for read-only access to your Google Ads account, used only to receive
+                your leads and show which campaign and ad each lead came from. We never change
+                your campaigns, budgets, or billing.
+              </p>
+            </div>
+          </div>
         </section>
       </main>
 

@@ -78,10 +78,12 @@
 .icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; color: var(--primary-strong); background: var(--nav-active-bg); }
 .feature h2 { margin: 18px 0 8px; font-size: 16px; line-height: 1.5; letter-spacing: -.02em; }
 .feature p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
-.about { margin-top: 32px; padding: 30px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 8px 30px rgba(15, 23, 42, .025); }
-.about h2 { margin: 0 0 14px; font-size: 18px; line-height: 1.5; letter-spacing: -.02em; }
-.about ul { display: grid; gap: 12px; margin: 0; padding-left: 20px; color: var(--text-muted); font-size: 14px; line-height: 1.8; }
-.about strong { color: var(--text); }
+.about { margin-top: 64px; }
+.aboutTitle { margin: 0 0 20px; text-align: center; font-size: 24px; line-height: 1.4; letter-spacing: -.03em; }
+.aboutGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.aboutGrid .feature { border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 8px 30px rgba(15, 23, 42, .025); }
+.aboutGrid .feature h3 { margin: 18px 0 8px; font-size: 16px; line-height: 1.5; letter-spacing: -.02em; }
+.aboutGrid .feature p { margin: 0; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
 .footer { padding-block: 22px; border-top: 1px solid var(--border); font-size: 14px; color: var(--text-muted); }
 .footerLeft { display: flex; align-items: center; gap: 20px; }
 .footerRight { display: flex; align-items: center; gap: 20px; }
@@ -98,7 +100,10 @@
   .features { grid-template-columns: 1fr; margin-top: 44px; }
   .feature { padding: 24px; }
   .feature + .feature { border-left: 0; border-top: 1px solid var(--border); }
-  .about { margin-top: 24px; padding: 24px; }
+  .about { margin-top: 44px; }
+  .aboutTitle { font-size: 20px; }
+  .aboutGrid { grid-template-columns: 1fr; gap: 16px; }
+  .aboutGrid .feature + .feature { border: 1px solid var(--border); }
   .footer { flex-wrap: wrap; gap: 8px 20px; }
   .footerLeft { flex-wrap: wrap; gap: 4px 16px; }
 }
