@@ -193,8 +193,9 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
       </td></tr>)}
     </tbody></table></section>
     {drawerLead ? <LeadDrawer key={drawerLead.id} lead={drawerLead} initialPendingStatus={drawerPendingStatus ?? undefined} scrollToTimeline={focusedLead?.id === drawerLead.id} timezone={timezone} onClose={closeDrawer} assignees={filters.options.assignees} isOwner={filters.options.isOwner} onAssigneeChange={applyAssignee} onStatusChange={applyStatus} onOpenTaskChange={applyOpenTask} /> : null}
-    <button className="mvp-fab-add" type="button" aria-label="Add call-in lead" title="Add call-in lead" onClick={() => setIsAddLeadOpen(true)}>
+    <button className="mvp-fab-add" type="button" aria-label="Add call-in lead" onClick={() => setIsAddLeadOpen(true)}>
       <Plus size={26} aria-hidden="true" />
+      <span className="mvp-fab-add__tip" aria-hidden="true">Add Lead</span>
     </button>
     {isAddLeadOpen ? <AddCallInLeadDialog onClose={closeAddLead} onSaved={handleLeadAdded} /> : null}
   </div>;
