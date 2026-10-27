@@ -83,6 +83,26 @@ export default async function HomePage() {
             <p>Open your dashboard for a clear view of your lead activity.</p>
           </div>
         </section>
+
+        <section className={styles.about} aria-labelledby="about-title">
+          <h2 id="about-title">What AgentzPro CRM does</h2>
+          <ul>
+            <li>
+              <strong>Receives your ad leads.</strong> Leads from your Meta (Facebook and
+              Instagram) and Google Ads lead forms arrive in your CRM automatically.
+            </li>
+            <li>
+              <strong>Labels each lead with AI.</strong> Every lead gets a Hot, Warm, or Cold
+              label. Before a lead is labeled, the name, email address, and phone number from
+              the form&apos;s contact fields are removed.
+            </li>
+            <li>
+              <strong>Read-only Google Ads access.</strong> We ask for read-only access to your
+              Google Ads account, used only to receive your leads and show which campaign and
+              ad each lead came from. We never change your campaigns, budgets, or billing.
+            </li>
+          </ul>
+        </section>
       </main>
 
       <footer className={styles.footer}>
