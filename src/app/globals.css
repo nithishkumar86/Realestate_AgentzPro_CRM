@@ -2455,6 +2455,10 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-fab-add:active { transform: translateY(0); }
 .mvp-fab-add:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 3px; }
 @media (max-width: 780px) { .mvp-fab-add { right: 16px; bottom: 16px; } }
+/* Hover/keyboard-focus hint, shown to the left of the button so the screen edge never clips it. */
+.mvp-fab-add__tip { position: absolute; top: 50%; right: calc(100% + 10px); padding: 5px 9px; border-radius: 6px; background: var(--text); color: var(--surface); font-size: .74rem; font-weight: 700; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-dropdown); opacity: 0; visibility: hidden; transform: translate(4px, -50%); transition: opacity 120ms ease, transform 120ms ease, visibility 120ms; }
+.mvp-fab-add__tip::after { content: ""; position: absolute; top: 50%; right: -4px; width: 8px; height: 8px; background: inherit; transform: translateY(-50%) rotate(45deg); }
+.mvp-fab-add:hover .mvp-fab-add__tip, .mvp-fab-add:focus-visible .mvp-fab-add__tip { opacity: 1; visibility: visible; transform: translate(0, -50%); }
 
 /* Add call-in lead dialog */
 .mvp-call-in__backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .45); }
