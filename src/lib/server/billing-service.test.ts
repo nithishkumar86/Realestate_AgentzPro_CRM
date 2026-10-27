@@ -74,6 +74,7 @@ const OWNER: BillingAccess = {
   trialEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
   currentPeriodEndsAt: null,
   hasCrmAccess: true,
+  isInternal: false,
 };
 
 const PLAN = {
@@ -143,6 +144,15 @@ describe("startCheckout", () => {
       code: "BILLING_OWNER_REQUIRED",
     });
     expect(createSubscription).not.toHaveBeenCalled();
+  });
+
+  it("refuses the internal company before touching Razorpay", async () => {
+    await expect(startCheckout({ ...OWNER, isInternal: true }, { planCode: "pro_monthly", seats: 3 })).rejects.toMatchObject({
+      status: 409,
+      code: "INTERNAL_ACCOUNT",
+    });
+    expect(createSubscription).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.operation === "insert")).toBe(false);
   });
 
   it("refuses fewer seats than people already in the company", async () => {
@@ -351,5 +361,12 @@ describe("getBillingOverview: when the owner may pay again", () => {
     withSubscription("active");
     const overview = await getBillingOverview({ ...OWNER, subscriptionStatus: "active", currentPeriodEndsAt: FUTURE });
     expect(overview.canSubscribe).toBe(false);
+  });
+
+  it("never offers Pay to the internal company, even after its trial ended", async () => {
+    withSubscription(null);
+    const overview = await getBillingOverview({ ...OWNER, isInternal: true, trialEndsAt: PAST });
+    expect(overview.canSubscribe).toBe(false);
+    expect(overview.isInternal).toBe(true);
   });
 });

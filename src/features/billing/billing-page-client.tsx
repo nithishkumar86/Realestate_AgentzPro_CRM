@@ -450,9 +450,17 @@ export function BillingPageClient({ overview, embedded = false, onChanged }: Rea
       <dl className="auth-billing-summary">
         <div>
           <dt>Status</dt>
-          <dd>{STATUS_LABELS[overview.subscriptionStatus] ?? overview.subscriptionStatus}</dd>
+          <dd>{overview.isInternal ? "Internal account" : (STATUS_LABELS[overview.subscriptionStatus] ?? overview.subscriptionStatus)}</dd>
         </div>
-        {overview.subscriptionStatus === "trialing" ? (
+        {overview.isInternal ? (
+          <div>
+            <dt>Seats</dt>
+            <dd>
+              {overview.seats.activeMembers + overview.seats.pendingInvitations} of {overview.seats.paidSeats} used
+            </dd>
+          </div>
+        ) : null}
+        {!overview.isInternal && overview.subscriptionStatus === "trialing" ? (
           <div>
             <dt>{overview.hasCrmAccess ? "Trial ends" : "Trial ended"}</dt>
             <dd>{formatDate(overview.trialEndsAt)}</dd>
@@ -473,6 +481,8 @@ export function BillingPageClient({ overview, embedded = false, onChanged }: Rea
           </>
         ) : null}
       </dl>
+
+      {overview.isInternal ? <p className="auth-card__subtitle">No payment needed: this is an internal company account.</p> : null}
 
       {overview.isOwner && currentPlan && currentPlan.razorpayStatus === "active" && !currentPlan.cancelAtPeriodEnd ? (
         <div className="billing-cancel">

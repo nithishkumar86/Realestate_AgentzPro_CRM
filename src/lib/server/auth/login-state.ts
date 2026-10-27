@@ -24,6 +24,8 @@ export type LoginState =
       subscriptionStatus: string;
       trialEndsAt: string | null;
       currentPeriodEndsAt: string | null;
+      /** AgentzPro's own company: CRM access without a trial or paid period. Set only by hand in SQL. */
+      isInternal: boolean;
     }
   | { status: "integrity_error"; reason: string };
 
@@ -95,7 +97,7 @@ export async function resolveLoginState(userId: string): Promise<LoginState> {
 
   const { data: subscription, error: subscriptionError } = await db
     .from("tenants_subscriptions")
-    .select("subscription_status, trial_ends_at, current_period_ends_at")
+    .select("subscription_status, trial_ends_at, current_period_ends_at, is_internal")
     .eq("tenant_id", membership.tenant_id)
     .maybeSingle();
 
@@ -115,5 +117,6 @@ export async function resolveLoginState(userId: string): Promise<LoginState> {
     subscriptionStatus: subscription.subscription_status,
     trialEndsAt: subscription.trial_ends_at,
     currentPeriodEndsAt: subscription.current_period_ends_at,
+    isInternal: subscription.is_internal === true,
   };
 }

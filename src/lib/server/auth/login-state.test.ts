@@ -77,7 +77,20 @@ describe("resolveLoginState", () => {
       subscriptionStatus: "trialing",
       trialEndsAt: "2026-09-17T00:00:00.000Z",
       currentPeriodEndsAt: null,
+      isInternal: false,
     });
+  });
+
+  it("reads the internal-company flag from the subscription row", async () => {
+    tenantResponses = {};
+    tableResponses = {
+      tenant_memberships: { data: OWNER_MEMBERSHIP, error: null },
+      profiles: { data: { user_id: USER_ID, full_name: "Owner A" }, error: null },
+      tenants: { data: { tenant_name: "Tenant A", tenant_status: "active" }, error: null },
+      tenants_subscriptions: { data: { ...TRIAL, is_internal: true }, error: null },
+    };
+
+    await expect(resolveLoginState(USER_ID)).resolves.toMatchObject({ status: "ready", isInternal: true });
   });
 
   it("returns no_company for a person with a profile but no company (the owner removed them)", async () => {

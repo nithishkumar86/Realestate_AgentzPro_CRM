@@ -37,6 +37,12 @@ export function evaluateCrmAccess(state: LoginState): boolean {
     return false;
   }
 
+  // AgentzPro's own company (tenants_subscriptions.is_internal, set only by hand in SQL): no trial or
+  // paid period needed. A suspended tenant or blocked member is still refused above.
+  if (state.isInternal) {
+    return true;
+  }
+
   const now = Date.now();
 
   if (state.subscriptionStatus === "trialing") {
@@ -111,6 +117,7 @@ export interface BillingAccess {
   trialEndsAt: string | null;
   currentPeriodEndsAt: string | null;
   hasCrmAccess: boolean;
+  isInternal: boolean;
 }
 
 /**
@@ -151,6 +158,7 @@ export async function requireBillingMember(): Promise<BillingAccess> {
     trialEndsAt: state.trialEndsAt,
     currentPeriodEndsAt: state.currentPeriodEndsAt,
     hasCrmAccess: evaluateCrmAccess(state),
+    isInternal: state.isInternal,
   };
 }
 
