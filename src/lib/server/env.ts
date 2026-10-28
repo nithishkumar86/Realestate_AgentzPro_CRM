@@ -280,3 +280,41 @@ export function getRazorpayEnv(): RazorpayEnvironment {
   cachedRazorpayEnvironment = result.data;
   return cachedRazorpayEnvironment;
 }
+
+// ---------------------------------------------------------------------------
+// Google Ads (OAuth sign-in + Google Ads API, used only to look up campaign and ad group names)
+//
+// The lead-form webhook itself needs none of these: each tenant's URL token and google_key live in
+// public.google_lead_webhooks, so leads keep arriving even when Google sign-in is not configured.
+// GOOGLE_OAUTH_REDIRECT_URI must match the OAuth client's authorized redirect URI exactly, e.g.
+// https://crm.agentzpro.com/api/integrations/google/callback.
+// ---------------------------------------------------------------------------
+const googleEnvironmentSchema = z.object({
+  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1),
+  GOOGLE_OAUTH_REDIRECT_URI: z.url(),
+  GOOGLE_OAUTH_STATE_SECRET: z.string().min(32),
+  GOOGLE_ADS_DEVELOPER_TOKEN: z.string().min(1),
+  GOOGLE_ADS_API_VERSION: z.preprocess(emptyStringToUndefined, z.string().regex(/^v\d+$/).default("v26")),
+});
+
+export type GoogleEnvironment = z.infer<typeof googleEnvironmentSchema>;
+
+let cachedGoogleEnvironment: GoogleEnvironment | undefined;
+
+export function getGoogleEnv(): GoogleEnvironment {
+  if (cachedGoogleEnvironment) {
+    return cachedGoogleEnvironment;
+  }
+
+  const result = googleEnvironmentSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new AppError("Google Ads server configuration is incomplete.", {
+      status: 503,
+      code: "GOOGLE_CONFIGURATION_ERROR",
+    });
+  }
+
+  cachedGoogleEnvironment = result.data;
+  return cachedGoogleEnvironment;
+}

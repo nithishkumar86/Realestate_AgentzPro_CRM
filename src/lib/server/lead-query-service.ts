@@ -49,7 +49,7 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const sortField = request.sortField ?? "leadDate";
   const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,leadgen_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
+    .select("id,leadgen_id,google_lead_id,google_campaign_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.leadId) query = query.eq("id", request.leadId);
   if (request.source) query = query.eq("lead_source", request.source);
@@ -111,6 +111,11 @@ function toLeadRow(lead: Record<string, unknown>): LeadRow {
   const row: LeadRow = { id: String(lead.id), leadgenId: String(lead.leadgen_id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), source: "facebook", status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default", assignedUserId: typeof lead.assigned_user_id === "string" ? lead.assigned_user_id : null, assigneeName: null };
   // A call-in lead has no Meta lead id, page or ad.
   if (lead.lead_source === "telecaller") return { ...row, source: "telecaller", leadgenId: "", facebookPage: "-", adName: "-" };
+  // A Google Ads lead: Google's lead id, and the campaign name once the name worker has looked it up.
+  if (lead.lead_source === "google_ads") {
+    const campaignId = asNullableString(lead.google_campaign_id);
+    return { ...row, source: "google_ads", leadgenId: asNullableString(lead.google_lead_id) ?? "", facebookPage: "Google Ads", adName: adName ?? (campaignId ? `Google Ads · Campaign ${campaignId}` : "Unattributed") };
+  }
   return row;
 }
 

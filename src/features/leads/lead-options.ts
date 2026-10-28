@@ -67,10 +67,10 @@ export const TIMELINE_FILTER_TYPES: Record<Exclude<TimelineFilter, "all">, reado
 };
 
 // Where a lead came from. Keep in sync with the `lead_data.lead_source` check constraint in
-// supabase/migrations/20261026170000_lead_source_telecaller_leads.sql.
-export const LEAD_SOURCES = ["facebook", "telecaller"] as const;
+// supabase/migrations/20261028120000_google_ads_leads.sql.
+export const LEAD_SOURCES = ["facebook", "telecaller", "google_ads"] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
-export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = { facebook: "Facebook", telecaller: "Telecaller" };
+export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = { facebook: "Facebook", telecaller: "Telecaller", google_ads: "Google Ads" };
 
 // Call-in lead form limits; the create_telecaller_lead RPC enforces the same.
 export const CALL_IN_TEXT_MAX_LENGTH = 200;

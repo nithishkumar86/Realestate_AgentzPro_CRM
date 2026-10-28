@@ -1086,7 +1086,7 @@ describe("call-in leads", () => {
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Source" }));
     const list = await screen.findByRole("listbox");
-    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["All sources", "Facebook", "Telecaller"]);
+    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["All sources", "Facebook", "Telecaller", "Google Ads"]);
     fireEvent.click(within(list).getByRole("option", { name: "Telecaller" }));
     await waitFor(() => expect(queryCalls(calls).at(-1)?.body).toMatchObject({ source: "telecaller" }));
     fireEvent.click(await screen.findByRole("button", { name: "Remove Source filter: Telecaller" }));
