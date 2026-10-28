@@ -3871,3 +3871,20 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 @media (prefers-reduced-motion: reduce) { .mvp-reminder { animation: none; } }
 @media (max-width: 640px) { .mvp-reminder-stack { right: 16px; bottom: 16px; } }
 
+
+/* Google Ads card on the Connection page */
+.google-ads-step { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--border); }
+.google-ads-step h3 { margin: 0; font-size: 1rem; }
+.google-copy-row { display: flex; gap: 8px; }
+.google-copy-row input { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; }
+.google-account-list { display: grid; gap: 8px; }
+.google-account-list__item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }
+.google-account-list__item span { display: grid; gap: 2px; min-width: 0; }
+.google-account-list__item small { color: var(--text-muted); }
+/* Google's sign-in button: light and dark themes per the Google Identity branding guidelines. */
+.google-signin-button { display: inline-flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border: 1px solid #747775; border-radius: 4px; background: #fff; color: #1f1f1f; font-family: Roboto, Arial, sans-serif; font-size: 14px; font-weight: 500; text-decoration: none; }
+.google-signin-button:hover { background: #f8f9fa; }
+.google-signin-button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+:root[data-theme="dark"] .google-signin-button { border-color: #8e918f; background: #131314; color: #e3e3e3; }
+:root[data-theme="dark"] .google-signin-button:hover { background: #1f1f20; }
+@media (max-width: 640px) { .google-copy-row { flex-direction: column; } }

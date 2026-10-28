@@ -34,3 +34,19 @@ export async function startMetaConnection(shortLivedUserAccessToken: string): Pr
 export async function connectSelectedPages(connectionId: string, facebookPageIds: string[]): Promise<ConnectionOverview> { return request("/api/meta/pages/connect", { method: "POST", body: JSON.stringify({ connection_id: connectionId, facebook_page_ids: facebookPageIds }) }); }
 export async function disconnectFacebookPage(pageRecordId: string): Promise<ConnectionOverview> { return request("/api/meta/pages/disconnect", { method: "POST", body: JSON.stringify({ page_record_id: pageRecordId }) }); }
 export async function disconnectMetaConnection(connectionId: string): Promise<ConnectionOverview> { return request("/api/meta/disconnect", { method: "POST", body: JSON.stringify({ connection_id: connectionId }) }); }
+
+export type GoogleAdsOverview = {
+  canManage: boolean;
+  connection: { email: string; connectedAt: string } | null;
+  needsReconnect: boolean;
+  linkedAccounts: Array<{ customerId: string; name: string | null }>;
+  webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null } | null;
+  hasWebhook: boolean;
+};
+export type GoogleAdsAccountOption = { customerId: string; name: string | null; loginCustomerId: string | null; selected: boolean };
+
+export async function getGoogleAdsOverview(): Promise<GoogleAdsOverview> { return request<GoogleAdsOverview>("/api/integrations/google"); }
+export async function createGoogleAdsWebhook(): Promise<{ url: string; key: string }> { return request("/api/integrations/google/webhook", { method: "POST", body: "{}" }); }
+export async function getGoogleAdsAccountOptions(): Promise<{ accounts: GoogleAdsAccountOption[] }> { return request("/api/integrations/google/accounts"); }
+export async function saveGoogleAdsAccounts(customerIds: string[]): Promise<{ saved: boolean }> { return request("/api/integrations/google/accounts", { method: "POST", body: JSON.stringify({ customerIds }) }); }
+export async function disconnectGoogleAds(): Promise<{ disconnected: boolean }> { return request("/api/integrations/google/disconnect", { method: "POST", body: "{}" }); }

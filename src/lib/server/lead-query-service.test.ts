@@ -88,6 +88,21 @@ describe("tenant-scoped lead query contracts", () => {
     expect(result.items[0]).toMatchObject({ source: "telecaller", leadgenId: "", facebookPage: "-", adName: "-", leadName: "Caller" });
     expect(result.items[1]).toMatchObject({ source: "facebook", leadgenId: "123", facebookPage: "Page A", adName: "Unattributed" });
   });
+
+  it("shows a Google Ads lead with Google's lead id, 'Google Ads' as the page, and a placeholder until the campaign name arrives", async () => {
+    const google = { leadgen_id: null, lead_phone: "9876543210", ad_id: null, lead_created_time: "2026-10-28T10:00:00Z", status: "New Lead", label: "Warm", label_source: "ai", lead_source: "google_ads", facebook_pages: null };
+    const leads = builder({ data: [
+      { ...google, id: "lead-1", google_lead_id: "g-1", google_campaign_id: "111", lead_name: "A", ad_name: null },
+      { ...google, id: "lead-2", google_lead_id: "g-2", google_campaign_id: "111", lead_name: "B", ad_name: "Chennai Villas" },
+      { ...google, id: "lead-3", google_lead_id: "g-3", google_campaign_id: null, lead_name: "C", ad_name: null },
+    ], error: null, count: 3 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    const result = await queryLeads(context, {}, true);
+    expect(result.items[0]).toMatchObject({ source: "google_ads", leadgenId: "g-1", facebookPage: "Google Ads", adName: "Google Ads · Campaign 111", adId: null });
+    expect(result.items[1]).toMatchObject({ adName: "Chennai Villas" });
+    expect(result.items[2]).toMatchObject({ adName: "Unattributed" });
+  });
 });
 
 describe("deleteLead", () => {
