@@ -65,12 +65,19 @@ export function mapGoogleWebhookLead(rawBody: string): MappedGoogleLead {
   } catch {
     throw new GoogleLeadPayloadError();
   }
-  const result = webhookLeadSchema.safeParse(parsed);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new GoogleLeadPayloadError();
+
+  // The reference and the production sample spell it google_key, but Google's own test samples send
+  // "Google_key" (https://developers.google.com/google-ads/webhook/docs/samples). Accept any letter case;
+  // the value is still matched exactly against the stored key, and every spelling is kept out of storage.
+  const keyFields = Object.keys(parsed).filter((key) => key.toLowerCase() === "google_key");
+  const rawPayload: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+  for (const key of keyFields) delete rawPayload[key];
+  const suppliedKey = keyFields.includes("google_key") ? (parsed as Record<string, unknown>).google_key : keyFields.length > 0 ? (parsed as Record<string, unknown>)[keyFields[0]] : undefined;
+
+  const result = webhookLeadSchema.safeParse({ ...rawPayload, google_key: suppliedKey });
   if (!result.success) throw new GoogleLeadPayloadError();
   const lead = result.data;
-
-  const rawPayload: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
-  delete rawPayload.google_key;
 
   return {
     googleKey: lead.google_key,
