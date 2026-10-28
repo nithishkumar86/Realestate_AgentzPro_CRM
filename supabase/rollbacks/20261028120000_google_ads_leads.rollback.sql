@@ -22,6 +22,7 @@
 -- block reads or writes), as 20261026170000 did.
 
 begin;
+set local lock_timeout = '5s';
 
 do $$
 begin

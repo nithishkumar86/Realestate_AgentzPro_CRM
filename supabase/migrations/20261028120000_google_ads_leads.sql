@@ -27,8 +27,13 @@
 -- applied only after the worker route is live.
 --
 -- Undo: supabase/rollbacks/20261028120000_google_ads_leads.rollback.sql.
+--
+-- Locks: from the first ALTER TABLE lead_data until COMMIT this transaction holds ACCESS EXCLUSIVE on
+-- lead_data (the index builds and FK check run inside it). lock_timeout makes it fail and roll back cleanly
+-- instead of queueing every lead read/write behind it if a long query already holds lead_data.
 
 begin;
+set local lock_timeout = '5s';
 
 -- ---------------------------------------------------------------------------
 -- Google sign-in (OAuth): one per tenant. Disconnect revokes the token at Google and clears it here.

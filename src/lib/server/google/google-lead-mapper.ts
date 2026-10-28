@@ -8,25 +8,28 @@ import type { LeadField } from "@/lib/server/lead-redaction";
  * https://developers.google.com/google-ads/webhook/docs/implementation). Only lead_id and google_key are
  * required: every other field may be absent, and Google may add new ones, which are ignored rather than
  * rejected ("ignore unrecognized fields"). A lead missing its campaign or form id is still a lead.
+ *
+ * No per-field length caps: Google never resends a lead answered with 4XX, so a long free-text answer must
+ * never be a reason to refuse it. The route's 64 KB body limit already bounds the size.
  */
 const idValue = z.union([z.string(), z.number()]).optional().nullable();
 
 const webhookLeadSchema = z.object({
-  lead_id: z.union([z.string().trim().min(1).max(200), z.number()]),
-  google_key: z.string().max(500),
+  lead_id: z.union([z.string().trim().min(1), z.number()]),
+  google_key: z.string(),
   user_column_data: z.array(z.object({
-    column_id: z.string().max(200).optional().nullable(),
-    column_name: z.string().max(500).optional().nullable(),
-    string_value: z.string().max(5_000).optional().nullable(),
-  }).loose()).max(200).optional().nullable(),
+    column_id: z.string().optional().nullable(),
+    column_name: z.string().optional().nullable(),
+    string_value: z.string().optional().nullable(),
+  }).loose()).optional().nullable(),
   form_id: idValue,
   campaign_id: idValue,
   adgroup_id: idValue,
   creative_id: idValue,
   asset_group_id: idValue,
-  gcl_id: z.string().max(500).optional().nullable(),
+  gcl_id: z.string().optional().nullable(),
   is_test: z.boolean().optional().nullable(),
-  lead_submit_time: z.string().max(100).optional().nullable(),
+  lead_submit_time: z.string().optional().nullable(),
 }).loose();
 
 export type GoogleWebhookLead = z.infer<typeof webhookLeadSchema>;

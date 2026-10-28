@@ -101,7 +101,7 @@ export function GoogleAdsConnectionCard() {
           </div>
           <div className="button-group">
             {confirmRotate ? <>
-              <span className="field-help">Leads are refused until the new key is pasted into every Google Ads lead form.</span>
+              <span className="field-help">The old key stops working at once. Any lead a form sends before you paste the new key into it is lost; Google does not resend it.</span>
               <button className="button button--danger" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); setConfirmRotate(false); setMessage({ tone: "success", text: "New key created. Paste it into your Google Ads lead forms." }); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <RefreshCw aria-hidden="true" size={18} />}Replace key</button>
               <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(false)}><X aria-hidden="true" size={18} />Cancel</button>
             </> : <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(true)}><RefreshCw aria-hidden="true" size={18} />Replace key</button>}
