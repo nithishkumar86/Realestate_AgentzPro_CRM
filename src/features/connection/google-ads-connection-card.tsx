@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, KeyRound, Loader2, RefreshCw, Unplug, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Unplug, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LoadingState, Notice, StatusBadge } from "@/components/ui";
@@ -35,6 +35,8 @@ export function GoogleAdsConnectionCard() {
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
   const [copied, setCopied] = useState<"url" | "key" | null>(null);
+  // The key is a secret: hidden like a password until the owner chooses to show it. Copy works either way.
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     const result = new URLSearchParams(window.location.search).get("google");
@@ -86,18 +88,19 @@ export function GoogleAdsConnectionCard() {
     {overview && !canManage ? <Notice tone="info" title="Only the company owner can set up Google Ads." /> : null}
     {overview && canManage ? <>
       <div className="google-ads-step">
-        <h3>1. Lead form webhook</h3>
+        <h3><span className="google-step-number" aria-hidden="true">1</span>Lead form webhook</h3>
         <p className="field-help">In Google Ads, open each lead form, go to Lead delivery → Webhook integration, and paste this URL and key. Then select Send test data.</p>
         {webhook ? <>
           <div className="field"><label htmlFor="google-webhook-url">Webhook URL</label>
             <div className="google-copy-row"><input id="google-webhook-url" readOnly value={webhook.url} onFocus={(event) => event.currentTarget.select()} />
-              <button className="button button--secondary" type="button" onClick={() => void copy("url", webhook.url)}>{copied === "url" ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}{copied === "url" ? "Copied" : "Copy"}</button></div></div>
+              <button className={`google-copy-row__action${copied === "url" ? " google-copy-row__action--done" : ""}`} type="button" onClick={() => void copy("url", webhook.url)}>{copied === "url" ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}{copied === "url" ? "Copied" : "Copy"}</button></div></div>
           <div className="field"><label htmlFor="google-webhook-key">Key</label>
-            <div className="google-copy-row"><input id="google-webhook-key" readOnly value={webhook.key} onFocus={(event) => event.currentTarget.select()} />
-              <button className="button button--secondary" type="button" onClick={() => void copy("key", webhook.key)}>{copied === "key" ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}{copied === "key" ? "Copied" : "Copy"}</button></div></div>
+            <div className="google-copy-row"><input id="google-webhook-key" type={showKey ? "text" : "password"} autoComplete="off" readOnly value={webhook.key} onFocus={(event) => event.currentTarget.select()} />
+              <button className="google-copy-row__action" type="button" aria-pressed={showKey} onClick={() => setShowKey((current) => !current)}>{showKey ? <EyeOff aria-hidden="true" size={16} /> : <Eye aria-hidden="true" size={16} />}{showKey ? "Hide" : "Show"}</button>
+              <button className={`google-copy-row__action${copied === "key" ? " google-copy-row__action--done" : ""}`} type="button" onClick={() => void copy("key", webhook.key)}>{copied === "key" ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}{copied === "key" ? "Copied" : "Copy"}</button></div></div>
           <div className="meta-list">
-            <div className="meta-item"><span>Test lead</span><strong>{webhook.lastTestAt ? `Received ✓ ${formatDateTime(webhook.lastTestAt)}` : "Not received yet"}</strong></div>
-            <div className="meta-item"><span>Last lead</span><strong>{webhook.lastLeadAt ? formatDateTime(webhook.lastLeadAt) : "None yet"}</strong></div>
+            <div className={`meta-item${webhook.lastTestAt ? " google-status--ok" : ""}`}><span>Test lead</span><strong>{webhook.lastTestAt ? `Received ✓ ${formatDateTime(webhook.lastTestAt)}` : "Not received yet"}</strong></div>
+            <div className={`meta-item${webhook.lastLeadAt ? " google-status--ok" : ""}`}><span>Last lead</span><strong>{webhook.lastLeadAt ? formatDateTime(webhook.lastLeadAt) : "None yet"}</strong></div>
           </div>
           <div className="button-group">
             {confirmRotate ? <>
@@ -110,7 +113,7 @@ export function GoogleAdsConnectionCard() {
       </div>
 
       <div className="google-ads-step">
-        <h3>2. Campaign names (optional)</h3>
+        <h3><span className="google-step-number" aria-hidden="true">2</span>Campaign names <span className="google-step-optional">Optional</span></h3>
         <p className="field-help">Sign in with Google so each lead shows the campaign it came from. AgentzPro CRM only reads your campaign and ad group names; it never changes your campaigns, budgets or billing. <Link href="/privacy-policy">Privacy Policy</Link></p>
         {overview.needsReconnect ? <Notice tone="warning" title="Google stopped accepting this sign-in. Sign in with Google again so campaign names keep loading." /> : null}
         {overview.connection ? <>
