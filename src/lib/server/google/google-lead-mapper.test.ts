@@ -29,6 +29,12 @@ describe("mapGoogleWebhookLead", () => {
     expect(lead).toMatchObject({ googleLeadId: "abc", isTest: false, campaignId: null, formId: null, submitTime: null, fieldData: [] });
   });
 
+  it("accepts Google's test-sample spelling Google_key and keeps every spelling out of the stored payload", () => {
+    const lead = mapGoogleWebhookLead(JSON.stringify({ lead_id: "x", campaign_id: 123456, Google_key: "secret-key", is_test: true }));
+    expect(lead).toMatchObject({ googleKey: "secret-key", isTest: true, campaignId: "123456" });
+    expect(Object.keys(lead.rawPayload).some((key) => key.toLowerCase() === "google_key")).toBe(false);
+  });
+
   it("never rejects a lead for a long answer or many questions", () => {
     const longAnswer = "a".repeat(20_000);
     const columns = [column("FULL_NAME", "Ravi"), ...Array.from({ length: 250 }, (_, index) => column(`Q${index}`, "x")), column("OTHER", longAnswer, "Tell us more")];
