@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, KeyRound, Loader2, RefreshCw, Unplug, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Unplug, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LoadingState, Notice, StatusBadge } from "@/components/ui";
@@ -35,6 +35,8 @@ export function GoogleAdsConnectionCard() {
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
   const [copied, setCopied] = useState<"url" | "key" | null>(null);
+  // The key is a secret: hidden like a password until the owner chooses to show it. Copy works either way.
+  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => {
     const result = new URLSearchParams(window.location.search).get("google");
@@ -93,7 +95,8 @@ export function GoogleAdsConnectionCard() {
             <div className="google-copy-row"><input id="google-webhook-url" readOnly value={webhook.url} onFocus={(event) => event.currentTarget.select()} />
               <button className="button button--secondary" type="button" onClick={() => void copy("url", webhook.url)}>{copied === "url" ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}{copied === "url" ? "Copied" : "Copy"}</button></div></div>
           <div className="field"><label htmlFor="google-webhook-key">Key</label>
-            <div className="google-copy-row"><input id="google-webhook-key" readOnly value={webhook.key} onFocus={(event) => event.currentTarget.select()} />
+            <div className="google-copy-row"><input id="google-webhook-key" type={showKey ? "text" : "password"} autoComplete="off" readOnly value={webhook.key} onFocus={(event) => event.currentTarget.select()} />
+              <button className="button button--secondary" type="button" aria-pressed={showKey} onClick={() => setShowKey((current) => !current)}>{showKey ? <EyeOff aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}{showKey ? "Hide" : "Show"}</button>
               <button className="button button--secondary" type="button" onClick={() => void copy("key", webhook.key)}>{copied === "key" ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}{copied === "key" ? "Copied" : "Copy"}</button></div></div>
           <div className="meta-list">
             <div className="meta-item"><span>Test lead</span><strong>{webhook.lastTestAt ? `Received ✓ ${formatDateTime(webhook.lastTestAt)}` : "Not received yet"}</strong></div>
