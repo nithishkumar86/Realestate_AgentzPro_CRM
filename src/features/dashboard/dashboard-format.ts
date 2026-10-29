@@ -63,35 +63,41 @@ export function rankStatuses(byStatus: Array<{ status: string; count: number }>)
     .map(({ status, count }) => ({ status, count, share: total ? Math.round((count / total) * 100) : 0 }));
 }
 
-/** The non-ad rows get_dashboard_stats adds to topAds: totals, not a ranked ad. */
-const CATCH_ALL_AD_IDS = new Set(["other", "unattributed", "telecaller"]);
+/** The non-ranked rows get_dashboard_platform_stats adds to topItems: totals, not a ranked item. */
+const CATCH_ALL_ITEM_IDS = new Set(["other", "unattributed"]);
 
-/** "Name pending (1234)" — the same wording the Ad filter dropdown uses. */
-export function adLabel(ad: { adId: string; name: string | null }): string {
-  if (CATCH_ALL_AD_IDS.has(ad.adId)) return ad.name ?? ad.adId;
-  return `${ad.name ?? "Name pending"} (${ad.adId.slice(-4)})`;
+export type TopItem = { id: string; name: string | null; count: number };
+
+/**
+ * A ranked item's bar label. With `idSuffix` (Facebook ads) it is "Name pending (1234)", the same wording the
+ * Ad filter dropdown uses; without it (Google ad groups, whose name already falls back to the id) the name alone.
+ */
+export function itemLabel(item: Pick<TopItem, "id" | "name">, idSuffix: boolean): string {
+  if (CATCH_ALL_ITEM_IDS.has(item.id)) return item.name ?? item.id;
+  return idSuffix ? `${item.name ?? "Name pending"} (${item.id.slice(-4)})` : item.name ?? "Name pending";
 }
 
 /** Theme colours live in globals.css (--chart-*) so light and dark each get a tuned palette. */
 export const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)", "var(--chart-7)", "var(--chart-8)"];
 
-export interface AdBar { name: string; count: number; color: string }
+export interface ItemBar { name: string; count: number; color: string }
 
 /**
- * Colours for ranked ads, rank 1 first: the seven vivid palette colours plus lime for rank 8. The
+ * Colours for ranked items, rank 1 first: the seven vivid palette colours plus lime for rank 8. The
  * palette's own eighth colour is grey, which would look like the grey catch-all rows, so it is skipped.
  */
-const AD_COLORS = [...CHART_COLORS.slice(0, 7), "var(--status-12)"];
+const ITEM_COLORS = [...CHART_COLORS.slice(0, 7), "var(--status-12)"];
 
 /**
- * Top-ads rows, each ranked ad in its own colour so the bars can be told apart. The database returns
- * at most 8 ranked ads (get_dashboard_stats), so colours never repeat. The "Other" and "Unattributed"
- * catch-all rows are neutral grey: they are totals, not a ranked ad, so they never borrow an ad's colour.
+ * Top-items rows (ads, ad groups), each ranked item in its own colour so the bars can be told apart. The
+ * database returns at most 8 ranked items (get_dashboard_platform_stats), so colours never repeat. The "Other"
+ * and "Unattributed" catch-all rows are neutral grey: they are totals, not a ranked item, so they never borrow
+ * an item's colour.
  */
-export function adBarData(ads: Array<{ adId: string; name: string | null; count: number }>): AdBar[] {
+export function itemBarData(items: TopItem[], idSuffix: boolean): ItemBar[] {
   let rank = 0;
-  return ads.map((ad) => {
-    const isCatchAll = CATCH_ALL_AD_IDS.has(ad.adId);
-    return { name: adLabel(ad), count: ad.count, color: isCatchAll ? "var(--chart-muted)" : AD_COLORS[rank++ % AD_COLORS.length] };
+  return items.map((item) => {
+    const isCatchAll = CATCH_ALL_ITEM_IDS.has(item.id);
+    return { name: itemLabel(item, idSuffix), count: item.count, color: isCatchAll ? "var(--chart-muted)" : ITEM_COLORS[rank++ % ITEM_COLORS.length] };
   });
 }

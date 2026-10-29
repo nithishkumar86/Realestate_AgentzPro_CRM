@@ -1,32 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { adBarData, adLabel, CHART_COLORS, describeDelta, formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
+import { itemBarData, itemLabel, CHART_COLORS, describeDelta, formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
 
-describe("adBarData", () => {
-  const ads = (count: number) => Array.from({ length: count }, (_, i) => ({ adId: `630${i}-ad${i}`, name: `Ad ${i}`, count: 10 - i }));
+describe("itemBarData", () => {
+  const ads = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `630${i}-ad${i}`, name: `Ad ${i}`, count: 10 - i }));
 
   it("gives every ranked ad its own colour, in rank order, with the same label as the Ad filter", () => {
-    const bars = adBarData(ads(5));
+    const bars = itemBarData(ads(5), true);
     expect(bars.map((bar) => bar.color)).toEqual(CHART_COLORS.slice(0, 5));
     expect(new Set(bars.map((bar) => bar.color)).size).toBe(5);
-    expect(bars[0]).toEqual({ name: adLabel(ads(1)[0]!), count: 10, color: CHART_COLORS[0] });
+    expect(bars[0]).toEqual({ name: itemLabel(ads(1)[0]!, true), count: 10, color: CHART_COLORS[0] });
   });
 
   it("colours the Other and Unattributed catch-all rows grey and never spends a palette colour on them", () => {
-    const bars = adBarData([
-      { adId: "6301-a", name: "A", count: 5 },
-      { adId: "other", name: "Other", count: 4 },
-      { adId: "6302-b", name: "B", count: 3 },
-      { adId: "unattributed", name: "Unattributed", count: 2 },
-    ]);
+    const bars = itemBarData([
+      { id: "6301-a", name: "A", count: 5 },
+      { id: "other", name: "Other", count: 4 },
+      { id: "6302-b", name: "B", count: 3 },
+      { id: "unattributed", name: "Unattributed", count: 2 },
+    ], true);
     expect(bars.map((bar) => bar.color)).toEqual([CHART_COLORS[0], "var(--chart-muted)", CHART_COLORS[1], "var(--chart-muted)"]);
   });
 
   it("keeps all 8 possible ranked ads distinct and never grey, and handles no ads", () => {
-    const bars = adBarData(ads(8));
+    const bars = itemBarData(ads(8), true);
     expect(new Set(bars.map((bar) => bar.color)).size).toBe(8);
     expect(bars.map((bar) => bar.color)).not.toContain("var(--chart-8)");
     expect(bars.map((bar) => bar.color)).not.toContain("var(--chart-muted)");
-    expect(adBarData([])).toEqual([]);
+    expect(itemBarData([], true)).toEqual([]);
   });
 });
 
@@ -90,15 +90,16 @@ describe("display helpers", () => {
   });
 
   it("names ads the way the Ad filter does", () => {
-    expect(adLabel({ adId: "6301-karuvi", name: "karuvi" })).toBe("karuvi (ruvi)");
-    expect(adLabel({ adId: "6302-aruvi", name: null })).toBe("Name pending (ruvi)");
-    expect(adLabel({ adId: "other", name: "Other" })).toBe("Other");
-    expect(adLabel({ adId: "unattributed", name: "Unattributed" })).toBe("Unattributed");
-    expect(adLabel({ adId: "telecaller", name: "Telecaller" })).toBe("Telecaller");
+    expect(itemLabel({ id: "6301-karuvi", name: "karuvi" }, true)).toBe("karuvi (ruvi)");
+    expect(itemLabel({ id: "6302-aruvi", name: null }, true)).toBe("Name pending (ruvi)");
+    expect(itemLabel({ id: "other", name: "Other" }, true)).toBe("Other");
+    expect(itemLabel({ id: "unattributed", name: "Unattributed" }, true)).toBe("Unattributed");
+    expect(itemLabel({ id: "other", name: "Other" }, false)).toBe("Other");
   });
 
-  it("colours the Telecaller row grey like the other catch-all rows", () => {
-    const bars = adBarData([{ adId: "6301-a", name: "A", count: 5 }, { adId: "telecaller", name: "Telecaller", count: 2 }]);
-    expect(bars.map((bar) => bar.color)).toEqual([CHART_COLORS[0], "var(--chart-muted)"]);
+  it("names Google ad groups by name alone: the server already falls back to the id", () => {
+    expect(itemLabel({ id: "123456789", name: "Chennai Villas" }, false)).toBe("Chennai Villas");
+    expect(itemLabel({ id: "123456789", name: "Ad group 123456789" }, false)).toBe("Ad group 123456789");
+    expect(itemBarData([{ id: "1", name: "A", count: 5 }, { id: "unattributed", name: "Unattributed", count: 2 }], false).map((bar) => bar.name)).toEqual(["A", "Unattributed"]);
   });
 });
