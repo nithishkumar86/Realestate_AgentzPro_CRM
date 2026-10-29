@@ -7,10 +7,10 @@ import { LoadingState, Notice, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/date-utils";
 import {
   createGoogleAdsWebhook, disconnectGoogleAds, getGoogleAdsAccountOptions, getGoogleAdsOverview, saveGoogleAdsAccounts,
-  type GoogleAdsAccountOption, type GoogleAdsOverview,
+  stopGoogleAdsWebhook, type GoogleAdsAccountOption, type GoogleAdsOverview,
 } from "@/services/crm-api-client";
 
-type Busy = "webhook" | "accounts" | "save" | "disconnect" | null;
+type Busy = "webhook" | "stop" | "accounts" | "save" | "disconnect" | null;
 
 // Shown once after Google's redirect back to /connection?google=<result>.
 const CALLBACK_MESSAGES: Record<string, { tone: "success" | "danger" | "warning"; text: string }> = {
@@ -34,6 +34,7 @@ export function GoogleAdsConnectionCard() {
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const [copied, setCopied] = useState<"url" | "key" | null>(null);
   // The key is a secret: hidden like a password until the owner chooses to show it. Copy works either way.
   const [showKey, setShowKey] = useState(false);
@@ -109,6 +110,13 @@ export function GoogleAdsConnectionCard() {
               <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(false)}><X aria-hidden="true" size={18} />Cancel</button>
             </> : <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(true)}><RefreshCw aria-hidden="true" size={18} />Replace key</button>}
           </div>
+          <div className="button-group">
+            {confirmStop ? <>
+              <span className="field-help">AgentzPro CRM refuses every Google Ads lead from now on, even if the webhook is still in your lead forms. Leads already received stay. To receive leads again you get a new key to paste into your lead forms.</span>
+              <button className="button button--danger" type="button" disabled={busy === "stop"} onClick={() => void run("stop", async () => { await stopGoogleAdsWebhook(); setConfirmStop(false); setConfirmRotate(false); await reload(); setMessage({ tone: "success", text: "Google Ads leads stopped. No new Google Ads leads will be saved." }); })}>{busy === "stop" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Stop receiving Google Ads leads</button>
+              <button className="button button--secondary" type="button" onClick={() => setConfirmStop(false)}><X aria-hidden="true" size={18} />Cancel</button>
+            </> : <button className="button button--danger" type="button" onClick={() => setConfirmStop(true)}><Unplug aria-hidden="true" size={18} />Stop receiving Google Ads leads</button>}
+          </div>
         </> : <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Create webhook URL and key</button></div>}
       </div>
 
@@ -136,7 +144,7 @@ export function GoogleAdsConnectionCard() {
             {!accountOptions ? <button className="button button--secondary" type="button" disabled={busy === "accounts"} onClick={() => void run("accounts", async () => { const { accounts } = await getGoogleAdsAccountOptions(); setAccountOptions(accounts); setSelected(accounts.filter((account) => account.selected).map((account) => account.customerId)); })}>{busy === "accounts" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Check aria-hidden="true" size={18} />}Choose accounts</button> : null}
             {overview.needsReconnect ? <GoogleSignInButton /> : null}
             {confirmDisconnect ? <>
-              <span className="field-help">Leads keep arriving; new leads will not get campaign names until you sign in again.</span>
+              <span className="field-help">This removes only the Google sign-in. Leads keep arriving; new leads will not get campaign names until you sign in again. To stop leads, use Stop receiving Google Ads leads in step 1.</span>
               <button className="button button--danger" type="button" disabled={busy === "disconnect"} onClick={() => void run("disconnect", async () => { await disconnectGoogleAds(); setConfirmDisconnect(false); setAccountOptions(null); await reload(); setMessage({ tone: "success", text: "Google sign-in removed. Leads keep arriving." }); })}>{busy === "disconnect" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Disconnect Google</button>
               <button className="button button--secondary" type="button" onClick={() => setConfirmDisconnect(false)}><X aria-hidden="true" size={18} />Cancel</button>
             </> : <button className="button button--danger" type="button" onClick={() => setConfirmDisconnect(true)}><Unplug aria-hidden="true" size={18} />Disconnect Google</button>}

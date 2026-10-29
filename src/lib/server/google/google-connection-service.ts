@@ -162,7 +162,8 @@ export class GoogleConnectionService {
 
   /**
    * Revokes the grant at Google, then deletes the token, the account picks and cached names. Leads already
-   * received stay, and the webhook stays on, so new leads keep arriving (they wait for a name).
+   * received stay, and the webhook stays on, so new leads keep arriving (they wait for a name). Stopping leads
+   * is stopWebhook.
    */
   public async disconnect(): Promise<void> {
     const owner = await resolveOwner();
@@ -200,6 +201,21 @@ export class GoogleConnectionService {
     const { error } = await db.from("google_lead_webhooks").insert({ tenant_id: owner.tenantId, url_token: urlToken, encrypted_google_key: encryptToken(key) });
     if (error) throw new AppError("The webhook could not be created.", { status: 500, code: "GOOGLE_WEBHOOK_SAVE_FAILED" });
     return { url: buildWebhookUrl(origin, urlToken), key };
+  }
+
+  /**
+   * Stops Google Ads leads for this company: the webhook is switched off, so every delivery (real or test) is
+   * refused with 404 and nothing is saved (the webhook route and ingest_google_lead both require is_active).
+   * Google has no reliable way to remove a webhook from a lead form, so this switch is what actually stops leads.
+   * Leads already received stay. createOrRotateWebhook switches it back on, always with a NEW key, so the old key
+   * pasted in Google stays dead.
+   */
+  public async stopWebhook(): Promise<void> {
+    const owner = await resolveOwner();
+    const { error } = await getSupabaseAdminClient().from("google_lead_webhooks")
+      .update({ is_active: false })
+      .eq("tenant_id", owner.tenantId);
+    if (error) throw new AppError("Google Ads leads could not be stopped. Try again.", { status: 500, code: "GOOGLE_WEBHOOK_STOP_FAILED" });
   }
 
   private async getAccessToken(tenantId: string): Promise<string> {
