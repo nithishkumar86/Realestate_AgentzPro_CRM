@@ -4,6 +4,7 @@ import { ArrowDownRight, ArrowUpRight, Minus, Radio } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { EmptyState, Notice, PageHeader, SkeletonRows } from "@/components/ui";
+import { DashboardReportHeader, DownloadDashboardButton } from "@/features/dashboard/dashboard-download";
 import { DonutChart, HorizontalBarChart, StatusRankChart, TimelineChart, groupDonutData, labelDonutData } from "@/features/dashboard/dashboard-charts";
 import { describeDelta, formatCount, itemBarData } from "@/features/dashboard/dashboard-format";
 import { DEFAULT_DASHBOARD_PLATFORM, getDashboardPlatform, type DashboardPlatform, type DashboardPlatformId } from "@/features/dashboard/dashboard-platforms";
@@ -86,7 +87,11 @@ export function DashboardPageClient({ initialPlatform = DEFAULT_DASHBOARD_PLATFO
   return (
     <div className="dash">
       <PageHeader title="Dashboard" description="Live lead analytics for your company, one platform at a time. Filters work exactly like the Leads page."
-        actions={<PlatformSwitcher value={platformId} onChange={switchPlatform} />} />
+        actions={<div className="dash-header-actions">
+          <PlatformSwitcher value={platformId} onChange={switchPlatform} />
+          <DownloadDashboardButton platformLabel={platform.label} timezone={stats?.timezone} dataUpdatedAt={lastUpdated} disabled={!stats} />
+        </div>} />
+      <DashboardReportHeader platformLabel={platform.label} lastUpdated={lastUpdated} timezone={latestStats?.timezone} hasFilters={filters.hasActiveFilters} />
 
       <ConnectionNotice platform={platform} health={health} />
 
