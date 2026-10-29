@@ -1,5 +1,11 @@
 import type { Metadata } from "next";
+import { parseDashboardPlatform } from "@/features/dashboard/dashboard-platforms";
 import { DashboardPageClient } from "@/features/dashboard/dashboard-page-client";
 
 export const metadata: Metadata = { title: "Dashboard" };
-export default function DashboardPage() { return <DashboardPageClient />; }
+
+/** `?platform=google_ads` opens that platform's view; missing or unknown opens Facebook. */
+export default async function DashboardPage({ searchParams }: Readonly<{ searchParams: Promise<{ platform?: string | string[] }> }>) {
+  const { platform } = await searchParams;
+  return <DashboardPageClient initialPlatform={parseDashboardPlatform(platform)} />;
+}

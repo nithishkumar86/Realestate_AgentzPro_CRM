@@ -83,9 +83,10 @@ function FilterChip({ chipLabel, value, onRemove }: { chipLabel: string; value: 
  * The search box, Page/Ad/Status/Label dropdowns, Date popover and Today's Leads toggle. `actions`
  * fills the right-hand end of the second row (the leads page puts Delete/Download there; the
  * dashboard has none). The dashboard also hides the search box and the Today's Leads toggle, and
- * does not offer the Assignee filter (`showAssignee`, leads page only).
+ * does not offer the Assignee filter (`showAssignee`, leads page only). `showPage` / `showAd` let the
+ * dashboard hide the Facebook-only Page and Ad filters for a platform that has neither.
  */
-export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true, showAssignee = false, showSource = false }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean; showAssignee?: boolean; showSource?: boolean }) {
+export function LeadFilterBar({ filters, actions, showSearch = true, showQuickToggle = true, showAssignee = false, showSource = false, showPage = true, showAd = true }: { filters: LeadFilters; actions?: ReactNode; showSearch?: boolean; showQuickToggle?: boolean; showAssignee?: boolean; showSource?: boolean; showPage?: boolean; showAd?: boolean }) {
   const { options, pageRecordId, adId, search, quick, status, label, assignee, source, from, to } = filters;
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [isDateOpen, setIsDateOpen] = useState(false);
@@ -107,14 +108,14 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
         <span className="sr-only">Search leads</span>
         <input type="search" value={search} placeholder="Search leads by name, phone, or location..." onChange={(event) => filters.setSearch(event.target.value)} />
       </label> : null}
-      <FieldDropdown id="page" icon={<BookOpen size={16} />} label="Page" placeholder="All Pages" value={pageRecordId}
+      {showPage ? <FieldDropdown id="page" icon={<BookOpen size={16} />} label="Page" placeholder="All Pages" value={pageRecordId}
         options={options.pages.map((page) => ({ value: page.id, label: page.name }))}
         openField={openDropdown} onOpenChange={setOpenDropdown}
-        onChange={(next) => { filters.setPageRecordId(next); filters.setAdId(""); }} />
-      <FieldDropdown id="ad" icon={<Megaphone size={16} />} label="Ad" placeholder="All ads" value={adId}
+        onChange={(next) => { filters.setPageRecordId(next); filters.setAdId(""); }} /> : null}
+      {showAd ? <FieldDropdown id="ad" icon={<Megaphone size={16} />} label="Ad" placeholder="All ads" value={adId}
         options={[{ value: "unattributed", label: "Unattributed" }, ...options.ads.map((ad) => ({ value: ad.id, label: `${ad.name ?? "Name pending"} (${ad.id.slice(-4)})` }))]}
         openField={openDropdown} onOpenChange={setOpenDropdown}
-        onChange={filters.setAdId} />
+        onChange={filters.setAdId} /> : null}
       <FieldDropdown id="status" icon={<LayoutGrid size={16} />} label="Status" placeholder="All statuses" value={status}
         options={LEAD_STATUSES.map((item) => ({ value: item, label: item }))}
         openField={openDropdown} onOpenChange={setOpenDropdown}

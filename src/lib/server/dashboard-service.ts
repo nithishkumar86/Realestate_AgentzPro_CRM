@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { DashboardPlatformId } from "@/features/dashboard/dashboard-platforms";
 import { AppError } from "@/lib/server/app-error";
 import {
   getTenantTimezone,
@@ -11,32 +12,39 @@ import {
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
 
-/** The /leads filters the dashboard honours. Paging, sorting and bulk actions do not apply. */
+/**
+ * The platform the dashboard shows plus the /leads filters it honours. Paging, sorting and bulk actions do not
+ * apply. Page and Ad only reach here for a platform that offers them (the route rejects them otherwise).
+ */
 export type DashboardStatsRequest = Pick<
   LeadSearchRequest,
   "quickFilter" | "dateFrom" | "dateTo" | "pageRecordId" | "adId" | "status" | "label"
->;
+> & { platform: DashboardPlatformId };
 
 export type TimelineGranularity = "hour" | "day" | "month";
 
 export interface DashboardStats {
   tenantId: string;
+  /** The platform these numbers are for; the page drops a response for a platform it no longer shows. */
+  platform: DashboardPlatformId;
   timezone: string;
   granularity: TimelineGranularity;
   total: number;
   monthToDate: number;
   previousMonthSamePeriod: number;
-  byPage: Array<{ pageRecordId: string; pageName: string; count: number }>;
+  /** The platform's grouping (Facebook Page, Google Ads campaign); empty for a platform without one. `id` is null for "Unattributed". */
+  byGroup: Array<{ id: string | null; name: string; count: number }>;
   byLabel: Array<{ label: string; count: number }>;
   byStatus: Array<{ status: string; count: number }>;
-  topAds: Array<{ adId: string; name: string | null; count: number }>;
+  /** Ranked items (Meta ad, Google ad group) plus the "other" / "unattributed" catch-all rows; empty for a platform without items. */
+  topItems: Array<{ id: string; name: string | null; count: number }>;
   /** `bucket` is a tenant-local wall-clock time (YYYY-MM-DDTHH:MM:SS) with no offset. */
   timeline: Array<{ bucket: string; count: number }>;
   timelineTruncated: boolean;
   generatedAt: string;
 }
 
-type StatsPayload = Omit<DashboardStats, "tenantId" | "timezone" | "granularity">;
+type StatsPayload = Omit<DashboardStats, "tenantId" | "platform" | "timezone" | "granularity">;
 
 const DAY_MS = 86_400_000;
 const HOUR_BUCKET_MAX_WINDOW_MS = DAY_MS + 3_600_000; // one local day, tolerating a 25h DST day
@@ -44,6 +52,7 @@ const DAY_BUCKET_MAX_WINDOW_MS = 62 * DAY_MS;
 
 export interface DashboardRpcArgs {
   p_tenant_id: string;
+  p_lead_source: DashboardPlatformId;
   p_from: string | null;
   p_to: string | null;
   p_month_from: string;
@@ -54,8 +63,6 @@ export interface DashboardRpcArgs {
   p_ad_id: string | null;
   p_status: string | null;
   p_label: string | null;
-  p_search: string | null;
-  p_search_digits: string | null;
   p_tz: string;
   p_granularity: TimelineGranularity;
 }
@@ -84,6 +91,7 @@ export function buildDashboardRpcArgs(
 
   return {
     p_tenant_id: tenantId,
+    p_lead_source: request.platform,
     p_from: range?.from ?? null,
     p_to: range?.to ?? null,
     p_month_from: monthStart.toISOString(),
@@ -94,8 +102,6 @@ export function buildDashboardRpcArgs(
     p_ad_id: request.adId ?? null,
     p_status: request.status ?? null,
     p_label: request.label ?? null,
-    p_search: null, // the dashboard has no search; the RPC signature still expects the argument
-    p_search_digits: null,
     p_tz: timezone,
     p_granularity: chooseGranularity(range),
   };
@@ -117,9 +123,9 @@ function chooseGranularity(range: { from: string; to: string } | null): Timeline
 export async function getDashboardStats(context: TenantRequestContext, request: DashboardStatsRequest): Promise<DashboardStats> {
   const timezone = await getTenantTimezone(context.tenantId);
   const args = buildDashboardRpcArgs(context.tenantId, timezone, request);
-  const { data, error } = await getSupabaseAdminClient().rpc("get_dashboard_stats", args);
+  const { data, error } = await getSupabaseAdminClient().rpc("get_dashboard_platform_stats", args);
   if (error || !data || typeof data !== "object") {
     throw new AppError("The dashboard could not be loaded.", { status: 500, code: "DASHBOARD_STATS_FAILED" });
   }
-  return { tenantId: context.tenantId, timezone, granularity: args.p_granularity, ...(data as StatsPayload) };
+  return { tenantId: context.tenantId, platform: request.platform, timezone, granularity: args.p_granularity, ...(data as StatsPayload) };
 }

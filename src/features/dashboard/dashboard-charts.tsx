@@ -89,8 +89,8 @@ export function DonutChart({ data, ariaLabel, centerLabel = "Total" }: { data: D
   </div>;
 }
 
-export function pageDonutData(byPage: DashboardStats["byPage"]): DonutDatum[] {
-  return byPage.map((page) => ({ name: page.pageName, count: page.count }));
+export function groupDonutData(byGroup: DashboardStats["byGroup"]): DonutDatum[] {
+  return byGroup.map((group) => ({ name: group.name, count: group.count }));
 }
 
 export function labelDonutData(byLabel: DashboardStats["byLabel"]): DonutDatum[] {

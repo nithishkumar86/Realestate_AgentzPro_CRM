@@ -24,7 +24,8 @@ describe("POST /api/dashboard/stats", () => {
     const filters = { quickFilter: "all", status: "Sale", label: "Hot", adId: "unattributed", dateFrom: "2026-09-01", dateTo: "2026-09-10", pageRecordId: "00000000-0000-4000-8000-000000000001" };
     const response = await POST(post(filters));
     expect(response.status).toBe(200);
-    expect(mocks.stats).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, filters);
+    // No platform sent: the default Facebook view.
+    expect(mocks.stats).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, { ...filters, platform: "facebook" });
     expect(response.headers.get("cache-control")).toMatch(/no-store/);
     expect(await response.json()).toMatchObject({ total: 3 });
   });
@@ -36,11 +37,22 @@ describe("POST /api/dashboard/stats", () => {
     ["an unknown status", { status: "Nonsense" }],
     ["a non-uuid page id", { pageRecordId: "not-a-uuid" }],
     ["a search field, which the dashboard no longer accepts", { search: "Ravi" }],
+    ["an unknown platform", { platform: "myspace" }],
+    ["a Page filter on the Google Ads view", { platform: "google_ads", pageRecordId: "00000000-0000-4000-8000-000000000001" }],
+    ["an Ad filter on the Telecaller view", { platform: "telecaller", adId: "unattributed" }],
   ])("rejects %s with a 400 before touching data", async (_name, body) => {
     mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
     const response = await POST(post(body));
     expect(response.status).toBe(400);
     expect(mocks.stats).not.toHaveBeenCalled();
+  });
+
+  it.each(["facebook", "google_ads", "telecaller"])("accepts the %s platform with the common filters", async (platform) => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.stats.mockResolvedValue({ tenantId: "tenant-a", platform, total: 0 });
+    const response = await POST(post({ platform, status: "Sale", label: "Hot", quickFilter: "month" }));
+    expect(response.status).toBe(200);
+    expect(mocks.stats).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, { platform, status: "Sale", label: "Hot", quickFilter: "month" });
   });
 
   it("returns 401 JSON, not a redirect, when the session is missing or idle-expired", async () => {

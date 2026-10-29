@@ -1,12 +1,25 @@
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from "lucide-react";
+import type { ReactNode } from "react";
 
 type Tone = "info" | "success" | "warning" | "danger";
 
-export function PageHeader({ title, description }: { title: string; description?: string }) {
+export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+  if (!actions) {
+    return (
+      <div className="page-header">
+        <h1>{title}</h1>
+        {description ? <p>{description}</p> : null}
+      </div>
+    );
+  }
+  // `actions` (the dashboard's platform switch) sits at the top right and wraps under the title on a narrow screen.
   return (
-    <div className="page-header">
-      <h1>{title}</h1>
-      {description ? <p>{description}</p> : null}
+    <div className="page-header page-header--with-actions">
+      <div className="page-header__text">
+        <h1>{title}</h1>
+        {description ? <p>{description}</p> : null}
+      </div>
+      <div className="page-header__actions">{actions}</div>
     </div>
   );
 }

@@ -20,7 +20,7 @@ class FakeEventSource {
 const fetchMock = vi.fn();
 
 function stats(overrides: Record<string, unknown> = {}) {
-  return { tenantId: "tenant-a", timezone: "Asia/Kolkata", granularity: "month", total: 5, monthToDate: 3, previousMonthSamePeriod: 1, byPage: [], byLabel: [], byStatus: [], topAds: [], timeline: [], timelineTruncated: false, generatedAt: "2026-09-29T06:00:00Z", ...overrides };
+  return { tenantId: "tenant-a", platform: "facebook", timezone: "Asia/Kolkata", granularity: "month", total: 5, monthToDate: 3, previousMonthSamePeriod: 1, byGroup: [], byLabel: [], byStatus: [], topItems: [], timeline: [], timelineTruncated: false, generatedAt: "2026-09-29T06:00:00Z", ...overrides };
 }
 function ok(body: unknown): Response { return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } }); }
 const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
