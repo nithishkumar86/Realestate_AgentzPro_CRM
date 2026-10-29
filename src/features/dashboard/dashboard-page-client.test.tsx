@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardPageClient } from "@/features/dashboard/dashboard-page-client";
 
@@ -52,7 +53,7 @@ beforeEach(() => {
   FakeEventSource.instances = [];
   nextStats = respond();
   mocks.connection.mockReset().mockResolvedValue({ connectionStatus: "connected" });
-  mocks.google.mockReset().mockResolvedValue({ hasWebhook: true, needsReconnect: false });
+  mocks.google.mockReset().mockResolvedValue({ hasWebhook: true, webhookStopped: false, needsReconnect: false });
   window.history.replaceState(null, "", "/dashboard");
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -147,6 +148,12 @@ describe("dashboard page", () => {
     expect(await screen.findByText(/Facebook connection requires attention/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reconnect Facebook" })).toHaveAttribute("href", "/connection");
   });
+
+  it("still shows the Facebook reconnect warning under React Strict Mode (mount, unmount, mount)", async () => {
+    mocks.connection.mockResolvedValue({ connectionStatus: "reauthorization_required" });
+    render(<StrictMode><DashboardPageClient /></StrictMode>);
+    expect(await screen.findByText(/Facebook connection requires attention/)).toBeInTheDocument();
+  });
 });
 
 describe("dashboard platform switch", () => {
@@ -222,11 +229,19 @@ describe("dashboard platform switch", () => {
 
   it("warns about the selected platform's connection only", async () => {
     mocks.connection.mockResolvedValue({ connectionStatus: "reauthorization_required" });
-    mocks.google.mockResolvedValue({ hasWebhook: false, needsReconnect: false });
+    mocks.google.mockResolvedValue({ hasWebhook: false, webhookStopped: false, needsReconnect: false });
     render(<DashboardPageClient initialPlatform="google_ads" />);
     expect(await screen.findByText(/Google Ads is not set up yet/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Set up Google Ads" })).toHaveAttribute("href", "/connection");
     expect(screen.queryByText(/Facebook connection requires attention/)).not.toBeInTheDocument();
     expect(mocks.connection).not.toHaveBeenCalled();
+  });
+
+  it("says Google Ads leads are disconnected after the owner stopped the webhook, not 'not set up'", async () => {
+    mocks.google.mockResolvedValue({ hasWebhook: false, webhookStopped: true, needsReconnect: false });
+    render(<DashboardPageClient initialPlatform="google_ads" />);
+    expect(await screen.findByText(/Google Ads leads are disconnected/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reconnect Google Ads" })).toHaveAttribute("href", "/connection");
+    expect(screen.queryByText(/Google Ads is not set up yet/)).not.toBeInTheDocument();
   });
 });

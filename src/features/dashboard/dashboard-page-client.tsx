@@ -2,7 +2,7 @@
 
 import { ArrowDownRight, ArrowUpRight, Minus, Radio } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { EmptyState, Notice, PageHeader, SkeletonRows } from "@/components/ui";
 import { DonutChart, HorizontalBarChart, StatusRankChart, TimelineChart, groupDonutData, labelDonutData } from "@/features/dashboard/dashboard-charts";
 import { describeDelta, formatCount, itemBarData } from "@/features/dashboard/dashboard-format";
@@ -21,7 +21,7 @@ const LIVE_TEXT: Record<LiveState, string> = {
   polling: "Live · refreshing every 15s",
 };
 
-type ConnectionHealth = { meta: ConnectionStatus | "not_connected" | null; google: { hasWebhook: boolean; needsReconnect: boolean } | null };
+type ConnectionHealth = { meta: ConnectionStatus | "not_connected" | null; google: { hasWebhook: boolean; webhookStopped: boolean; needsReconnect: boolean } | null };
 
 /** "Page, Ad, Status and Label" for Facebook, "Status and Label" where Page and Ad do not apply. */
 function filterNames(platform: DashboardPlatform): string {
@@ -56,20 +56,21 @@ export function DashboardPageClient({ initialPlatform = DEFAULT_DASHBOARD_PLATFO
   // under the new platform's name.
   const stats = latestStats?.platform === platformId ? latestStats : null;
 
-  // Each connection's health is loaded once, the first time a platform that depends on it is shown.
-  const requested = useRef(new Set<string>());
+  // Each connection's health is loaded the first time a platform that depends on it is shown. It is skipped only once
+  // it has LOADED (not once it was requested), so React Strict Mode's mount → unmount → mount still shows the warning.
+  const healthLoaded = platform.connection === "meta" ? health.meta !== null
+    : platform.connection === "google" ? health.google !== null : true;
   useEffect(() => {
     const connection = platform.connection;
-    if (!connection || requested.current.has(connection)) return;
-    requested.current.add(connection);
+    if (!connection || healthLoaded) return;
     let isMounted = true;
     const load = connection === "meta"
       ? getConnectionOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, meta: overview.connectionStatus })); })
-      : getGoogleAdsOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, google: { hasWebhook: overview.hasWebhook, needsReconnect: overview.needsReconnect } })); });
-    // Connection health is best-effort; leave the warning hidden if it can't be loaded.
-    void load.catch(() => { requested.current.delete(connection); });
+      : getGoogleAdsOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, google: { hasWebhook: overview.hasWebhook, webhookStopped: overview.webhookStopped, needsReconnect: overview.needsReconnect } })); });
+    // Connection health is best-effort; leave the warning hidden if it can't be loaded (showing the platform again retries).
+    void load.catch(() => {});
     return () => { isMounted = false; };
-  }, [platform.connection]);
+  }, [platform.connection, healthLoaded]);
 
   function switchPlatform(next: DashboardPlatformId) {
     setPlatformId(next);
@@ -156,6 +157,10 @@ function ConnectionNotice({ platform, health }: { platform: DashboardPlatform; h
   if (platform.connection === "meta" && (health.meta === "disconnected" || health.meta === "reauthorization_required")) {
     return <Notice tone="warning" title="Facebook connection requires attention. New leads may not be received."
       action={<Link className="button button--secondary" href="/connection">Reconnect Facebook</Link>} />;
+  }
+  if (platform.connection === "google" && health.google?.webhookStopped) {
+    return <Notice tone="warning" title="Google Ads leads are disconnected. New Google Ads leads are not received."
+      action={<Link className="button button--secondary" href="/connection">Reconnect Google Ads</Link>} />;
   }
   if (platform.connection === "google" && health.google && !health.google.hasWebhook) {
     return <Notice tone="warning" title="Google Ads is not set up yet. Google Ads leads are not received."
