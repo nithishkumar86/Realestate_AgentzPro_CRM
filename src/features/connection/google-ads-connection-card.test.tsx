@@ -60,8 +60,8 @@ describe("GoogleAdsConnectionCard stop leads", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Stop receiving Google Ads leads" }));
     await waitFor(() => expect(api.stopGoogleAdsWebhook).toHaveBeenCalledTimes(1));
 
-    const popup = await screen.findByRole("alertdialog", { name: "Receiving leads from our side is stopped" });
-    expect(popup).toHaveTextContent("From your side, remove the webhook URL and key from your Google Ads account lead forms and save, to fully stop lead sending.");
+    const popup = await screen.findByRole("alertdialog", { name: "Google Ads leads disconnected" });
+    expect(popup).toHaveTextContent("AgentzPro will no longer accept leads from Google Ads. To stop Google from sending them, remove the webhook URL and key from your Google Ads lead forms and save.");
     expect(within(popup).getAllByRole("button").map((button) => button.textContent)).toEqual(["OK"]);
     expect(within(popup).getByRole("button", { name: "OK" })).toHaveFocus();
 

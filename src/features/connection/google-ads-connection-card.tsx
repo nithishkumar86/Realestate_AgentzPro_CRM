@@ -166,8 +166,8 @@ function LeadsStoppedPopup({ onOk }: { onOk: () => void }) {
   return <div className="mvp-invite-popup__backdrop" onKeyDown={(event) => { if (event.key === "Escape") onOk(); }}>
     <div className="mvp-invite-popup" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
       <span className="mvp-invite-popup__icon google-stop-popup__icon" aria-hidden="true"><Unplug size={28} /></span>
-      <h4 id={titleId}>Receiving leads from our side is stopped</h4>
-      <p>From your side, remove the webhook URL and key from your Google Ads account lead forms and save, to fully stop lead sending.</p>
+      <h4 id={titleId}>Google Ads leads disconnected</h4>
+      <p>AgentzPro will no longer accept leads from Google Ads. To stop Google from sending them, remove the webhook URL and key from your Google Ads lead forms and save.</p>
       <button type="button" className="mvp-invite-popup__ok" ref={okRef} onClick={onOk}>OK</button>
     </div>
   </div>;
