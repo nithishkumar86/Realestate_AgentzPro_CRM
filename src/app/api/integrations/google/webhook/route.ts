@@ -13,3 +13,14 @@ export async function POST(request: Request) {
     return createErrorResponse(error, request);
   }
 }
+
+// Stops Google Ads leads: the webhook is switched off and every delivery is refused. Owner only.
+export async function DELETE(request: Request) {
+  try {
+    assertSameOrigin(request);
+    await new GoogleConnectionService().stopWebhook();
+    return createSuccessResponse({ stopped: true });
+  } catch (error) {
+    return createErrorResponse(error, request);
+  }
+}

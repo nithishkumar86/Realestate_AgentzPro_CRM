@@ -42,6 +42,7 @@ export type GoogleAdsOverview = {
   linkedAccounts: Array<{ customerId: string; name: string | null }>;
   webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null } | null;
   hasWebhook: boolean;
+  webhookStopped: boolean;
 };
 export type GoogleAdsAccountOption = { customerId: string; name: string | null; loginCustomerId: string | null; selected: boolean };
 
@@ -50,3 +51,4 @@ export async function createGoogleAdsWebhook(): Promise<{ url: string; key: stri
 export async function getGoogleAdsAccountOptions(): Promise<{ accounts: GoogleAdsAccountOption[] }> { return request("/api/integrations/google/accounts"); }
 export async function saveGoogleAdsAccounts(customerIds: string[]): Promise<{ saved: boolean }> { return request("/api/integrations/google/accounts", { method: "POST", body: JSON.stringify({ customerIds }) }); }
 export async function disconnectGoogleAds(): Promise<{ disconnected: boolean }> { return request("/api/integrations/google/disconnect", { method: "POST", body: "{}" }); }
+export async function stopGoogleAdsWebhook(): Promise<{ stopped: boolean }> { return request("/api/integrations/google/webhook", { method: "DELETE" }); }
