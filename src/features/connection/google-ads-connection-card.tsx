@@ -34,7 +34,7 @@ export function GoogleAdsConnectionCard() {
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
-  const [confirmStop, setConfirmStop] = useState(false);
+  const [stoppedNotice, setStoppedNotice] = useState(false);
   const [copied, setCopied] = useState<"url" | "key" | null>(null);
   // The key is a secret: hidden like a password until the owner chooses to show it. Copy works either way.
   const [showKey, setShowKey] = useState(false);
@@ -111,17 +111,14 @@ export function GoogleAdsConnectionCard() {
             </> : <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(true)}><RefreshCw aria-hidden="true" size={18} />Replace key</button>}
           </div>
           <div className="button-group">
-            <button className="button button--danger" type="button" onClick={() => setConfirmStop(true)}><Unplug aria-hidden="true" size={18} />Stop receiving Google Ads leads</button>
+            <button className="button button--danger" type="button" disabled={busy === "stop"} onClick={() => void run("stop", async () => { await stopGoogleAdsWebhook(); setConfirmRotate(false); await reload(); setStoppedNotice(true); })}>{busy === "stop" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Stop receiving Google Ads leads</button>
           </div>
         </> : overview.webhookStopped ? <>
           <p className="field-help">To reconnect, generate a new webhook URL and key and add them to your Google Ads lead forms.</p>
           <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); setMessage({ tone: "success", text: "New webhook URL and key created. Add them to your Google Ads lead forms." }); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Generate new webhook URL and key</button></div>
         </> : <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Create webhook URL and key</button></div>}
       </div>
-      {confirmStop ? <StopLeadsPopup busy={busy === "stop"} onCancel={() => setConfirmStop(false)}
-        onConfirm={() => void run("stop", async () => {
-          try { await stopGoogleAdsWebhook(); setConfirmRotate(false); await reload(); } finally { setConfirmStop(false); }
-        })} /> : null}
+      {stoppedNotice ? <LeadsStoppedPopup onOk={() => setStoppedNotice(false)} /> : null}
 
       <div className="google-ads-step">
         <h3><span className="google-step-number" aria-hidden="true">2</span>Campaign names <span className="google-step-optional">Optional</span></h3>
@@ -159,21 +156,19 @@ export function GoogleAdsConnectionCard() {
 }
 
 /**
- * "Stop receiving Google Ads leads?" pop-up (same look as the app's other confirm pop-ups). OK switches the webhook
- * off at once; the owner still has to remove the URL and key from the lead forms so Google stops sending.
- * Cancel has focus first, so Enter never stops leads by accident.
+ * Shown once leads are already stopped on our side (same look as the app's other pop-ups, OK only). It tells the
+ * owner the one step left on their side: remove the URL and key from the lead forms so Google stops sending.
  */
-function StopLeadsPopup({ busy, onConfirm, onCancel }: { busy: boolean; onConfirm: () => void; onCancel: () => void }) {
+function LeadsStoppedPopup({ onOk }: { onOk: () => void }) {
   const titleId = useId();
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { cancelRef.current?.focus(); }, []);
-  return <div className="mvp-invite-popup__backdrop" onKeyDown={(event) => { if (event.key === "Escape" && !busy) onCancel(); }}>
+  const okRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { okRef.current?.focus(); }, []);
+  return <div className="mvp-invite-popup__backdrop" onKeyDown={(event) => { if (event.key === "Escape") onOk(); }}>
     <div className="mvp-invite-popup" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
       <span className="mvp-invite-popup__icon google-stop-popup__icon" aria-hidden="true"><Unplug size={28} /></span>
-      <h4 id={titleId}>Stop receiving Google Ads leads?</h4>
-      <p>In your Google Ads account lead forms, remove the webhook URL and key, then save, to fully stop lead sending.</p>
-      <button type="button" className="mvp-invite-popup__ok" disabled={busy} onClick={onConfirm}>{busy ? "Stopping…" : "OK"}</button>
-      <button type="button" className="mvp-adrules-dialog__cancel" ref={cancelRef} disabled={busy} onClick={onCancel}>Cancel</button>
+      <h4 id={titleId}>Receiving leads from our side is stopped</h4>
+      <p>From your side, remove the webhook URL and key from your Google Ads account lead forms and save, to fully stop lead sending.</p>
+      <button type="button" className="mvp-invite-popup__ok" ref={okRef} onClick={onOk}>OK</button>
     </div>
   </div>;
 }
