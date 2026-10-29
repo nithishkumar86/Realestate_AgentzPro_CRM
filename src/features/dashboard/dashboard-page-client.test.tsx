@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardPageClient } from "@/features/dashboard/dashboard-page-client";
+import { DASHBOARD_PLATFORMS } from "@/features/dashboard/dashboard-platforms";
 
 const mocks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ children, href, ...props }: { children: React.ReactNode; href: string }) => <a href={href} {...props}>{children}</a> }));
@@ -80,7 +81,7 @@ describe("dashboard page", () => {
     expect(screen.queryByText(/Ad: karuvi/)).not.toBeInTheDocument();
   });
 
-  it("has the /leads filters but no Delete or Download, and none of the old cards", async () => {
+  it("has the /leads filters and a Download PDF but no Delete, and none of the old cards", async () => {
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     for (const name of ["Page", "Ad", "Status", "Label"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
@@ -88,7 +89,7 @@ describe("dashboard page", () => {
     expect(screen.getByRole("button", { name: "Date" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Today's Leads/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Download/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
     expect(screen.queryByText("Leads Today")).not.toBeInTheDocument();
     expect(screen.queryByText("All Leads", { selector: "span" })).not.toBeInTheDocument();
   });
@@ -243,5 +244,34 @@ describe("dashboard platform switch", () => {
     expect(await screen.findByText(/Google Ads leads are disconnected/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reconnect Google Ads" })).toHaveAttribute("href", "/connection");
     expect(screen.queryByText(/Google Ads is not set up yet/)).not.toBeInTheDocument();
+  });
+
+  // Every platform in the registry (including ones added later) gets the same Download PDF with its own name on it.
+  it.each(DASHBOARD_PLATFORMS.map((platform) => [platform.id, platform.label] as const))("downloads the %s dashboard as a PDF named after it", async (id, label) => {
+    let titleWhilePrinting = "";
+    const print = vi.fn(() => { titleWhilePrinting = document.title; });
+    vi.stubGlobal("print", print);
+    document.title = "Dashboard";
+    render(<DashboardPageClient initialPlatform={id} />);
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeDisabled();
+    await screen.findByTestId("month-leads");
+    expect(screen.getByTestId("dash-report")).toHaveTextContent(`Lead Dashboard · ${label} leads`);
+    expect(screen.getByTestId("dash-report")).toHaveTextContent("Filters: none (all leads, all time)");
+    // Clicked right after the numbers arrived: it waits for the chart animation, then opens the print window.
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    expect(screen.getByRole("button", { name: "Preparing…" })).toBeDisabled();
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1), { timeout: 3000 });
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+    expect(titleWhilePrinting).toMatch(new RegExp(`^AgentzPro Dashboard - ${label} - \\d{4}-\\d{2}-\\d{2}$`));
+    expect(document.title).toBe("Dashboard");
+  });
+
+  it("leaves the 'no filters' line out of the PDF header once a filter is set (the filter chips print instead)", async () => {
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    fireEvent.click(screen.getByRole("button", { name: "Page" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Chennai Homes" }));
+    await screen.findByRole("button", { name: /Remove Page filter: Chennai Homes/ });
+    expect(screen.getByTestId("dash-report")).not.toHaveTextContent("Filters: none");
   });
 });

@@ -3575,6 +3575,109 @@ button.mvp-field-box__control:focus-visible { outline: none; }
   .dash-rank__bar { transition: none; }
 }
 
+/* Dashboard "Download PDF" (features/dashboard/dashboard-download.tsx): the platform switch and the button share the
+   header's top right; below ~640px both take the full width. The report header exists only in the PDF. */
+.dash-header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+.dash-download:disabled { cursor: not-allowed; opacity: .6; transform: none; filter: none; }
+.dash-report { display: none; }
+@media (max-width: 640px) {
+  .dash-header-actions { width: 100%; }
+  .dash-download { flex: 1 1 100%; justify-content: center; }
+}
+
+/* The PDF. Every rule is scoped to the dashboard (.dash, or body:has(.dash) for the shell around it), so printing any
+   other page is unchanged. It is always the light palette (a dark-mode user still gets a white, printer-friendly
+   report), A4 landscape, with only the report header, the active filter chips and the charts. */
+@media print {
+  @page dashboard { size: A4 landscape; margin: 12mm; }
+  .dash { page: dashboard; max-width: none; gap: 12px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  :root[data-theme="dark"]:has(.dash) {
+    --bg: #f7f8fb;
+    --surface: #ffffff;
+    --surface-muted: #f0f3f8;
+    --border: #d8dee9;
+    --border-strong: #aeb8c7;
+    --text: #000000;
+    --text-muted: #40454e;
+    --primary: #1f6feb;
+    --primary-strong: #174ea6;
+    --success: #16823a;
+    --success-bg: #e9f7ee;
+    --warning: #b45309;
+    --warning-bg: #fff4df;
+    --danger: #ba1a1a;
+    --danger-bg: #fff0f0;
+    --shadow-filter-card: none;
+    --chart-1: #1f6feb;
+    --chart-2: #16823a;
+    --chart-3: #b45309;
+    --chart-4: #7c3aed;
+    --chart-5: #0e8a9b;
+    --chart-6: #c2410c;
+    --chart-7: #be185d;
+    --chart-8: #64748b;
+    --chart-hot: #d92d20;
+    --chart-warm: #f59e0b;
+    --chart-cold: #2f80ed;
+    --chart-muted: #8b95a7;
+    --status-1: #2563eb;
+    --status-2: #dc2626;
+    --status-3: #d97706;
+    --status-4: #475569;
+    --status-5: #94a3b8;
+    --status-6: #16a34a;
+    --status-7: #0891b2;
+    --status-8: #7c3aed;
+    --status-9: #0d9488;
+    --status-10: #db2777;
+    --status-11: #ea580c;
+    --status-12: #65a30d;
+    --status-13: #9f1239;
+    --status-14: #c026d3;
+    color-scheme: light;
+  }
+  html:has(.dash), body:has(.dash) { background: #fff; }
+
+  /* Only the dashboard content: no sidebar, banners, reminder cards or anything else around it. */
+  body:has(.dash) .mvp-shell { display: block; min-height: 0; background: #fff; }
+  body:has(.dash) :is(.mvp-sidebar, .sidebar-expand-btn, .mvp-reconnect-banner, .mvp-reminder-stack) { display: none !important; }
+  body:has(.dash) .mvp-main { padding: 0; }
+  body:has(.dash) .mvp-main > :not(.dash) { display: none !important; }
+
+  /* Inside the dashboard: no controls, live pill or warnings; the report header replaces the page title. */
+  .dash > :is(.page-header, .mvp-filter-card, .mvp-inline-error, .dash-status, .notice, .skeleton-stack) { display: none !important; }
+  .dash .mvp-dropdown-panel, .dash .recharts-tooltip-wrapper { display: none !important; }
+  .dash-body--refreshing { opacity: 1; }
+
+  .dash-report { display: block; padding-bottom: 10px; border-bottom: 2px solid #1f6feb; }
+  .dash-report__brand { font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #1f6feb; }
+  .dash-report__title { margin: 4px 0 0; font-size: 1.4rem; color: #000; }
+  .dash-report__meta { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 6px 0 0; font-size: .82rem; color: #40454e; }
+
+  /* Active filters print as plain chips (no remove "x", no "Clear all"), always in the light palette. */
+  .dash .mvp-active-filters { margin: 0; padding: 6px 10px; border-color: #d5c8ff; }
+  .dash .mvp-active-filters svg, .dash .mvp-active-filters .mvp-clear-all { display: none !important; }
+  :root .dash .mvp-active-filters button { border-color: #d5c8ff; background: #faf8ff; color: #6941c6; }
+
+  /* Charts: scale the SVG to the printed width (recharts sets a viewBox) instead of keeping the on-screen pixel size.
+     recharts 3 puts the chart inside a 0x0 box in ResponsiveContainer, so that box is sized too. Two columns always:
+     the print page width must not trip the phone-width single-column rule. Each card stays on one page, and legends
+     show every row instead of scrolling. */
+  .dash-chart .recharts-responsive-container > div, .dash-chart .recharts-wrapper, .dash-chart .recharts-surface { width: 100% !important; height: 100% !important; }
+  .dash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-hero, .dash-panel { break-inside: avoid; box-shadow: none; }
+  /* Compact sizes so the report fills its pages instead of leaving each card alone on one. */
+  .dash-hero { padding: 14px 20px; }
+  .dash-hero__value { margin-top: 2px; font-size: 2.4rem; }
+  .dash-panel { padding: 14px 18px; }
+  .dash-chart--timeline { height: 220px; }
+  .dash-rank__list { gap: 6px; }
+  .dash-legend { max-height: none; overflow: visible; }
+  .dash-legend__name { white-space: normal; overflow: visible; }
+  .dash-rank__bar { transition: none; }
+}
+
 /* ---------------------------------------------------------------------------
    Lead detail drawer: timeline, notes and follow-up task (features/leads/lead-drawer.tsx).
    Builds on the existing .mvp-detail-panel shell; colours come only from theme tokens.
