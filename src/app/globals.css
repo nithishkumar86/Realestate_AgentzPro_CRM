@@ -3890,6 +3890,8 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .google-ads-step .meta-item { border-radius: 12px; border-left: 4px solid var(--border-strong); }
 .google-ads-step .meta-item.google-status--ok { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); border-left-color: var(--success); background: var(--success-bg); }
 .google-ads-step .meta-item.google-status--ok strong { color: var(--success); }
+/* Stop-leads pop-up: warning colours instead of the default success tick. */
+.mvp-invite-popup__icon.google-stop-popup__icon { background: var(--danger-bg); color: var(--danger); }
 .google-ads-step .button { border-radius: 10px; font-weight: 600; }
 .google-account-list { display: grid; gap: 8px; }
 .google-account-list__item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; }

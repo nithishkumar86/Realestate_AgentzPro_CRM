@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/services/crm-api-client", () => ({
@@ -9,14 +9,17 @@ vi.mock("@/services/crm-api-client", () => ({
     linkedAccounts: [],
     webhook: { url: "https://crm.example.com/api/webhooks/google-ads/token", key: "secret-key-123", lastLeadAt: null, lastTestAt: null },
     hasWebhook: true,
+    webhookStopped: false,
   }),
   createGoogleAdsWebhook: vi.fn(),
   disconnectGoogleAds: vi.fn(),
   getGoogleAdsAccountOptions: vi.fn(),
   saveGoogleAdsAccounts: vi.fn(),
+  stopGoogleAdsWebhook: vi.fn().mockResolvedValue({ stopped: true }),
 }));
 
 const { GoogleAdsConnectionCard } = await import("@/features/connection/google-ads-connection-card");
+const api = await import("@/services/crm-api-client");
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -44,5 +47,45 @@ describe("GoogleAdsConnectionCard webhook key", () => {
     render(<GoogleAdsConnectionCard />);
     const url = await screen.findByLabelText("Webhook URL") as HTMLInputElement;
     expect(url.type).toBe("text");
+  });
+});
+
+describe("GoogleAdsConnectionCard stop leads", () => {
+  const stopped = { canManage: true, connection: null, needsReconnect: false, linkedAccounts: [], webhook: null, hasWebhook: false, webhookStopped: true };
+
+  it("stops leads on click, then says so in a pop-up with only an OK button, and shows Disconnected", async () => {
+    vi.mocked(api.stopGoogleAdsWebhook).mockClear();
+    render(<GoogleAdsConnectionCard />);
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(stopped);
+    fireEvent.click(await screen.findByRole("button", { name: "Stop receiving Google Ads leads" }));
+    await waitFor(() => expect(api.stopGoogleAdsWebhook).toHaveBeenCalledTimes(1));
+
+    const popup = await screen.findByRole("alertdialog", { name: "Google Ads leads disconnected" });
+    expect(popup).toHaveTextContent("AgentzPro will no longer accept leads from Google Ads. To stop Google from sending them, remove the webhook URL and key from your Google Ads lead forms and save.");
+    expect(within(popup).getAllByRole("button").map((button) => button.textContent)).toEqual(["OK"]);
+    expect(within(popup).getByRole("button", { name: "OK" })).toHaveFocus();
+
+    fireEvent.click(within(popup).getByRole("button", { name: "OK" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByText("To reconnect, generate a new webhook URL and key and add them to your Google Ads lead forms.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate new webhook URL and key" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Key")).not.toBeInTheDocument();
+  });
+
+  it("shows no pop-up when stopping fails, only the error", async () => {
+    vi.mocked(api.stopGoogleAdsWebhook).mockRejectedValueOnce(new Error("Google Ads leads could not be stopped. Try again."));
+    render(<GoogleAdsConnectionCard />);
+    fireEvent.click(await screen.findByRole("button", { name: "Stop receiving Google Ads leads" }));
+    expect(await screen.findByText("Google Ads leads could not be stopped. Try again.")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Receiving leads")).toBeInTheDocument();
+  });
+
+  it("opens straight on Disconnected after a reload", async () => {
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(stopped);
+    render(<GoogleAdsConnectionCard />);
+    expect(await screen.findByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate new webhook URL and key" })).toBeInTheDocument();
   });
 });

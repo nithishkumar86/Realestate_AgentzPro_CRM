@@ -2,15 +2,15 @@
 
 import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Unplug, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { LoadingState, Notice, StatusBadge } from "@/components/ui";
 import { formatDateTime } from "@/lib/date-utils";
 import {
   createGoogleAdsWebhook, disconnectGoogleAds, getGoogleAdsAccountOptions, getGoogleAdsOverview, saveGoogleAdsAccounts,
-  type GoogleAdsAccountOption, type GoogleAdsOverview,
+  stopGoogleAdsWebhook, type GoogleAdsAccountOption, type GoogleAdsOverview,
 } from "@/services/crm-api-client";
 
-type Busy = "webhook" | "accounts" | "save" | "disconnect" | null;
+type Busy = "webhook" | "stop" | "accounts" | "save" | "disconnect" | null;
 
 // Shown once after Google's redirect back to /connection?google=<result>.
 const CALLBACK_MESSAGES: Record<string, { tone: "success" | "danger" | "warning"; text: string }> = {
@@ -34,6 +34,7 @@ export function GoogleAdsConnectionCard() {
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [confirmRotate, setConfirmRotate] = useState(false);
+  const [stoppedNotice, setStoppedNotice] = useState(false);
   const [copied, setCopied] = useState<"url" | "key" | null>(null);
   // The key is a secret: hidden like a password until the owner chooses to show it. Copy works either way.
   const [showKey, setShowKey] = useState(false);
@@ -81,7 +82,7 @@ export function GoogleAdsConnectionCard() {
 
   return <section className="panel" aria-labelledby="google-ads-title"><div className="panel__body stack">
     <div className="section-title"><div><h2 id="google-ads-title">Google Ads</h2><p>Receive leads from your Google Ads lead forms.</p></div>
-      {overview ? <StatusBadge tone={overview.hasWebhook ? "success" : "info"}>{overview.hasWebhook ? "Receiving leads" : "Not set up"}</StatusBadge> : null}
+      {overview ? <StatusBadge tone={overview.hasWebhook ? "success" : overview.webhookStopped ? "danger" : "info"}>{overview.hasWebhook ? "Receiving leads" : overview.webhookStopped ? "Disconnected" : "Not set up"}</StatusBadge> : null}
     </div>
     {message ? <Notice tone={message.tone} title={message.text} /> : null}
     {isLoading ? <LoadingState label="Loading Google Ads details" /> : null}
@@ -89,7 +90,7 @@ export function GoogleAdsConnectionCard() {
     {overview && canManage ? <>
       <div className="google-ads-step">
         <h3><span className="google-step-number" aria-hidden="true">1</span>Lead form webhook</h3>
-        <p className="field-help">In Google Ads, open each lead form, go to Lead delivery → Webhook integration, and paste this URL and key. Then select Send test data.</p>
+        {overview.webhookStopped && !webhook ? null : <p className="field-help">In Google Ads, open each lead form, go to Lead delivery → Webhook integration, and paste this URL and key. Then select Send test data.</p>}
         {webhook ? <>
           <div className="field"><label htmlFor="google-webhook-url">Webhook URL</label>
             <div className="google-copy-row"><input id="google-webhook-url" readOnly value={webhook.url} onFocus={(event) => event.currentTarget.select()} />
@@ -109,8 +110,15 @@ export function GoogleAdsConnectionCard() {
               <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(false)}><X aria-hidden="true" size={18} />Cancel</button>
             </> : <button className="button button--secondary" type="button" onClick={() => setConfirmRotate(true)}><RefreshCw aria-hidden="true" size={18} />Replace key</button>}
           </div>
+          <div className="button-group">
+            <button className="button button--danger" type="button" disabled={busy === "stop"} onClick={() => void run("stop", async () => { await stopGoogleAdsWebhook(); setConfirmRotate(false); await reload(); setStoppedNotice(true); })}>{busy === "stop" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Stop receiving Google Ads leads</button>
+          </div>
+        </> : overview.webhookStopped ? <>
+          <p className="field-help">To reconnect, generate a new webhook URL and key and add them to your Google Ads lead forms.</p>
+          <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); setMessage({ tone: "success", text: "New webhook URL and key created. Add them to your Google Ads lead forms." }); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Generate new webhook URL and key</button></div>
         </> : <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Create webhook URL and key</button></div>}
       </div>
+      {stoppedNotice ? <LeadsStoppedPopup onOk={() => setStoppedNotice(false)} /> : null}
 
       <div className="google-ads-step">
         <h3><span className="google-step-number" aria-hidden="true">2</span>Campaign names <span className="google-step-optional">Optional</span></h3>
@@ -136,7 +144,7 @@ export function GoogleAdsConnectionCard() {
             {!accountOptions ? <button className="button button--secondary" type="button" disabled={busy === "accounts"} onClick={() => void run("accounts", async () => { const { accounts } = await getGoogleAdsAccountOptions(); setAccountOptions(accounts); setSelected(accounts.filter((account) => account.selected).map((account) => account.customerId)); })}>{busy === "accounts" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Check aria-hidden="true" size={18} />}Choose accounts</button> : null}
             {overview.needsReconnect ? <GoogleSignInButton /> : null}
             {confirmDisconnect ? <>
-              <span className="field-help">Leads keep arriving; new leads will not get campaign names until you sign in again.</span>
+              <span className="field-help">This removes only the Google sign-in. Leads keep arriving; new leads will not get campaign names until you sign in again. To stop leads, use Stop receiving Google Ads leads in step 1.</span>
               <button className="button button--danger" type="button" disabled={busy === "disconnect"} onClick={() => void run("disconnect", async () => { await disconnectGoogleAds(); setConfirmDisconnect(false); setAccountOptions(null); await reload(); setMessage({ tone: "success", text: "Google sign-in removed. Leads keep arriving." }); })}>{busy === "disconnect" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Disconnect Google</button>
               <button className="button button--secondary" type="button" onClick={() => setConfirmDisconnect(false)}><X aria-hidden="true" size={18} />Cancel</button>
             </> : <button className="button button--danger" type="button" onClick={() => setConfirmDisconnect(true)}><Unplug aria-hidden="true" size={18} />Disconnect Google</button>}
@@ -145,6 +153,24 @@ export function GoogleAdsConnectionCard() {
       </div>
     </> : null}
   </div></section>;
+}
+
+/**
+ * Shown once leads are already stopped on our side (same look as the app's other pop-ups, OK only). It tells the
+ * owner the one step left on their side: remove the URL and key from the lead forms so Google stops sending.
+ */
+function LeadsStoppedPopup({ onOk }: { onOk: () => void }) {
+  const titleId = useId();
+  const okRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => { okRef.current?.focus(); }, []);
+  return <div className="mvp-invite-popup__backdrop" onKeyDown={(event) => { if (event.key === "Escape") onOk(); }}>
+    <div className="mvp-invite-popup" role="alertdialog" aria-modal="true" aria-labelledby={titleId}>
+      <span className="mvp-invite-popup__icon google-stop-popup__icon" aria-hidden="true"><Unplug size={28} /></span>
+      <h4 id={titleId}>Google Ads leads disconnected</h4>
+      <p>AgentzPro will no longer accept leads from Google Ads. To stop Google from sending them, remove the webhook URL and key from your Google Ads lead forms and save.</p>
+      <button type="button" className="mvp-invite-popup__ok" ref={okRef} onClick={onOk}>OK</button>
+    </div>
+  </div>;
 }
 
 /** Google's branded "Sign in with Google" button (developers.google.com/identity/branding-guidelines). */
