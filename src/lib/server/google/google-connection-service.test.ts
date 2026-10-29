@@ -39,3 +39,34 @@ describe("GoogleConnectionService.stopWebhook", () => {
     await expect(new GoogleConnectionService().stopWebhook()).rejects.toMatchObject({ status: 500, code: "GOOGLE_WEBHOOK_STOP_FAILED" });
   });
 });
+
+describe("GoogleConnectionService.getOverview", () => {
+  // Every query in getOverview ends in maybeSingle() or limit(); anything else in the chain returns the chain.
+  function table(result: { data: unknown; error: null }) {
+    const chain: Record<string, unknown> = {};
+    for (const method of ["select", "eq", "is", "order"]) chain[method] = vi.fn(() => chain);
+    chain.maybeSingle = vi.fn(() => Promise.resolve(result));
+    chain.limit = vi.fn(() => Promise.resolve(result));
+    chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve);
+    return chain;
+  }
+
+  it("reports a switched-off webhook as stopped and never returns its URL or old key", async () => {
+    mocks.access.mockResolvedValue({ tenantId: "tenant-a", userId: "owner-a", membershipRole: "owner" });
+    mocks.from.mockImplementation((name: string) => name === "google_lead_webhooks"
+      ? table({ data: { url_token: "token", encrypted_google_key: "enc:old-key", is_active: false, last_lead_received_at: null, last_test_received_at: null }, error: null })
+      : table({ data: name === "google_connections" ? null : [], error: null }));
+    const overview = await new GoogleConnectionService().getOverview("https://crm.example.com");
+    expect(overview).toMatchObject({ hasWebhook: false, webhookStopped: true, webhook: null });
+    expect(JSON.stringify(overview)).not.toContain("old-key");
+  });
+
+  it("reports an active webhook as receiving leads", async () => {
+    mocks.access.mockResolvedValue({ tenantId: "tenant-a", userId: "owner-a", membershipRole: "owner" });
+    mocks.from.mockImplementation((name: string) => name === "google_lead_webhooks"
+      ? table({ data: { url_token: "token", encrypted_google_key: "enc:live-key", is_active: true, last_lead_received_at: null, last_test_received_at: null }, error: null })
+      : table({ data: name === "google_connections" ? null : [], error: null }));
+    const overview = await new GoogleConnectionService().getOverview("https://crm.example.com");
+    expect(overview).toMatchObject({ hasWebhook: true, webhookStopped: false, webhook: { key: "live-key" } });
+  });
+});

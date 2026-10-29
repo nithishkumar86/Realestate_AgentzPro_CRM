@@ -32,10 +32,12 @@ export interface GoogleAdsOverview {
   /** Only for the owner: what to paste into Google Ads. */
   webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null } | null;
   hasWebhook: boolean;
+  /** The owner stopped Google Ads leads (Disconnected); creating a webhook again issues a new key. */
+  webhookStopped: boolean;
 }
 
 type ConnectionRow = { id: string; google_sub: string; google_email: string; encrypted_refresh_token: string | null; status: string; connected_at: string };
-type WebhookRow = { url_token: string; encrypted_google_key: string; last_lead_received_at: string | null; last_test_received_at: string | null };
+type WebhookRow = { url_token: string; encrypted_google_key: string; is_active: boolean; last_lead_received_at: string | null; last_test_received_at: string | null };
 
 async function resolveOwner(): Promise<{ tenantId: string; userId: string }> {
   const access = await requireCrmAccess();
@@ -53,14 +55,16 @@ export class GoogleConnectionService {
     const [connectionResult, accountsResult, webhookResult, reauthResult] = await Promise.all([
       db.from("google_connections").select("google_email,status,connected_at").eq("tenant_id", access.tenantId).maybeSingle(),
       db.from("google_ads_accounts").select("customer_id,descriptive_name").eq("tenant_id", access.tenantId).eq("is_manager", false).order("descriptive_name"),
-      db.from("google_lead_webhooks").select("url_token,encrypted_google_key,last_lead_received_at,last_test_received_at").eq("tenant_id", access.tenantId).eq("is_active", true).maybeSingle(),
+      db.from("google_lead_webhooks").select("url_token,encrypted_google_key,is_active,last_lead_received_at,last_test_received_at").eq("tenant_id", access.tenantId).maybeSingle(),
       db.from("google_lead_events").select("id").eq("tenant_id", access.tenantId).eq("status", "names_pending").is("next_name_attempt_at", null).eq("last_error_code", "GOOGLE_REAUTHORIZATION_REQUIRED").limit(1),
     ]);
     if (connectionResult.error || accountsResult.error || webhookResult.error || reauthResult.error) {
       throw new AppError("Google Ads details could not be loaded.", { status: 500, code: "GOOGLE_OVERVIEW_FAILED" });
     }
     const connection = connectionResult.data as { google_email: string; status: string; connected_at: string } | null;
-    const webhook = webhookResult.data as WebhookRow | null;
+    const webhookRow = webhookResult.data as WebhookRow | null;
+    // A switched-off webhook (stopWebhook) is "Disconnected": its URL and old key are never shown again.
+    const webhook = webhookRow?.is_active ? webhookRow : null;
     const isConnected = connection?.status === "active";
     return {
       canManage,
@@ -74,6 +78,7 @@ export class GoogleConnectionService {
         lastTestAt: webhook.last_test_received_at,
       } : null,
       hasWebhook: Boolean(webhook),
+      webhookStopped: Boolean(webhookRow && !webhookRow.is_active),
     };
   }
 

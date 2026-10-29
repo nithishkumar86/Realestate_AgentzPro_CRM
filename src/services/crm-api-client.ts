@@ -42,6 +42,7 @@ export type GoogleAdsOverview = {
   linkedAccounts: Array<{ customerId: string; name: string | null }>;
   webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null } | null;
   hasWebhook: boolean;
+  webhookStopped: boolean;
 };
 export type GoogleAdsAccountOption = { customerId: string; name: string | null; loginCustomerId: string | null; selected: boolean };
 
