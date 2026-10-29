@@ -18,47 +18,36 @@ describe("dashboardPdfTitle", () => {
 });
 
 describe("DownloadDashboardButton", () => {
-  const settled = () => new Date(Date.now() - CHART_SETTLE_MS - 1);
-
-  it("opens the print window at once when the charts have settled, and restores the tab title even if afterprint is late or never fires", () => {
-    const print = vi.fn();
-    vi.stubGlobal("print", print);
-    document.title = "Dashboard";
-    render(<DownloadDashboardButton platformLabel="Facebook" timezone="Asia/Kolkata" dataUpdatedAt={settled()} disabled={false} />);
-    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
-    expect(print).toHaveBeenCalledTimes(1);
-    expect(document.title).toBe("Dashboard");
-    window.dispatchEvent(new Event("afterprint"));
-    expect(document.title).toBe("Dashboard");
-  });
-
-  it("waits for the chart animation when the numbers changed a moment ago", () => {
+  it("is greyed out while the charts animate after an update, then a click opens the print window at once and restores the tab title even if afterprint is late or never fires", () => {
     vi.useFakeTimers();
     try {
       const print = vi.fn();
       vi.stubGlobal("print", print);
-      render(<DownloadDashboardButton platformLabel="Facebook" dataUpdatedAt={new Date()} disabled={false} />);
-      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+      document.title = "Dashboard";
+      render(<DownloadDashboardButton platformLabel="Facebook" timezone="Asia/Kolkata" dataUpdatedAt={new Date()} disabled={false} />);
+      fireEvent.click(screen.getByRole("button", { name: "Preparing…" }));
       expect(print).not.toHaveBeenCalled();
-      expect(screen.getByRole("button", { name: "Preparing…" })).toBeDisabled();
       act(() => vi.advanceTimersByTime(CHART_SETTLE_MS));
+      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
       expect(print).toHaveBeenCalledTimes(1);
-      expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+      expect(document.title).toBe("Dashboard");
+      window.dispatchEvent(new Event("afterprint"));
+      expect(document.title).toBe("Dashboard");
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("never opens the print window after the dashboard is left while it was preparing", () => {
+  it("greys out again for each new update (a live lead or a filter change)", () => {
     vi.useFakeTimers();
     try {
-      const print = vi.fn();
-      vi.stubGlobal("print", print);
-      const { unmount } = render(<DownloadDashboardButton platformLabel="Facebook" dataUpdatedAt={new Date()} disabled={false} />);
-      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
-      unmount();
-      vi.advanceTimersByTime(CHART_SETTLE_MS);
-      expect(print).not.toHaveBeenCalled();
+      const { rerender } = render(<DownloadDashboardButton platformLabel="Facebook" dataUpdatedAt={new Date()} disabled={false} />);
+      act(() => vi.advanceTimersByTime(CHART_SETTLE_MS));
+      expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+      rerender(<DownloadDashboardButton platformLabel="Facebook" dataUpdatedAt={new Date()} disabled={false} />);
+      expect(screen.getByRole("button", { name: "Preparing…" })).toBeDisabled();
+      act(() => vi.advanceTimersByTime(CHART_SETTLE_MS));
+      expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
     } finally {
       vi.useRealTimers();
     }

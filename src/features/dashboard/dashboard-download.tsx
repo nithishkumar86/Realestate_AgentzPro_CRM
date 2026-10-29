@@ -1,7 +1,7 @@
 "use client";
 
 import { Download } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * "Download PDF" for the dashboard. It opens the browser's print window, where the globals.css print block (scoped
@@ -26,18 +26,23 @@ export function dashboardPdfTitle(platformLabel: string, date: Date, timezone?: 
 
 /**
  * The charts animate for ~1.9s after their numbers change (recharts: 400ms delay + 1500ms draw), and the print window
- * captures whatever frame is on screen. A click within this long of a data update waits out the rest first, so the PDF
- * never holds a half-drawn chart.
+ * captures whatever frame is on screen. The button stays disabled ("Preparing…") for this long after each data update,
+ * so the PDF never holds a half-drawn chart and a click always opens the print window straight away (some browsers,
+ * e.g. Safari, may refuse a print() that doesn't come directly from the click).
  */
 export const CHART_SETTLE_MS = 2000;
 
 export function DownloadDashboardButton({ platformLabel, timezone, dataUpdatedAt, disabled }: { platformLabel: string; timezone?: string; dataUpdatedAt: Date | null; disabled: boolean }) {
-  const [preparing, setPreparing] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // The update whose chart animation has finished; any newer update is still "preparing".
+  const [settledUpdate, setSettledUpdate] = useState<Date | null>(null);
+  useEffect(() => {
+    if (!dataUpdatedAt) return;
+    const timer = setTimeout(() => setSettledUpdate(dataUpdatedAt), Math.max(0, dataUpdatedAt.getTime() + CHART_SETTLE_MS - Date.now()));
+    return () => clearTimeout(timer);
+  }, [dataUpdatedAt]);
+  const preparing = !disabled && dataUpdatedAt !== null && settledUpdate !== dataUpdatedAt;
 
   function print() {
-    setPreparing(false);
     const previousTitle = document.title;
     const restore = () => { document.title = previousTitle; window.removeEventListener("afterprint", restore); };
     window.addEventListener("afterprint", restore);
@@ -51,15 +56,8 @@ export function DownloadDashboardButton({ platformLabel, timezone, dataUpdatedAt
     }
   }
 
-  function download() {
-    const wait = dataUpdatedAt ? dataUpdatedAt.getTime() + CHART_SETTLE_MS - Date.now() : 0;
-    if (wait <= 0) { print(); return; }
-    setPreparing(true);
-    timer.current = setTimeout(print, wait);
-  }
-
   return <button className="mvp-gradient-button mvp-gradient-button--download dash-download" type="button" disabled={disabled || preparing}
-    title={disabled ? "Available once the dashboard has loaded" : `Save this ${platformLabel} dashboard as a PDF`} onClick={download}>
+    title={disabled ? "Available once the dashboard has loaded" : preparing ? "Preparing the charts…" : `Save this ${platformLabel} dashboard as a PDF`} onClick={print}>
     <Download size={16} aria-hidden="true" />{preparing ? "Preparing…" : "Download PDF"}
   </button>;
 }

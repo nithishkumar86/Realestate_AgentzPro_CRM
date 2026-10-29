@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CHART_SETTLE_MS } from "@/features/dashboard/dashboard-download";
 import { DashboardPageClient } from "@/features/dashboard/dashboard-page-client";
 import { DASHBOARD_PLATFORMS } from "@/features/dashboard/dashboard-platforms";
 
@@ -63,7 +64,29 @@ beforeEach(() => {
     throw new Error(`unexpected fetch ${url}`);
   }));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+/**
+ * Download PDF is greyed out for CHART_SETTLE_MS after each data update. Tests that need it clickable run on a
+ * controlled clock and move it forward by exactly that much, so they never depend on real time passing (and stay
+ * deterministic on a busy machine). The clock still ticks with real time, so fetches and waitFor work normally, and it
+ * starts at a fixed midday so no midnight refresh can fire.
+ */
+function useControlledClock() {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-10-29T06:00:00Z"));
+}
+/**
+ * Moves the clock past the chart animation and waits for Download PDF to become clickable. React runs the effect that
+ * starts this wait in its own step after the numbers render, which can be after the clock moved, so the outcome is
+ * awaited rather than read straight away.
+ */
+async function settleCharts() {
+  act(() => vi.advanceTimersByTime(CHART_SETTLE_MS));
+  const button = await screen.findByRole("button", { name: "Download PDF" });
+  expect(button).toBeEnabled();
+  return button;
+}
 
 describe("dashboard page", () => {
   it("shows this month's leads and every chart for the current filters, opening on ALL ads", async () => {
@@ -82,6 +105,7 @@ describe("dashboard page", () => {
   });
 
   it("has the /leads filters and a Download PDF but no Delete, and none of the old cards", async () => {
+    useControlledClock();
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     for (const name of ["Page", "Ad", "Status", "Label"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
@@ -89,7 +113,7 @@ describe("dashboard page", () => {
     expect(screen.getByRole("button", { name: "Date" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Today's Leads/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
+    await settleCharts();
     expect(screen.queryByText("Leads Today")).not.toBeInTheDocument();
     expect(screen.queryByText("All Leads", { selector: "span" })).not.toBeInTheDocument();
   });
@@ -248,6 +272,7 @@ describe("dashboard platform switch", () => {
 
   // Every platform in the registry (including ones added later) gets the same Download PDF with its own name on it.
   it.each(DASHBOARD_PLATFORMS.map((platform) => [platform.id, platform.label] as const))("downloads the %s dashboard as a PDF named after it", async (id, label) => {
+    useControlledClock();
     let titleWhilePrinting = "";
     const print = vi.fn(() => { titleWhilePrinting = document.title; });
     vi.stubGlobal("print", print);
@@ -257,12 +282,11 @@ describe("dashboard platform switch", () => {
     await screen.findByTestId("month-leads");
     expect(screen.getByTestId("dash-report")).toHaveTextContent(`Lead Dashboard · ${label} leads`);
     expect(screen.getByTestId("dash-report")).toHaveTextContent("Filters: none (all leads, all time)");
-    // Clicked right after the numbers arrived: it waits for the chart animation, then opens the print window.
-    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
-    expect(screen.getByRole("button", { name: "Preparing…" })).toBeDisabled();
-    await waitFor(() => expect(print).toHaveBeenCalledTimes(1), { timeout: 3000 });
-    expect(screen.getByRole("button", { name: "Download PDF" })).toBeEnabled();
-    expect(titleWhilePrinting).toMatch(new RegExp(`^AgentzPro Dashboard - ${label} - \\d{4}-\\d{2}-\\d{2}$`));
+    // Once the charts have finished animating, a click prints at once (the greyed-out wait itself is covered, on a fully
+    // frozen clock, in dashboard-download.test.tsx).
+    fireEvent.click(await settleCharts());
+    expect(print).toHaveBeenCalledTimes(1);
+    expect(titleWhilePrinting).toBe(`AgentzPro Dashboard - ${label} - 2026-10-29`);
     expect(document.title).toBe("Dashboard");
   });
 
