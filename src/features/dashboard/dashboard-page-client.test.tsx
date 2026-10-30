@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHART_SETTLE_MS } from "@/features/dashboard/dashboard-download";
@@ -69,7 +69,8 @@ beforeEach(() => {
     throw new Error(`unexpected fetch ${url}`);
   }));
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+// Unmount first, so a view that mounted at the very end of a test still finds the fake EventSource.
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 /**
  * Download PDF is greyed out for CHART_SETTLE_MS after each data update. Tests that need it clickable run on a
