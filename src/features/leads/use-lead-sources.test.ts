@@ -3,8 +3,7 @@ import { availableLeadSources } from "@/features/leads/use-lead-sources";
 
 const NO_META = { pages: [] };
 const META_PAGE = { pages: [{ id: "page-1", connectionId: "c-1", pageName: "Chennai Homes", category: null, pageIdLastFour: "1234", status: "active" as const, lastConnectedAt: "2026-10-01T00:00:00Z" }] };
-const NO_GOOGLE = { connection: null, hasWebhook: false, webhookStopped: false };
-const SIGNED_IN = { email: "owner@example.com", connectedAt: "2026-10-01T00:00:00Z" };
+const NO_GOOGLE = { hasWebhook: false, webhookStopped: false };
 
 describe("availableLeadSources", () => {
   it("offers only Telecaller to a company with nothing connected", () => {
@@ -23,10 +22,16 @@ describe("availableLeadSources", () => {
 
   it.each([
     ["the webhook was created", { ...NO_GOOGLE, hasWebhook: true }],
-    ["Google sign-in was done", { ...NO_GOOGLE, connection: SIGNED_IN }],
     ["the webhook was stopped", { ...NO_GOOGLE, webhookStopped: true }],
   ])("counts Google Ads once %s", (_case, google) => {
     expect(availableLeadSources({ meta: NO_META, google })).toEqual(["telecaller", "google_ads"]);
+  });
+
+  // Without a webhook no Google lead can exist yet. After "Disconnect Google" the API sends `connection: null` with the
+  // same webhook flags, so counting the sign-in would make Google Ads appear and then vanish.
+  it("does not count Google sign-in alone, which brings no leads", () => {
+    const signedInOnly = { ...NO_GOOGLE, connection: { email: "owner@example.com", connectedAt: "2026-10-01T00:00:00Z" } };
+    expect(availableLeadSources({ meta: NO_META, google: signedInOnly })).toEqual(["telecaller"]);
   });
 
   it("lists every source, in the usual order, when both are connected", () => {

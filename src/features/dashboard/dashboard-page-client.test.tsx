@@ -45,7 +45,7 @@ function stats(overrides: Record<string, unknown> = {}) {
 }
 const META_CONNECTED = { connectionStatus: "active", pages: [{ id: PAGE_ID, status: "active" }] };
 const META_NONE = { connectionStatus: "not_connected", pages: [] };
-const GOOGLE_CONNECTED = { connection: { email: "owner@example.com", connectedAt: "2026-10-01T00:00:00Z" }, hasWebhook: false, webhookStopped: false, needsReconnect: false };
+const GOOGLE_SIGNED_IN = { connection: { email: "owner@example.com", connectedAt: "2026-10-01T00:00:00Z" }, hasWebhook: false, webhookStopped: false, needsReconnect: false };
 const GOOGLE_NONE = { connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
@@ -60,7 +60,7 @@ beforeEach(() => {
   nextStats = respond();
   // By default the company uses every platform: a Facebook Page is connected and Google Ads is signed in with a webhook.
   mocks.connection.mockReset().mockResolvedValue(META_CONNECTED);
-  mocks.google.mockReset().mockResolvedValue({ ...GOOGLE_CONNECTED, hasWebhook: true });
+  mocks.google.mockReset().mockResolvedValue({ ...GOOGLE_SIGNED_IN, hasWebhook: true });
   window.history.replaceState(null, "", "/dashboard");
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -258,16 +258,18 @@ describe("dashboard platform switch", () => {
     expect(screen.queryByTestId("month-leads")).not.toBeInTheDocument();
   });
 
+  // Google Ads is listed without a webhook only when its first check failed (an error never hides real leads); the
+  // warning's own retry then finds no webhook.
   it("warns about the selected platform's connection only", async () => {
     mocks.connection.mockResolvedValue({ ...META_CONNECTED, connectionStatus: "reauthorization_required" });
-    mocks.google.mockResolvedValue(GOOGLE_CONNECTED); // signed in, but no webhook yet
+    mocks.google.mockRejectedValueOnce(new Error("network")).mockResolvedValue(GOOGLE_SIGNED_IN);
     render(<DashboardPageClient initialPlatform="google_ads" />);
     expect(await screen.findByText(/Google Ads is not set up yet/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Set up Google Ads" })).toHaveAttribute("href", "/connection");
     expect(screen.queryByText(/Facebook connection requires attention/)).not.toBeInTheDocument();
-    // Both checks were made once, by useLeadSources; the warning reuses them instead of asking again.
+    // Only the failed check was asked again; the Facebook one made by useLeadSources is reused.
     expect(mocks.connection).toHaveBeenCalledTimes(1);
-    expect(mocks.google).toHaveBeenCalledTimes(1);
+    expect(mocks.google).toHaveBeenCalledTimes(2);
   });
 
   it("says Google Ads leads are disconnected after the owner stopped the webhook, not 'not set up'", async () => {
@@ -276,6 +278,8 @@ describe("dashboard platform switch", () => {
     expect(await screen.findByText(/Google Ads leads are disconnected/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reconnect Google Ads" })).toHaveAttribute("href", "/connection");
     expect(screen.queryByText(/Google Ads is not set up yet/)).not.toBeInTheDocument();
+    // The warning reuses the check useLeadSources already made instead of asking again.
+    expect(mocks.google).toHaveBeenCalledTimes(1);
   });
 
   // Every platform in the registry (including ones added later) gets the same Download PDF with its own name on it.
@@ -344,6 +348,13 @@ describe("only the platforms the company uses", () => {
     await screen.findByTestId("month-leads");
     expect(statBodies[0]).toMatchObject({ platform: "google_ads" });
     expect(await listedPlatforms()).toEqual(["Google Ads", "Telecaller"]);
+  });
+
+  it("Sign in with Google alone does not list Google Ads: no lead arrives without the webhook", async () => {
+    mocks.google.mockResolvedValue(GOOGLE_SIGNED_IN);
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(await listedPlatforms()).toEqual(["Facebook", "Telecaller"]);
   });
 
   it("keeps a disconnected Facebook Page and a stopped Google webhook, so their old leads stay reachable", async () => {
