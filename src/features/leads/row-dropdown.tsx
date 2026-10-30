@@ -16,10 +16,10 @@ const panelHeight = (count: number) => Math.min(260, count * 38 + (count - 1) * 
  * (overflow: auto), which would clip an absolutely positioned panel, so the panel is portalled to
  * <body> and pinned with position: fixed beside the trigger (flipping upward near the screen bottom).
  * Choosing an option only calls onChange; the caller keeps the confirm popup, the same-value no-op
- * and the save exactly as before.
+ * and the save exactly as before. An optional `tone` colours the closed box only (the open list stays plain).
  */
-export function RowDropdown<T extends string>({ ariaLabel, value, options, open, onOpenChange, onChange, width = 180 }: {
-  ariaLabel: string; value: T; options: readonly T[]; open: boolean; onOpenChange: (open: boolean) => void; onChange: (next: T) => void; width?: number;
+export function RowDropdown<T extends string>({ ariaLabel, value, options, open, onOpenChange, onChange, width = 180, tone }: {
+  ariaLabel: string; value: T; options: readonly T[]; open: boolean; onOpenChange: (open: boolean) => void; onChange: (next: T) => void; width?: number; tone?: string;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -60,7 +60,7 @@ export function RowDropdown<T extends string>({ ariaLabel, value, options, open,
   }, [open, onOpenChange]);
 
   return <>
-    <button ref={triggerRef} type="button" className="mvp-row-dropdown" style={{ width }} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onClick={() => onOpenChange(!open)}>
+    <button ref={triggerRef} type="button" className="mvp-row-dropdown" style={{ width }} data-tone={tone} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onClick={() => onOpenChange(!open)}>
       <span className="mvp-row-dropdown__value">{value}</span>
       <ChevronDown size={14} className={`mvp-field-chevron${open ? " mvp-field-chevron--open" : ""}`} />
     </button>

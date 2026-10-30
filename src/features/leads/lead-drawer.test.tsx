@@ -188,6 +188,41 @@ describe("leads table column order", () => {
   });
 });
 
+describe("status colours", () => {
+  const LEAD_4 = "55555555-5555-4555-8555-555555555555";
+
+  it("colours only the WhatsApp (green), Disqualified (red) and Didn't pick the call (pink) Status boxes in the table; other statuses and the Label box stay plain", async () => {
+    stubApi({
+      leads: [
+        lead(LEAD_1, "Kumar", { status: "Details send via WhatsApp" }), lead(LEAD_2, "Ravi", { status: "Disqualified" }),
+        lead(LEAD_3, "Priya", { status: "Didn't pick the call" }), lead(LEAD_4, "Arun", { status: "Not reachable" }),
+      ],
+      pages: {}, openTask: null,
+    });
+    await renderPage();
+    const tone = (name: string) => screen.getByRole("button", { name: `Change status for ${name}` }).getAttribute("data-tone");
+    expect([tone("Kumar"), tone("Ravi"), tone("Priya"), tone("Arun")]).toEqual(["green", "red", "pink", null]);
+    expect(screen.getByRole("button", { name: "Change label for Kumar" })).not.toHaveAttribute("data-tone");
+    fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
+    for (const option of screen.getAllByRole("option")) expect(option).not.toHaveAttribute("data-tone");
+  });
+
+  it("uses the same colours in the drawer's status banner, following the picked status", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Details send via WhatsApp" })], pages: {}, openTask: null });
+    await renderPage();
+    const drawer = await openDrawer();
+    const banner = () => drawer.querySelector(".mvp-lead-status");
+    expect(banner()).toHaveAttribute("data-tone", "green");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Didn't pick the call" }));
+    expect(banner()).toHaveAttribute("data-tone", "pink");
+    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
+    fireEvent.click(screen.getByRole("option", { name: "Disqualified" }));
+    expect(banner()).toHaveAttribute("data-tone", "red");
+    expect(within(drawer).getByRole("button", { name: "Change status for Kumar" })).not.toHaveAttribute("data-tone");
+  });
+});
+
 describe("no open task marker in the leads table", () => {
   it("shows only for an active lead without a task, never for a lead with a task or in a final status", async () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar"), lead(LEAD_2, "Anitha", { hasOpenTask: true }), lead(LEAD_3, "Ravi", { status: "Sale" })], pages: {}, openTask: null });

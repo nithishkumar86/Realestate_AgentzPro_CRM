@@ -32,6 +32,20 @@ export function isFinalLeadStatus(status: LeadStatus): boolean {
   return (FINAL_LEAD_STATUSES as readonly LeadStatus[]).includes(status);
 }
 
+// The only statuses the leads table colours, so a telecaller spots them at a glance. Every other status stays plain.
+// The drawer's status banner uses the same colours for these three. UI-only rule.
+export const STATUS_HIGHLIGHTS = {
+  "Details send via WhatsApp": "green",
+  Disqualified: "red",
+  "Didn't pick the call": "pink",
+} as const satisfies Partial<Record<LeadStatus, string>>;
+
+export type StatusHighlight = (typeof STATUS_HIGHLIGHTS)[keyof typeof STATUS_HIGHLIGHTS];
+
+export function statusHighlight(status: LeadStatus): StatusHighlight | undefined {
+  return (STATUS_HIGHLIGHTS as Partial<Record<LeadStatus, StatusHighlight>>)[status];
+}
+
 // The status every lead starts with. While a lead is still on it nobody has recorded the outcome of a first
 // call, so the follow-up task cannot be created yet: the telecaller updates the status first (step 1), then
 // adds the task (step 2), then the note (step 3). The server enforces this; the drawer shows it.
