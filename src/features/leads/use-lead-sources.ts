@@ -11,20 +11,21 @@ export type ConnectionHealth = { meta: ConnectionOverview["connectionStatus"] | 
 /** What each connection check returned; null where it could not be loaded. */
 export type SourceChecks = {
   meta: Pick<ConnectionOverview, "pages"> | null;
-  google: Pick<GoogleAdsOverview, "connection" | "hasWebhook" | "webhookStopped"> | null;
+  google: Pick<GoogleAdsOverview, "hasWebhook" | "webhookStopped"> | null;
 };
 
 /**
  * The lead sources this company uses, in LEAD_SOURCES order. Telecaller (the + button) always works. Facebook counts
  * once a Page was connected, not at Facebook login: the login is saved before the owner picks a Page. Google Ads counts
- * once the webhook was created or Google sign-in was done. Disconnected Pages and a stopped webhook still count, so
- * the company's existing leads stay filterable. A check that could not be loaded keeps its source, so an error never
- * hides real leads.
+ * once the webhook was created, the only way Google leads arrive; "Sign in with Google" alone only adds campaign
+ * names, and "Disconnect Google" would otherwise make it vanish again. Disconnected Pages and a stopped webhook still
+ * count (neither row is ever deleted), so the company's existing leads stay filterable. A check that could not be
+ * loaded keeps its source, so an error never hides real leads.
  */
 export function availableLeadSources({ meta, google }: SourceChecks): LeadSource[] {
   const shown: Record<LeadSource, boolean> = {
     facebook: meta === null || meta.pages.length > 0,
-    google_ads: google === null || Boolean(google.connection) || google.hasWebhook || google.webhookStopped,
+    google_ads: google === null || google.hasWebhook || google.webhookStopped,
     telecaller: true,
   };
   return LEAD_SOURCES.filter((source) => shown[source]);
