@@ -84,6 +84,8 @@ function stubApi(state: ApiState) {
     calls.push({ url, method, body });
     if (url.startsWith("/api/leads/filters")) return json({ pages: [], ads: [], defaultAdId: null, assignees: state.assignees ?? [], isOwner: state.isOwner ?? true });
     if (url === "/api/leads/query") return json({ items: state.leads, total: state.leads.length, timezone: "Asia/Kolkata" });
+    // The "+" form's origins, as listCallInOrigins answers for a company with no lead platform connected.
+    if (url === "/api/leads/telecaller/origins") return json({ today: "2026-10-30", minDate: "2025-10-30", platforms: [] });
     if (url === "/api/leads/telecaller" && method === "POST") {
       if (state.callInDuplicate) return json({ error: { code: "LEAD_PHONE_EXISTS", message: "This phone number already exists as a lead." } }, 409);
       return json({ id: "call-in-1" }, 201);
@@ -1140,6 +1142,8 @@ describe("call-in leads", () => {
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Add call-in lead" }));
     const dialog = await screen.findByRole("dialog", { name: "Add call-in lead" });
+    // Save is enabled once the form knows the company's lead platforms.
+    await within(dialog).findByText("Call date");
     fireEvent.click(within(dialog).getByRole("button", { name: "Save lead" }));
     expect(await within(dialog).findByText("Enter the lead's name.")).toBeInTheDocument();
     expect(within(dialog).getByText("Enter a phone number with at least 10 digits.")).toBeInTheDocument();
@@ -1151,7 +1155,7 @@ describe("call-in leads", () => {
     fireEvent.change(within(dialog).getByLabelText(/Project Name/), { target: { value: "Karuvi" } });
     const before = queryCalls(calls).length;
     fireEvent.click(within(dialog).getByRole("button", { name: "Save lead" }));
-    await waitFor(() => expect(calls.find((call) => call.url === "/api/leads/telecaller")?.body).toEqual({ leadName: "Ravi", phone: "98765 43210", whatsapp: "", projectName: "Karuvi" }));
+    await waitFor(() => expect(calls.find((call) => call.url === "/api/leads/telecaller")?.body).toEqual({ leadName: "Ravi", phone: "98765 43210", whatsapp: "", projectName: "Karuvi", callDate: "2026-10-30" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add call-in lead" })).not.toBeInTheDocument());
     await waitFor(() => expect(queryCalls(calls).length).toBeGreaterThan(before));
   });
@@ -1161,6 +1165,7 @@ describe("call-in leads", () => {
     await renderPage();
     fireEvent.click(screen.getByRole("button", { name: "Add call-in lead" }));
     const dialog = await screen.findByRole("dialog", { name: "Add call-in lead" });
+    await within(dialog).findByText("Call date");
     fireEvent.change(within(dialog).getByLabelText(/Lead Name/), { target: { value: "Ravi" } });
     fireEvent.change(within(dialog).getByLabelText(/^Phone/), { target: { value: "9876543210" } });
     fireEvent.change(within(dialog).getByLabelText(/Project Name/), { target: { value: "Karuvi" } });

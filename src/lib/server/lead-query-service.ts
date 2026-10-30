@@ -3,7 +3,7 @@ import "server-only";
 import { AppError } from "@/lib/server/app-error";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
-import type { LeadLabel, LeadSource, LeadStatus } from "@/features/leads/lead-options";
+import { LEAD_SOURCE_LABELS, LEAD_SOURCES, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import { listAssignableMembers, loadProfileNames, type AssignableMember } from "@/lib/server/lead-assignment-service";
 import { EMAIL_FIELD_KEYS, NAME_FIELD_KEYS, PHONE_FIELD_KEYS } from "@/lib/server/lead-redaction";
 
@@ -49,14 +49,18 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const sortField = request.sortField ?? "leadDate";
   const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,leadgen_id,google_lead_id,google_campaign_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
+    .select("id,leadgen_id,google_lead_id,google_campaign_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,came_from_platform,came_from_ref_name,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.leadId) query = query.eq("id", request.leadId);
-  if (request.source) query = query.eq("lead_source", request.source);
+  // Telecaller = every lead added with the "+" button. A platform = every lead that belongs to it (lead_platform),
+  // including call-in leads whose "Came from" is that platform.
+  if (request.source === "telecaller") query = query.eq("lead_source", "telecaller");
+  else if (request.source) query = query.eq("lead_platform", request.source);
   if (request.pageRecordId) query = query.eq("facebook_page_record_id", request.pageRecordId);
-  // "Unattributed" means a Facebook lead whose ad is unknown; call-in leads never have an ad.
-  if (request.adId === "unattributed") query = query.is("ad_id", null).eq("lead_source", "facebook");
-  else if (request.adId) query = query.eq("ad_id", request.adId);
+  // The Ad filter lists Facebook ads. lead_ad_ref is the Meta ad of a Facebook lead, or the ad a call-in lead picked;
+  // scoped to Facebook so a Google campaign id can never match. "Unattributed" = a Facebook lead with no known ad.
+  if (request.adId === "unattributed") query = query.is("lead_ad_ref", null).eq("lead_platform", "facebook");
+  else if (request.adId) query = query.eq("lead_ad_ref", request.adId).eq("lead_platform", "facebook");
   if (request.status) query = query.eq("status", request.status);
   if (request.label) query = query.eq("label", request.label);
   if (request.assignee === "unassigned") query = query.is("assigned_user_id", null);
@@ -109,8 +113,11 @@ function toLeadRow(lead: Record<string, unknown>): LeadRow {
   const adId = typeof lead.ad_id === "string" ? lead.ad_id : null;
   const adName = asNullableString(lead.ad_name);
   const row: LeadRow = { id: String(lead.id), leadgenId: String(lead.leadgen_id), leadName: asNullableString(lead.lead_name), email: asNullableString(lead.lead_email), phone: asNullableString(lead.lead_phone), adId, facebookPage: page?.facebook_page_name ?? "Unknown Page", adName: adName ?? (adId ? `Ad ${adId} - name pending` : "Unattributed"), leadDate: String(lead.lead_created_time), source: "facebook", status: lead.status as LeadStatus, label: lead.label as LeadLabel, labelSource: (lead.label_source as LeadLabelSource) ?? "default", assignedUserId: typeof lead.assigned_user_id === "string" ? lead.assigned_user_id : null, assigneeName: null };
-  // A call-in lead has no Meta lead id, page or ad.
-  if (lead.lead_source === "telecaller") return { ...row, source: "telecaller", leadgenId: "", facebookPage: "-", adName: "-" };
+  // A call-in lead has no lead id, page or ad of its own; Page / Ad Name show the platform and ad its "Came from" names.
+  if (lead.lead_source === "telecaller") {
+    const cameFrom = LEAD_SOURCES.find((source) => source !== "telecaller" && source === lead.came_from_platform);
+    return { ...row, source: "telecaller", leadgenId: "", facebookPage: cameFrom ? LEAD_SOURCE_LABELS[cameFrom] : "-", adName: asNullableString(lead.came_from_ref_name) ?? "-" };
+  }
   // A Google Ads lead: Google's lead id, and the campaign name once the name worker has looked it up.
   if (lead.lead_source === "google_ads") {
     const campaignId = asNullableString(lead.google_campaign_id);

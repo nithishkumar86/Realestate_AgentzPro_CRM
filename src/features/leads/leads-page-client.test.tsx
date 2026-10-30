@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toReadableLabel } from "@/lib/date-utils";
 import { displayValue } from "@/components/ui";
@@ -62,7 +62,7 @@ function jsonResponse(body: unknown, status = 200): Response {
  * Sending one there is what used to 400 every download, so the stub reproduces that contract
  * rather than accepting anything: put a pagination field back and these tests fail.
  */
-type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string };
+type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string; source?: string };
 
 function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolean } = {}) {
   const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[], patches: [] as Array<{ id: string; body: Record<string, unknown> }> };
@@ -582,5 +582,20 @@ describe("Source filter lists only the sources the company uses", () => {
     expect(await listedSources()).toEqual(["All sources", "Facebook", "Telecaller"]);
     fireEvent.click(screen.getByRole("option", { name: "Facebook" }));
     await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "facebook" }));
+  });
+});
+
+describe("call-in leads in the table", () => {
+  it("marks a lead added by a telecaller with the phone icon and shows the platform and ad it came from", async () => {
+    stubLeadApi([
+      { id: "lead-1", leadName: "Caller", phone: "9876543210", facebookPage: "Facebook", adName: "Villa Ad", leadDate: "2026-10-30T06:30:00Z", status: "New Lead", label: "Warm", source: "telecaller" },
+      { id: "lead-2", leadName: "Meta lead", phone: "9999999999", facebookPage: "Chennai Homes", adName: "karuvi", leadDate: "2026-10-30T05:30:00Z", status: "New Lead", label: "Warm", source: "facebook" },
+    ]);
+    render(<LeadsPageClient />);
+    const callerRow = (await screen.findByText("Caller")).closest("tr")!;
+    expect(within(callerRow).getByRole("img", { name: "Added by telecaller" })).toBeInTheDocument();
+    expect(within(callerRow).getByText("Villa Ad")).toBeInTheDocument();
+    const metaRow = screen.getByText("Meta lead").closest("tr")!;
+    expect(within(metaRow).queryByRole("img", { name: "Added by telecaller" })).not.toBeInTheDocument();
   });
 });

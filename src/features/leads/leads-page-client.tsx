@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, ListTodo, Plus, Trash2, UserRound } from "lucide-react";
+import { Download, ListTodo, PhoneCall, Plus, Trash2, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, statusHighlight, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import { AddCallInLeadDialog } from "@/features/leads/add-call-in-lead-dialog";
@@ -15,7 +15,7 @@ import { useLeadSources } from "@/features/leads/use-lead-sources";
 const LOADING_SOURCES: readonly LeadSource[] = ["telecaller"];
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
-type Lead = { id: string; leadgenId: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; assignedUserId?: string | null; assigneeName?: string | null; hasOpenTask?: boolean; openTaskTitle?: string | null };
+type Lead = { id: string; leadgenId: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; assignedUserId?: string | null; assigneeName?: string | null; hasOpenTask?: boolean; openTaskTitle?: string | null; source?: LeadSource };
 
 /** Who owns the lead: initial + name, or a quiet "Unassigned". Changed from the lead's detail drawer. */
 function AssigneeCell({ name }: { name: string | null }) {
@@ -181,7 +181,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
       {leads.map((lead) => <tr key={lead.id}><td><input type="checkbox" aria-label={`Select ${lead.leadName ?? "Unnamed Lead"}`} checked={selectedLeadIds.includes(lead.id)} onChange={() => toggleLeadSelection(lead.id)} /></td><td className="mvp-lead-profile-cell">
         <button type="button" className="mvp-lead-profile-button" onClick={() => { setDrawerPendingStatus(null); setDrawerLeadId(lead.id); }} aria-label={`Open profile of ${lead.leadName ?? "Unnamed Lead"}`}><UserRound size={20} aria-hidden="true" /><span className="mvp-lead-profile-tip" aria-hidden="true">Click to view the details</span></button>
       </td><td>{lead.leadgenId || "-"}</td><td><span className="mvp-lead-name-cell">
-        <span className="mvp-lead-name">{lead.leadName ?? "Unnamed Lead"}</span>
+        <span className="mvp-lead-name">{lead.leadName ?? "Unnamed Lead"}{lead.source === "telecaller" ? <span className="mvp-call-in-marker" role="img" aria-label="Added by telecaller" title="Added by telecaller"><PhoneCall size={13} aria-hidden="true" /></span> : null}</span>
         {lead.hasOpenTask === false && !isFinalLeadStatus(lead.status) ? <span className="mvp-no-task-marker" title="No follow-up scheduled">No task</span> : null}
         {lead.hasOpenTask && lead.openTaskTitle ? <span className="mvp-lead-task-title" title={`Task: ${lead.openTaskTitle}`}><ListTodo size={12} aria-hidden="true" /><span>{lead.openTaskTitle}</span></span> : null}
       </span></td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
