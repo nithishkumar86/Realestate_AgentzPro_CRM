@@ -27,7 +27,8 @@ describe("tenant-scoped lead query contracts", () => {
     await queryLeads(context, { pageRecordId: "page-a", adId: "ad-a" });
     expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
     expect(leads.eq).toHaveBeenCalledWith("facebook_page_record_id", "page-a");
-    expect(leads.eq).toHaveBeenCalledWith("ad_id", "ad-a");
+    expect(leads.eq).toHaveBeenCalledWith("lead_ad_ref", "ad-a");
+    expect(leads.eq).toHaveBeenCalledWith("lead_platform", "facebook");
   });
 
   it("uses a null ad predicate for Unattributed and no ad predicate for All ads", async () => {
@@ -35,7 +36,7 @@ describe("tenant-scoped lead query contracts", () => {
     const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
     mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
     await queryLeads(context, { adId: "unattributed" });
-    expect(leads.is).toHaveBeenCalledWith("ad_id", null);
+    expect(leads.is).toHaveBeenCalledWith("lead_ad_ref", null);
     leads.is.mockClear();
     await queryLeads(context, {});
     expect(leads.is).not.toHaveBeenCalled();
@@ -62,19 +63,36 @@ describe("tenant-scoped lead query contracts", () => {
     expect(result.items[0]).toMatchObject({ adId: "ad-1", adName: "Campaign", facebookPage: "Page A" });
   });
 
-  it("filters by lead source, and Unattributed only matches Facebook leads", async () => {
+  it("Telecaller = every call-in lead; a platform = every lead that belongs to it; Unattributed only matches Facebook", async () => {
     const leads = builder({ data: [], error: null, count: 0 });
     const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
     mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
     await queryLeads(context, { source: "telecaller" });
     expect(leads.eq).toHaveBeenCalledWith("lead_source", "telecaller");
+    expect(leads.eq).not.toHaveBeenCalledWith("lead_platform", expect.anything());
+    leads.eq.mockClear();
+    // A call-in lead whose "Came from" is Google Ads has lead_platform = 'google_ads', so it is in this filter too.
+    await queryLeads(context, { source: "google_ads" });
+    expect(leads.eq).toHaveBeenCalledWith("lead_platform", "google_ads");
+    expect(leads.eq).not.toHaveBeenCalledWith("lead_source", expect.anything());
     leads.eq.mockClear();
     await queryLeads(context, { adId: "unattributed" });
-    expect(leads.is).toHaveBeenCalledWith("ad_id", null);
-    expect(leads.eq).toHaveBeenCalledWith("lead_source", "facebook");
+    expect(leads.is).toHaveBeenCalledWith("lead_ad_ref", null);
+    expect(leads.eq).toHaveBeenCalledWith("lead_platform", "facebook");
     leads.eq.mockClear();
     await queryLeads(context, {});
     expect(leads.eq).not.toHaveBeenCalledWith("lead_source", expect.anything());
+    expect(leads.eq).not.toHaveBeenCalledWith("lead_platform", expect.anything());
+  });
+
+  it("keeps the search OR and the source filter as separate predicates, so both apply", async () => {
+    const leads = builder({ data: [], error: null, count: 0 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    await queryLeads(context, { source: "facebook", search: "Ravi" });
+    expect(leads.eq).toHaveBeenCalledWith("lead_platform", "facebook");
+    expect(leads.or).toHaveBeenCalledTimes(1);
+    expect(leads.or.mock.calls[0][0]).not.toContain("lead_platform");
   });
 
   it("shows a call-in lead with no Lead ID, Page or Ad, and leaves Facebook rows unchanged", async () => {
@@ -87,6 +105,19 @@ describe("tenant-scoped lead query contracts", () => {
     const result = await queryLeads(context, {}, true);
     expect(result.items[0]).toMatchObject({ source: "telecaller", leadgenId: "", facebookPage: "-", adName: "-", leadName: "Caller" });
     expect(result.items[1]).toMatchObject({ source: "facebook", leadgenId: "123", facebookPage: "Page A", adName: "Unattributed" });
+  });
+
+  it("shows a call-in lead's \"Came from\" platform and ad in Page / Ad Name, with no ad id of its own", async () => {
+    const callIn = { leadgen_id: null, lead_phone: "9876543210", ad_id: null, ad_name: null, lead_created_time: "2026-10-30T10:00:00Z", status: "New Lead", label: "Warm", label_source: "telecaller", lead_source: "telecaller", facebook_pages: null };
+    const leads = builder({ data: [
+      { ...callIn, id: "lead-1", lead_name: "From FB ad", came_from_platform: "facebook", came_from_ref_name: "Villa Ad" },
+      { ...callIn, id: "lead-2", lead_name: "From Google", came_from_platform: "google_ads", came_from_ref_name: null },
+    ], error: null, count: 2 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    const result = await queryLeads(context, {}, true);
+    expect(result.items[0]).toMatchObject({ source: "telecaller", leadgenId: "", facebookPage: "Facebook", adName: "Villa Ad", adId: null });
+    expect(result.items[1]).toMatchObject({ source: "telecaller", facebookPage: "Google Ads", adName: "-", adId: null });
   });
 
   it("shows a Google Ads lead with Google's lead id, 'Google Ads' as the page, and a placeholder until the campaign name arrives", async () => {

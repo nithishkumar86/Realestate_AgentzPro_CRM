@@ -86,6 +86,14 @@ export const LEAD_SOURCES = ["facebook", "telecaller", "google_ads"] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = { facebook: "Facebook", telecaller: "Telecaller", google_ads: "Google Ads" };
 
+// Where a call-in lead can say it came from: every lead platform except Telecaller (that is how it entered, not where
+// the person came from). Keep in sync with call_in_platforms() and lead_data_came_from_check in
+// supabase/migrations/20261030120000_call_in_lead_came_from.sql.
+export type CallInPlatform = Exclude<LeadSource, "telecaller">;
+export const CALL_IN_PLATFORMS = LEAD_SOURCES.filter((source): source is CallInPlatform => source !== "telecaller");
+/** What a call-in lead is credited to on each platform: a Facebook ad, a Google Ads campaign. */
+export const CALL_IN_REF_LABELS: Record<CallInPlatform, string> = { facebook: "Ad", google_ads: "Campaign" };
+
 // Call-in lead form limits; the create_telecaller_lead RPC enforces the same.
 export const CALL_IN_TEXT_MAX_LENGTH = 200;
 export const CALL_IN_PHONE_MAX_LENGTH = 30;

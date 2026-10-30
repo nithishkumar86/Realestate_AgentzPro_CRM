@@ -2478,6 +2478,9 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-call-in__cancel { min-height: 40px; padding: 0 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font-size: .84rem; font-weight: 800; cursor: pointer; }
 .mvp-call-in__save { padding: 0 18px; cursor: pointer; }
 .mvp-call-in__cancel:disabled, .mvp-call-in__save:disabled { cursor: not-allowed; }
+.mvp-call-in__fixed { display: flex; align-items: center; min-height: 42px; background: var(--surface-muted); color: var(--text); font-size: .88rem; font-weight: 700; cursor: default; }
+.mvp-call-in__field input.mvp-call-in__date { cursor: pointer; caret-color: transparent; }
+.mvp-call-in__loading { margin: 0; color: var(--text-muted); font-size: .8rem; font-weight: 600; }
 
 @media (max-width: 900px) {
   .mvp-filter-row--secondary { align-items: stretch; }
@@ -3700,6 +3703,7 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-lead-profile-button:hover { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); background: color-mix(in srgb, var(--primary) 10%, var(--surface)); color: var(--primary); }
 .mvp-lead-profile-button:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 2px; }
 .mvp-lead-name { color: var(--text); font-weight: 700; }
+.mvp-call-in-marker { display: inline-flex; align-items: center; margin-left: 6px; color: var(--primary); vertical-align: -2px; }
 /* Hover/keyboard-focus hint, shown to the right of the icon so the table's scroll box never clips it. */
 .mvp-lead-profile-tip { position: absolute; top: 50%; left: calc(100% + 8px); z-index: 5; padding: 5px 9px; border-radius: 6px; background: var(--text); color: var(--surface); font-size: .74rem; font-weight: 700; white-space: nowrap; pointer-events: none; box-shadow: var(--shadow-dropdown); opacity: 0; visibility: hidden; transform: translate(-4px, -50%); transition: opacity 120ms ease, transform 120ms ease, visibility 120ms; }
 .mvp-lead-profile-tip::before { content: ""; position: absolute; top: 50%; left: -4px; width: 8px; height: 8px; background: inherit; transform: translateY(-50%) rotate(45deg); }
