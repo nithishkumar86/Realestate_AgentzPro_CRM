@@ -43,6 +43,10 @@ function stats(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+const META_CONNECTED = { connectionStatus: "active", pages: [{ id: PAGE_ID, status: "active" }] };
+const META_NONE = { connectionStatus: "not_connected", pages: [] };
+const GOOGLE_CONNECTED = { connection: { email: "owner@example.com", connectedAt: "2026-10-01T00:00:00Z" }, hasWebhook: false, webhookStopped: false, needsReconnect: false };
+const GOOGLE_NONE = { connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const statBodies: Array<Record<string, unknown>> = [];
@@ -54,8 +58,9 @@ beforeEach(() => {
   statBodies.length = 0;
   FakeEventSource.instances = [];
   nextStats = respond();
-  mocks.connection.mockReset().mockResolvedValue({ connectionStatus: "connected" });
-  mocks.google.mockReset().mockResolvedValue({ hasWebhook: true, webhookStopped: false, needsReconnect: false });
+  // By default the company uses every platform: a Facebook Page is connected and Google Ads is signed in with a webhook.
+  mocks.connection.mockReset().mockResolvedValue(META_CONNECTED);
+  mocks.google.mockReset().mockResolvedValue({ ...GOOGLE_CONNECTED, hasWebhook: true });
   window.history.replaceState(null, "", "/dashboard");
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -168,14 +173,14 @@ describe("dashboard page", () => {
   });
 
   it("keeps the Facebook reconnect warning that the old dashboard had", async () => {
-    mocks.connection.mockResolvedValue({ connectionStatus: "reauthorization_required" });
+    mocks.connection.mockResolvedValue({ ...META_CONNECTED, connectionStatus: "reauthorization_required" });
     render(<DashboardPageClient />);
     expect(await screen.findByText(/Facebook connection requires attention/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reconnect Facebook" })).toHaveAttribute("href", "/connection");
   });
 
   it("still shows the Facebook reconnect warning under React Strict Mode (mount, unmount, mount)", async () => {
-    mocks.connection.mockResolvedValue({ connectionStatus: "reauthorization_required" });
+    mocks.connection.mockResolvedValue({ ...META_CONNECTED, connectionStatus: "reauthorization_required" });
     render(<StrictMode><DashboardPageClient /></StrictMode>);
     expect(await screen.findByText(/Facebook connection requires attention/)).toBeInTheDocument();
   });
@@ -253,17 +258,19 @@ describe("dashboard platform switch", () => {
   });
 
   it("warns about the selected platform's connection only", async () => {
-    mocks.connection.mockResolvedValue({ connectionStatus: "reauthorization_required" });
-    mocks.google.mockResolvedValue({ hasWebhook: false, webhookStopped: false, needsReconnect: false });
+    mocks.connection.mockResolvedValue({ ...META_CONNECTED, connectionStatus: "reauthorization_required" });
+    mocks.google.mockResolvedValue(GOOGLE_CONNECTED); // signed in, but no webhook yet
     render(<DashboardPageClient initialPlatform="google_ads" />);
     expect(await screen.findByText(/Google Ads is not set up yet/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Set up Google Ads" })).toHaveAttribute("href", "/connection");
     expect(screen.queryByText(/Facebook connection requires attention/)).not.toBeInTheDocument();
-    expect(mocks.connection).not.toHaveBeenCalled();
+    // Both checks were made once, by useLeadSources; the warning reuses them instead of asking again.
+    expect(mocks.connection).toHaveBeenCalledTimes(1);
+    expect(mocks.google).toHaveBeenCalledTimes(1);
   });
 
   it("says Google Ads leads are disconnected after the owner stopped the webhook, not 'not set up'", async () => {
-    mocks.google.mockResolvedValue({ hasWebhook: false, webhookStopped: true, needsReconnect: false });
+    mocks.google.mockResolvedValue({ ...GOOGLE_NONE, webhookStopped: true });
     render(<DashboardPageClient initialPlatform="google_ads" />);
     expect(await screen.findByText(/Google Ads leads are disconnected/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Reconnect Google Ads" })).toHaveAttribute("href", "/connection");
@@ -278,7 +285,7 @@ describe("dashboard platform switch", () => {
     vi.stubGlobal("print", print);
     document.title = "Dashboard";
     render(<DashboardPageClient initialPlatform={id} />);
-    expect(screen.getByRole("button", { name: "Download PDF" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Download PDF" })).toBeDisabled();
     await screen.findByTestId("month-leads");
     expect(screen.getByTestId("dash-report")).toHaveTextContent(`Lead Dashboard · ${label} leads`);
     expect(screen.getByTestId("dash-report")).toHaveTextContent("Filters: none (all leads, all time)");
@@ -297,5 +304,82 @@ describe("dashboard platform switch", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Chennai Homes" }));
     await screen.findByRole("button", { name: /Remove Page filter: Chennai Homes/ });
     expect(screen.getByTestId("dash-report")).not.toHaveTextContent("Filters: none");
+  });
+});
+
+describe("only the platforms the company uses", () => {
+  const listedPlatforms = async () => {
+    fireEvent.click(screen.getByRole("button", { name: /^Leads platform:/ }));
+    const list = await screen.findByRole("listbox", { name: "Leads platform" });
+    return within(list).getAllByRole("option").map((option) => option.textContent);
+  };
+
+  it("a new company with nothing connected opens on Telecaller and lists only Telecaller", async () => {
+    mocks.connection.mockResolvedValue(META_NONE);
+    mocks.google.mockResolvedValue(GOOGLE_NONE);
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(statBodies.map((body) => body.platform)).toEqual(["telecaller"]); // no Facebook request first
+    expect(screen.getByText("This Month Telecaller Leads")).toBeInTheDocument();
+    expect(await listedPlatforms()).toEqual(["Telecaller"]);
+    expect(window.location.search).toBe("");
+  });
+
+  it("asks for no numbers until it knows which platforms the company uses", async () => {
+    let finish: (value: unknown) => void = () => {};
+    mocks.connection.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    render(<DashboardPageClient />);
+    await act(async () => { await Promise.resolve(); });
+    expect(statBodies).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /^Leads platform:/ })).not.toBeInTheDocument();
+    await act(async () => { finish(META_CONNECTED); });
+    await screen.findByTestId("month-leads");
+    expect(statBodies[0]).toMatchObject({ platform: "facebook" });
+  });
+
+  it("a Facebook login with no Page picked does not count as connected", async () => {
+    mocks.connection.mockResolvedValue({ connectionStatus: "active", pages: [] });
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(statBodies[0]).toMatchObject({ platform: "google_ads" });
+    expect(await listedPlatforms()).toEqual(["Google Ads", "Telecaller"]);
+  });
+
+  it("keeps a disconnected Facebook Page and a stopped Google webhook, so their old leads stay reachable", async () => {
+    mocks.connection.mockResolvedValue({ connectionStatus: "disconnected", pages: [{ id: PAGE_ID, status: "disconnected" }] });
+    mocks.google.mockResolvedValue({ ...GOOGLE_NONE, webhookStopped: true });
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(await listedPlatforms()).toEqual(["Facebook", "Google Ads", "Telecaller"]);
+  });
+
+  it("a link to a platform the company doesn't use opens its first platform and corrects the URL", async () => {
+    mocks.google.mockResolvedValue(GOOGLE_NONE);
+    window.history.replaceState(null, "", "/dashboard?platform=google_ads");
+    render(<DashboardPageClient initialPlatform="google_ads" />);
+    await screen.findByTestId("month-leads");
+    expect(statBodies.map((body) => body.platform)).toEqual(["facebook"]);
+    expect(window.location.search).toBe("");
+  });
+
+  it("drops ?platform= when switching back to the company's first platform", async () => {
+    mocks.connection.mockResolvedValue(META_NONE);
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    fireEvent.click(screen.getByRole("button", { name: "Leads platform: Google Ads" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Telecaller" }));
+    await waitFor(() => expect(window.location.search).toBe("?platform=telecaller"));
+    fireEvent.click(screen.getByRole("button", { name: "Leads platform: Telecaller" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Google Ads" }));
+    await waitFor(() => expect(window.location.search).toBe(""));
+  });
+
+  it("keeps a platform whose connection check failed, so an error never hides real leads", async () => {
+    mocks.connection.mockRejectedValue(new Error("network"));
+    mocks.google.mockResolvedValue(GOOGLE_NONE);
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(statBodies[0]).toMatchObject({ platform: "facebook" });
+    expect(await listedPlatforms()).toEqual(["Facebook", "Telecaller"]);
   });
 });

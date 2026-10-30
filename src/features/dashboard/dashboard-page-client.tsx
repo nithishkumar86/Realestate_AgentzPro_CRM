@@ -7,12 +7,12 @@ import { EmptyState, Notice, PageHeader, SkeletonRows } from "@/components/ui";
 import { DashboardReportHeader, DownloadDashboardButton } from "@/features/dashboard/dashboard-download";
 import { DonutChart, HorizontalBarChart, StatusRankChart, TimelineChart, groupDonutData, labelDonutData } from "@/features/dashboard/dashboard-charts";
 import { describeDelta, formatCount, itemBarData } from "@/features/dashboard/dashboard-format";
-import { DEFAULT_DASHBOARD_PLATFORM, getDashboardPlatform, type DashboardPlatform, type DashboardPlatformId } from "@/features/dashboard/dashboard-platforms";
+import { DASHBOARD_PLATFORMS, getDashboardPlatform, resolveDashboardPlatform, type DashboardPlatform, type DashboardPlatformId } from "@/features/dashboard/dashboard-platforms";
 import { PlatformSwitcher } from "@/features/dashboard/platform-switcher";
 import { useDashboardStats, type LiveState } from "@/features/dashboard/use-dashboard-live";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
 import { useLeadFilters } from "@/features/leads/use-lead-filters";
-import { type ConnectionStatus } from "@/lib/types";
+import { useLeadSources, type ConnectionHealth } from "@/features/leads/use-lead-sources";
 import { getConnectionOverview, getGoogleAdsOverview } from "@/services/crm-api-client";
 
 const LIVE_TEXT: Record<LiveState, string> = {
@@ -22,7 +22,7 @@ const LIVE_TEXT: Record<LiveState, string> = {
   polling: "Live · refreshing every 15s",
 };
 
-type ConnectionHealth = { meta: ConnectionStatus | "not_connected" | null; google: { hasWebhook: boolean; webhookStopped: boolean; needsReconnect: boolean } | null };
+const DESCRIPTION = "Live lead analytics for your company, one platform at a time. Filters work exactly like the Leads page.";
 
 /** "Page, Ad, Status and Label" for Facebook, "Status and Label" where Page and Ad do not apply. */
 function filterNames(platform: DashboardPlatform): string {
@@ -30,16 +30,36 @@ function filterNames(platform: DashboardPlatform): string {
 }
 
 /**
- * The dashboard shows ONE lead platform at a time, picked with the "Leads" switch at the top right (Facebook by
- * default). The platform lives in its own state and in the URL (?platform=google_ads), never in useLeadFilters, so
- * "Clear all" and the filter chips can't change it and a reload or a shared link opens the same view. Everything
- * that differs per platform (breakdowns, which filters apply, which connection to watch) comes from
+ * The dashboard offers only the platforms this company uses (Telecaller always; Facebook and Google Ads once
+ * connected). Until that is known it shows a loader and asks for no numbers, so a new company never sees an empty
+ * Facebook view first. `initialPlatform` is the `?platform=` the URL asked for; one the company doesn't use opens
+ * the company's first platform instead.
+ */
+export function DashboardPageClient({ initialPlatform }: { initialPlatform?: DashboardPlatformId }) {
+  const { sources, health } = useLeadSources();
+  if (!sources) {
+    return <div className="dash">
+      <PageHeader title="Dashboard" description={DESCRIPTION} />
+      <SkeletonRows count={4} />
+    </div>;
+  }
+  const platforms = DASHBOARD_PLATFORMS.filter((platform) => sources.includes(platform.id));
+  return <DashboardView platforms={platforms} initialPlatform={resolveDashboardPlatform(initialPlatform, platforms)} initialHealth={health} />;
+}
+
+/**
+ * The dashboard shows ONE lead platform at a time, picked with the "Leads" switch at the top right (the company's
+ * first platform by default). The platform lives in its own state and in the URL (?platform=google_ads), never in
+ * useLeadFilters, so "Clear all" and the filter chips can't change it and a reload or a shared link opens the same
+ * view. Everything that differs per platform (breakdowns, which filters apply, which connection to watch) comes from
  * DASHBOARD_PLATFORMS.
  */
-export function DashboardPageClient({ initialPlatform = DEFAULT_DASHBOARD_PLATFORM }: { initialPlatform?: DashboardPlatformId }) {
+function DashboardView({ platforms, initialPlatform, initialHealth }: { platforms: readonly DashboardPlatform[]; initialPlatform: DashboardPlatformId; initialHealth: ConnectionHealth }) {
+  const defaultPlatform = platforms[0].id;
   const [platformId, setPlatformId] = useState<DashboardPlatformId>(initialPlatform);
   const platform = getDashboardPlatform(platformId);
-  const [health, setHealth] = useState<ConnectionHealth>({ meta: null, google: null });
+  // Starts with the checks useLeadSources already made, so the effect below asks again only for one that failed.
+  const [health, setHealth] = useState<ConnectionHealth>(initialHealth);
   const [filterError, setFilterError] = useState<string | null>(null);
   // An aggregate view opens on ALL ads: pre-selecting one ad (as /leads does) would silently narrow every number.
   const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setFilterError });
@@ -73,22 +93,33 @@ export function DashboardPageClient({ initialPlatform = DEFAULT_DASHBOARD_PLATFO
     return () => { isMounted = false; };
   }, [platform.connection, healthLoaded]);
 
+  const writePlatformToUrl = (next: DashboardPlatformId) => {
+    const url = new URL(window.location.href);
+    if (next === defaultPlatform) url.searchParams.delete("platform");
+    else url.searchParams.set("platform", next);
+    window.history.replaceState(null, "", url);
+  };
+
+  // A link to a platform this company doesn't use opened the first platform instead: make the URL say so. Writing the
+  // URL that is already there changes nothing, so this simply runs once on open.
+  useEffect(() => {
+    writePlatformToUrl(initialPlatform);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the URL the page opened with is corrected
+  }, []);
+
   function switchPlatform(next: DashboardPlatformId) {
     setPlatformId(next);
     filters.clearPage();
-    const url = new URL(window.location.href);
-    if (next === DEFAULT_DASHBOARD_PLATFORM) url.searchParams.delete("platform");
-    else url.searchParams.set("platform", next);
-    window.history.replaceState(null, "", url);
+    writePlatformToUrl(next);
   }
 
   const delta = stats ? describeDelta(stats.monthToDate, stats.previousMonthSamePeriod) : null;
 
   return (
     <div className="dash">
-      <PageHeader title="Dashboard" description="Live lead analytics for your company, one platform at a time. Filters work exactly like the Leads page."
+      <PageHeader title="Dashboard" description={DESCRIPTION}
         actions={<div className="dash-header-actions">
-          <PlatformSwitcher value={platformId} onChange={switchPlatform} />
+          <PlatformSwitcher value={platformId} platforms={platforms} onChange={switchPlatform} />
           <DownloadDashboardButton platformLabel={platform.label} timezone={stats?.timezone} dataUpdatedAt={lastUpdated} disabled={!stats} />
         </div>} />
       <DashboardReportHeader platformLabel={platform.label} lastUpdated={lastUpdated} timezone={latestStats?.timezone} hasFilters={filters.hasActiveFilters} />

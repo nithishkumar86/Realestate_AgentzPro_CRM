@@ -2,14 +2,14 @@
 
 import { ChevronDown, Megaphone, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { DASHBOARD_PLATFORMS, getDashboardPlatform, type DashboardPlatformId } from "@/features/dashboard/dashboard-platforms";
+import { getDashboardPlatform, type DashboardPlatform, type DashboardPlatformId } from "@/features/dashboard/dashboard-platforms";
 
 /**
  * The dashboard's "Leads: Facebook ▾" switch at the top right. It uses the same trigger, panel and option rows as the
  * filter bar's dropdowns (.mvp-field-box / .mvp-dropdown-panel), but has no "All" row: the dashboard always shows
- * exactly one platform. Options come from DASHBOARD_PLATFORMS, so a new platform appears here by itself.
+ * exactly one platform. Options are the platforms this company uses (`platforms`, from DASHBOARD_PLATFORMS).
  */
-export function PlatformSwitcher({ value, onChange }: { value: DashboardPlatformId; onChange: (next: DashboardPlatformId) => void }) {
+export function PlatformSwitcher({ value, platforms, onChange }: { value: DashboardPlatformId; platforms: readonly DashboardPlatform[]; onChange: (next: DashboardPlatformId) => void }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -47,7 +47,7 @@ export function PlatformSwitcher({ value, onChange }: { value: DashboardPlatform
         <button type="button" className="mvp-dropdown-close" aria-label="Close Leads platform options" onClick={() => { setOpen(false); triggerRef.current?.focus(); }}><X size={14} /></button>
       </div>
       <div className="mvp-dropdown-panel__options">
-        {DASHBOARD_PLATFORMS.map((platform) => <button key={platform.id} type="button" role="option" aria-selected={value === platform.id}
+        {platforms.map((platform) => <button key={platform.id} type="button" role="option" aria-selected={value === platform.id}
           className={`mvp-dropdown-option${value === platform.id ? " mvp-dropdown-option--active" : ""}`} onClick={() => choose(platform.id)}>{platform.label}</button>)}
       </div>
     </div> : null}
