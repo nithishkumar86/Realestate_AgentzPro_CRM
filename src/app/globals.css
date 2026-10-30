@@ -2548,6 +2548,14 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-row-dropdown:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 1px; }
 .mvp-row-dropdown__value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mvp-row-dropdown__panel { position: fixed; right: auto; max-width: 300px; z-index: 60; }
+/* Leads table Status box for the highlighted statuses (STATUS_HIGHLIGHTS): a solid box with white text. */
+.mvp-row-dropdown[data-tone] { border-color: var(--tone); background: var(--tone); color: #fff; }
+.mvp-row-dropdown[data-tone] .mvp-field-chevron { color: #fff; }
+.mvp-row-dropdown[data-tone]:hover, .mvp-row-dropdown[data-tone][aria-expanded="true"] { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 85%, #000); }
+/* A shade darker than the drawer's green so the white text stays readable. */
+.mvp-row-dropdown[data-tone="green"] { --tone: #15803d; }
+.mvp-row-dropdown[data-tone="red"] { --tone: #d92d20; }
+.mvp-row-dropdown[data-tone="pink"] { --tone: #db2777; }
 
 /* Add Task title picker: the options open inline under the field (never upward, never clipped), spaced like the other dropdowns but airier. */
 .mvp-option-picker { display: grid; gap: 8px; }
@@ -3752,6 +3760,7 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-lead-status[data-tone="green"] { --tone: #12a150; }
 .mvp-lead-status[data-tone="yellow"] { --tone: #d99100; }
 .mvp-lead-status[data-tone="red"] { --tone: #d92d20; }
+.mvp-lead-status[data-tone="pink"] { --tone: #db2777; }
 .mvp-lead-status[data-tone="gray"] { --tone: #667085; }
 .mvp-lead-status__title { color: var(--text-muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .mvp-lead-status .mvp-row-dropdown { width: 100% !important; min-width: 0; min-height: 42px; border-color: color-mix(in srgb, var(--tone) 45%, var(--border)); background: var(--surface); font-size: .95rem; font-weight: 700; }

@@ -2,7 +2,7 @@
 
 import { Download, ListTodo, Plus, Trash2, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
+import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, statusHighlight, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import { AddCallInLeadDialog } from "@/features/leads/add-call-in-lead-dialog";
 import { LeadDrawer } from "@/features/leads/lead-drawer";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
@@ -187,7 +187,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
       </span></td><td>{new globalThis.Date(lead.leadDate).toLocaleDateString("en-IN", { timeZone: timezone })}</td><td>{lead.phone ?? "-"}</td><td>{lead.facebookPage}</td><td>{lead.adName}</td><td>
         <AssigneeCell name={lead.assigneeName ?? null} />
       </td><td>
-        <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200}
+        <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={lead.status} options={LEAD_STATUSES} width={200} tone={statusHighlight(lead.status)}
           open={openRowDropdown === `${lead.id}:status`} onOpenChange={(next) => setOpenRowDropdown(next ? `${lead.id}:status` : null)}
           onChange={(next) => void updateStatus(lead.id, lead.status, next)} />
       </td><td className="mvp-label-cell">
