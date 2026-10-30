@@ -1,9 +1,17 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toReadableLabel } from "@/lib/date-utils";
 import { displayValue } from "@/components/ui";
 import { LEAD_STATUSES } from "@/features/leads/lead-options";
 import { LeadsPageClient } from "@/features/leads/leads-page-client";
+
+// The Source filter's connection checks (useLeadSources). By default the company uses every source.
+const sourceChecks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn() }));
+vi.mock("@/services/crm-api-client", () => ({ getConnectionOverview: sourceChecks.connection, getGoogleAdsOverview: sourceChecks.google }));
+beforeEach(() => {
+  sourceChecks.connection.mockReset().mockResolvedValue({ connectionStatus: "active", pages: [{ id: "page-1", status: "active" }] });
+  sourceChecks.google.mockReset().mockResolvedValue({ connection: null, hasWebhook: true, webhookStopped: false, needsReconnect: false });
+});
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: { children: React.ReactNode; href: string }) => (
@@ -541,5 +549,38 @@ describe("opening the leads page", () => {
     await waitFor(() => expect(queries.length).toBeGreaterThan(0));
     expect(queries.every((body) => !("adId" in body))).toBe(true);
     expect(screen.queryByText("karuvi")).not.toBeInTheDocument();
+  });
+});
+
+describe("Source filter lists only the sources the company uses", () => {
+  // The dropdown toggles on click, so it is opened exactly once, after both connection checks have answered.
+  const listedSources = async () => {
+    await waitFor(() => expect(sourceChecks.google).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    return (await screen.findAllByRole("option")).map((option) => option.textContent);
+  };
+
+  it("a new company with nothing connected sees only Telecaller", async () => {
+    stubLeadApi();
+    sourceChecks.connection.mockResolvedValue({ connectionStatus: "not_connected", pages: [] });
+    sourceChecks.google.mockResolvedValue({ connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false });
+    render(<LeadsPageClient />);
+    expect(await listedSources()).toEqual(["All sources", "Telecaller"]);
+  });
+
+  it("a company with Facebook and Google Ads connected sees all three", async () => {
+    stubLeadApi();
+    render(<LeadsPageClient />);
+    expect(await listedSources()).toEqual(["All sources", "Facebook", "Telecaller", "Google Ads"]);
+  });
+
+  it("filters by a connected source and never offers one the company doesn't use", async () => {
+    const sent = stubLeadApi();
+    sourceChecks.google.mockResolvedValue({ connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false });
+    render(<LeadsPageClient />);
+    expect(await listedSources()).toEqual(["All sources", "Facebook", "Telecaller"]);
+    fireEvent.click(screen.getByRole("option", { name: "Facebook" }));
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "facebook" }));
   });
 });

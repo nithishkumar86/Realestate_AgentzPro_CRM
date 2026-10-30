@@ -2,12 +2,17 @@
 
 import { Download, ListTodo, Plus, Trash2, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadStatus } from "@/features/leads/lead-options";
+import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import { AddCallInLeadDialog } from "@/features/leads/add-call-in-lead-dialog";
 import { LeadDrawer } from "@/features/leads/lead-drawer";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
 import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
+import { useLeadSources } from "@/features/leads/use-lead-sources";
+
+// While the connection checks load, the Source filter offers only Telecaller (always available), so no option ever
+// appears and then disappears.
+const LOADING_SOURCES: readonly LeadSource[] = ["telecaller"];
 
 type LeadLabelSource = "default" | "ai" | "telecaller";
 type Lead = { id: string; leadgenId: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate: string; status: LeadStatus; label: LeadLabel; labelSource: LeadLabelSource; assignedUserId?: string | null; assigneeName?: string | null; hasOpenTask?: boolean; openTaskTitle?: string | null };
@@ -41,6 +46,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   // The leads page opens on ALL leads with no filter applied; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setError });
   const { quick, status, label, assignee, source, from, to, pageRecordId, adId, search } = filters;
+  const { sources } = useLeadSources();
 
   useEffect(() => {
     let active = true;
@@ -159,7 +165,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? (focusedLead?.id === drawerLeadId ? focusedLead : null) : null;
 
   return <div className="mvp-leads">
-    <LeadFilterBar filters={filters} showAssignee showSource actions={<>
+    <LeadFilterBar filters={filters} showAssignee showSource sources={sources ?? LOADING_SOURCES} actions={<>
       <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
         <Trash2 size={16} />{isDeleting ? "Deleting..." : selectedLeadIds.length > 0 ? `Delete (${selectedLeadIds.length})` : "Delete"}
       </button>

@@ -2,8 +2,8 @@ import type { LeadSource } from "@/features/leads/lead-options";
 
 /**
  * The lead platforms the dashboard can show, one at a time, picked with the "Leads" dropdown in the header.
- * Every company sees all of them (a platform with no leads shows an empty state), so the list never needs a
- * per-company lookup.
+ * A company sees only the platforms it uses (useLeadSources: Telecaller always, Facebook and Google Ads once
+ * connected), in this order, and the dashboard opens on the first of them.
  *
  * This is the only place that knows how platforms differ. Totals, status, label and timeline are common to
  * every platform; `group` and `items` name the platform's own breakdowns (get_dashboard_platform_stats returns
@@ -65,7 +65,12 @@ export function getDashboardPlatform(id: DashboardPlatformId): DashboardPlatform
   return DASHBOARD_PLATFORMS.find((platform) => platform.id === id) ?? DASHBOARD_PLATFORMS[0];
 }
 
-/** Reads a `?platform=` value. Anything missing or unknown opens the default (Facebook) view. */
-export function parseDashboardPlatform(value: unknown): DashboardPlatformId {
-  return DASHBOARD_PLATFORMS.some((platform) => platform.id === value) ? value as DashboardPlatformId : DEFAULT_DASHBOARD_PLATFORM;
+/** Reads a `?platform=` value. Anything missing or unknown is undefined: the view then opens on the company's first platform. */
+export function parseDashboardPlatform(value: unknown): DashboardPlatformId | undefined {
+  return DASHBOARD_PLATFORMS.some((platform) => platform.id === value) ? value as DashboardPlatformId : undefined;
+}
+
+/** The requested platform if this company uses it, otherwise the first one it uses. `available` is never empty (Telecaller). */
+export function resolveDashboardPlatform(requested: DashboardPlatformId | undefined, available: readonly DashboardPlatform[]): DashboardPlatformId {
+  return available.some((platform) => platform.id === requested) ? requested as DashboardPlatformId : available[0].id;
 }
