@@ -2548,10 +2548,12 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 .mvp-row-dropdown:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 1px; }
 .mvp-row-dropdown__value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mvp-row-dropdown__panel { position: fixed; right: auto; max-width: 300px; z-index: 60; }
-/* Leads table Status box for the highlighted statuses (STATUS_HIGHLIGHTS): a tinted box with a coloured edge. */
-.mvp-row-dropdown[data-tone] { border-color: color-mix(in srgb, var(--tone) 55%, var(--border)); border-left: 4px solid var(--tone); background: color-mix(in srgb, var(--tone) 12%, var(--surface)); }
-.mvp-row-dropdown[data-tone]:hover, .mvp-row-dropdown[data-tone][aria-expanded="true"] { border-color: var(--tone); }
-.mvp-row-dropdown[data-tone="green"] { --tone: #12a150; }
+/* Leads table Status box for the highlighted statuses (STATUS_HIGHLIGHTS): a solid box with white text. */
+.mvp-row-dropdown[data-tone] { border-color: var(--tone); background: var(--tone); color: #fff; }
+.mvp-row-dropdown[data-tone] .mvp-field-chevron { color: #fff; }
+.mvp-row-dropdown[data-tone]:hover, .mvp-row-dropdown[data-tone][aria-expanded="true"] { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 85%, #000); }
+/* A shade darker than the drawer's green so the white text stays readable. */
+.mvp-row-dropdown[data-tone="green"] { --tone: #15803d; }
 .mvp-row-dropdown[data-tone="red"] { --tone: #d92d20; }
 .mvp-row-dropdown[data-tone="pink"] { --tone: #db2777; }
 
