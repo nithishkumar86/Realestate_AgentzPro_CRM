@@ -67,8 +67,8 @@ export default async function HomePage() {
             </h1>
             <p className={styles.description}>
               AgentzPro brings your Facebook, Instagram and Google Ads leads, plus the calls your team takes, into one
-              simple CRM. Every lead gets an AI label, the right person to follow up, and a reminder so no lead is
-              forgotten.
+              simple CRM. Every ad lead gets an AI label, every lead gets the right person to follow up, and reminders
+              make sure no lead is forgotten.
             </p>
             <div className={styles.heroActions}>
               <Link href="/leads" className={styles.cta}>
@@ -159,8 +159,8 @@ export default async function HomePage() {
               <span className={styles.icon}><Sparkles size={22} aria-hidden="true" /></span>
               <h3>AI lead labels</h3>
               <p>
-                Each lead is labelled Hot, Warm or Cold so you know who to call first. The name, email address and
-                phone number are removed before a lead is labelled.
+                Each ad lead is labelled Hot, Warm or Cold so you know who to call first. The name, email address
+                and phone number are removed before a lead is labelled.
               </p>
             </div>
             <div className={styles.feature}>
@@ -207,7 +207,7 @@ export default async function HomePage() {
             </li>
             <li className={styles.step}>
               <h3>Follow up on every lead</h3>
-              <p>New leads arrive with an AI label. Your team updates the status, adds notes and sets reminders.</p>
+              <p>New ad leads arrive with an AI label. Your team updates the status, adds notes and sets reminders.</p>
             </li>
           </ol>
         </section>

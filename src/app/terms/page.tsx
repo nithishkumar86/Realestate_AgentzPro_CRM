@@ -91,7 +91,7 @@ export default function TermsPage() {
               <ul>
                 <li>receive leads from its own Meta Lead Ads (Facebook and Instagram) and Google Ads lead forms;</li>
                 <li>add leads by hand, such as people who call the business;</li>
-                <li>see an AI label (Hot, Warm or Cold) on each lead;</li>
+                <li>see an AI label (Hot, Warm or Cold) on each lead from its ads;</li>
                 <li>organise and track leads, assign them to team members, and record statuses, notes and follow-up tasks with reminders; and</li>
                 <li>view a dashboard of its leads and download it as a PDF.</li>
               </ul>
@@ -239,8 +239,9 @@ export default function TermsPage() {
                   <ExternalLink href="https://developers.google.com/terms/api-services-user-data-policy">
                     Google API Services User Data Policy
                   </ExternalLink>
-                  , including the Limited Use requirements. We never sell, redistribute or disclose your Google Ads
-                  account data to anyone else, and we never combine it with other companies&apos; data.
+                  , including the Limited Use requirements. We never sell or redistribute your Google Ads account
+                  data. We share it only with the service providers listed in our Privacy Policy, only to run
+                  AgentzPro, and we never combine it with other companies&apos; data.
                 </li>
                 <li>
                   <strong>Keep your webhook key private.</strong> The webhook address and key shown on the Connection
@@ -265,7 +266,7 @@ export default function TermsPage() {
               <span className={styles.sectionNum}>09</span>
               <h2 className={styles.sectionTitle}>AI lead labels</h2>
               <p>
-                AgentzPro gives each lead an automatic AI label (Hot, Warm or Cold) to help you decide who to contact
+                AgentzPro gives each lead from your ads an automatic AI label (Hot, Warm or Cold) to help you decide who to contact
                 first. Labels are suggestions made by an AI model and can be wrong. You decide how to treat each lead.
                 How lead data is prepared and sent for labelling, with names, email addresses and phone numbers removed,
                 is described in our Privacy Policy.

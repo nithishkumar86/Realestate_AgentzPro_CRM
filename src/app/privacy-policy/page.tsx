@@ -256,7 +256,8 @@ export default function PrivacyPolicyPage() {
                 <li>receive, show and organise each company&apos;s leads, and let its team update, assign and follow up on them;</li>
                 <li>show which campaign, ad group or ad each lead came from;</li>
                 <li>
-                  give each lead an AI label (Hot, Warm or Cold) to help the company decide who to contact first. Before
+                  give each lead from Meta or Google Ads an AI label (Hot, Warm or Cold) to help the company decide who
+                  to contact first. Before
                   a lead is labelled, we remove the name, email address and phone number from the form&apos;s contact
                   fields, as described in Section 5;
                 </li>
@@ -488,7 +489,7 @@ export default function PrivacyPolicyPage() {
                 is how to manage and delete data in AgentzPro:
               </p>
               <ul>
-                <li><strong>Delete a lead:</strong> open the lead in the CRM and use the Delete option.</li>
+                <li><strong>Delete leads:</strong> on the Leads page, tick the leads you want to remove and press Delete.</li>
                 <li>
                   <strong>Disconnect Facebook:</strong> the owner disconnects a Page on the Connection page. You can also
                   remove AgentzPro from your Facebook account&apos;s Business Integrations settings.
