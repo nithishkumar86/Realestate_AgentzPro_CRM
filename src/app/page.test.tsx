@@ -25,8 +25,11 @@ it("shows the public landing page with a Login button to signed-out visitors", a
   mocks.requireCrmAccess.mockRejectedValue(new AppError("Signed out", { status: 401, code: "UNAUTHENTICATED" }));
   render(await HomePage());
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Your next opportunity\s*starts here\./);
-  expect(screen.getAllByRole("link")).toHaveLength(6);
+  expect(screen.getAllByRole("link")).toHaveLength(11);
+  expect(screen.getByRole("link", { name: "AgentzPro home" })).toHaveAttribute("href", "/");
   expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute("href", "/login");
+  expect(screen.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/login");
+  expect(screen.getByRole("link", { name: "See what it does" })).toHaveAttribute("href", "#features");
   expect(screen.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
   expect(screen.getByRole("link", { name: "Enter CRM Leads" })).toHaveAttribute("href", "/leads");
   expect(screen.getByRole("link", { name: "Contact Us" })).toHaveAttribute("href", "/contact");
@@ -36,6 +39,20 @@ it("shows the public landing page with a Login button to signed-out visitors", a
   );
   expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/terms");
   expect(mocks.redirect).not.toHaveBeenCalled();
+});
+
+it("tells Google reviewers what the app does with Google data and links to the policy", async () => {
+  mocks.requireCrmAccess.mockRejectedValue(new AppError("Signed out", { status: 401, code: "UNAUTHENTICATED" }));
+  render(await HomePage());
+  expect(screen.getByRole("heading", { level: 2, name: "What AgentzPro does" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Google API Services User Data Policy" })).toHaveAttribute(
+    "href",
+    "https://developers.google.com/terms/api-services-user-data-policy"
+  );
+  expect(screen.getByRole("link", { name: "How we use Google data" })).toHaveAttribute(
+    "href",
+    "/privacy-policy#google-user-data"
+  );
 });
 
 it.each([
