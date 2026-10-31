@@ -1,721 +1,618 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { ArrowUp, CheckCircle2 } from "lucide-react";
+import { PublicSiteFooter, PublicSiteHeader } from "@/components/public-site-chrome";
+import { LegalDocToc, LegalDocTocMobile } from "@/components/legal-doc-toc";
+import landing from "../landing.module.css";
 import styles from "./privacy-policy.module.css";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy",
+  title: { absolute: "Privacy Policy | AgentzPro" },
   description:
-    "Privacy Policy for AgentzPro CRM, operated by AI Digital Tamizha. Learn what data we collect from Meta and Google Ads, how we use it, and how to request deletion of your data.",
+    "Privacy Policy for AgentzPro, operated by AI Digital Tamizha: what data we collect from Meta, Google Ads and your team, how we use, store, share and protect it, how Google user data is handled under the Limited Use requirements, and how to delete your data.",
 };
 
 const EFFECTIVE_DATE = "September 14, 2026";
-const LAST_UPDATED = "October 27, 2026";
-const GOOGLE_USER_DATA_POLICY_URL =
-  "https://developers.google.com/terms/api-services-user-data-policy";
-
-function SiteHeader() {
-  return (
-    <header className={styles.siteHeader}>
-      <div className={styles.siteHeaderInner}>
-        <Link href="/" className={styles.brand}>
-          <span className={styles.brandMark}>AP</span>
-          <span className={styles.brandText}>
-            <span className={styles.brandName}>AgentzPro CRM</span>
-            <span className={styles.brandSub}>by AI Digital Tamizha</span>
-          </span>
-        </Link>
-        <Link href="/" className={styles.navLink}>
-          &larr; Back to Home
-        </Link>
-      </div>
-    </header>
-  );
-}
-
-function SiteFooter() {
-  return (
-    <footer className={styles.siteFooter}>
-      <div className={`${styles.container} ${styles.footerInner}`}>
-        <span>
-          &copy; {new Date().getFullYear()} AI Digital Tamizha. All rights
-          reserved.
-        </span>
-        <nav className={styles.footerLinks}>
-          <Link href="/">Home</Link>
-          <Link href="/contact">Contact Us</Link>
-          <Link href="/terms">Terms of Service</Link>
-        </nav>
-      </div>
-    </footer>
-  );
-}
+const LAST_UPDATED = "October 31, 2026";
+const GOOGLE_USER_DATA_POLICY_URL = "https://developers.google.com/terms/api-services-user-data-policy";
 
 const TOC = [
-  ["who-we-are", "1. Who We Are (Data Controller)"],
-  ["scope", "2. Scope of This Policy"],
-  ["information-we-collect", "3. Information We Collect"],
-  ["how-we-use", "4. How We Use Your Information"],
-  ["data-sharing", "5. How We Share Information"],
-  ["google-user-data", "6. Google User Data & Limited Use"],
-  ["tenant-isolation", "7. Multi-Tenant Data Isolation"],
-  ["retention", "8. Data Retention"],
-  ["security", "9. Data Security"],
-  ["your-rights", "10. Your Rights & Data Deletion"],
-  ["cookies", "11. Cookies & Tracking"],
-  ["children", "12. Children's Privacy"],
-  ["payments", "13. Payments, Cancellation & Refunds"],
-  ["governing-law", "14. Governing Law"],
-  ["changes", "15. Changes to This Policy"],
-  ["contact", "16. Contact Us"],
+  ["who-we-are", "1. Who we are"],
+  ["scope", "2. Scope of this policy"],
+  ["information-we-collect", "3. Information we collect"],
+  ["how-we-use", "4. How we use information"],
+  ["data-sharing", "5. How we share information"],
+  ["google-user-data", "6. Google user data and Limited Use"],
+  ["tenant-isolation", "7. Each company's data is separate"],
+  ["retention", "8. Data retention"],
+  ["security", "9. Data security"],
+  ["your-rights", "10. Your rights and deleting your data"],
+  ["cookies", "11. Cookies and browser storage"],
+  ["children", "12. Children's privacy"],
+  ["payments", "13. Payments, cancellation and refunds"],
+  ["governing-law", "14. Governing law"],
+  ["changes", "15. Changes to this policy"],
+  ["contact", "16. Contact us"],
 ] as const;
+
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a className={styles.link} href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+    </a>
+  );
+}
 
 export default function PrivacyPolicyPage() {
   return (
-    <>
-      <SiteHeader />
+    <div className={landing.page}>
+      <PublicSiteHeader />
       <main id="top" className={`${styles.container} ${styles.policyWrap}`}>
         <div className={styles.policyHeader}>
           <span className={styles.policyBadge}>Privacy Policy</span>
-          <h1 className={styles.policyTitle}>AgentzPro CRM Privacy Policy</h1>
+          <h1 className={styles.policyTitle}>AgentzPro Privacy Policy</h1>
           <p className={styles.policyMeta}>
-            Effective Date: {EFFECTIVE_DATE} &middot; Last Updated:{" "}
-            {LAST_UPDATED}
+            <span>Effective date: {EFFECTIVE_DATE}</span>
+            <span>Last updated: {LAST_UPDATED}</span>
           </p>
           <p className={styles.policyIntro}>
-            This Privacy Policy explains how <strong>AI Digital Tamizha</strong>{" "}
-            (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, uses,
-            discloses, and protects information in connection with{" "}
-            <strong>AgentzPro CRM</strong> (the &quot;Service&quot;), our
-            multi-tenant, business-to-business customer relationship
-            management platform that integrates with Meta (Facebook) and
-            Google Ads to help our clients capture and manage leads. This is our own Privacy
-            Policy for our own product; it is not the privacy policy of any
-            other company. By using the Service, you agree to the practices
-            described in this Privacy Policy.
+            This Privacy Policy explains how <strong>AI Digital Tamizha</strong> (&quot;we&quot;, &quot;us&quot; or
+            &quot;our&quot;) collects, uses, stores, shares and protects information in connection with{" "}
+            <strong>AgentzPro</strong> (the &quot;Service&quot;), our multi-tenant, business-to-business lead
+            management CRM. AgentzPro receives leads from our customers&apos; Meta (Facebook and Instagram) Lead Ads and
+            Google Ads lead forms, and lets their teams manage and follow up on those leads. This is our own privacy
+            policy for our own product. By using the Service, you agree to the practices described here.
           </p>
         </div>
 
-        <nav className={styles.toc} aria-label="Table of contents">
-          <p className={styles.tocTitle}>On this page</p>
-          <ul className={styles.tocList}>
-            {TOC.map(([id, label]) => (
-              <li key={id}>
-                <a href={`#${id}`}>{label}</a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <div className={styles.layout}>
+          <LegalDocToc entries={TOC} />
 
-        <section id="who-we-are" className={styles.section}>
-          <span className={styles.sectionNum}>01</span>
-          <h2 className={styles.sectionTitle}>Who We Are (Data Controller)</h2>
-          <p>
-            AgentzPro CRM is owned and operated by AI Digital Tamizha, which
-            acts as the data controller responsible for deciding why and how
-            personal data is processed through the Service.
-          </p>
-          <table className={styles.infoTable}>
-            <tbody>
-              <tr>
-                <th>Business Name</th>
-                <td>AI Digital Tamizha</td>
-              </tr>
-              <tr>
-                <th>Product / Service</th>
-                <td>AgentzPro CRM</td>
-              </tr>
-              <tr>
-                <th>Nature of Work</th>
-                <td>Software (SaaS)</td>
-              </tr>
-              <tr>
-                <th>Registered Location</th>
-                <td>Lakshmi Nagar, Mudichur, Chennai 600028, Tamil Nadu, India</td>
-              </tr>
-              <tr>
-                <th>Contact Email</th>
-                <td>aidigitaltamizha@gmail.com</td>
-              </tr>
-              <tr>
-                <th>Phone Number</th>
-                <td>+91 90472 27223</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
+          <article className={styles.doc}>
+            <LegalDocTocMobile entries={TOC} />
 
-        <section id="scope" className={styles.section}>
-          <span className={styles.sectionNum}>02</span>
-          <h2 className={styles.sectionTitle}>Scope of This Policy</h2>
-          <p>
-            AgentzPro CRM is a <strong>multi-tenant SaaS platform</strong>.
-            Multiple independent client businesses (&quot;tenants&quot;) use
-            the Service under their own separate accounts, and each tenant may
-            connect their own Facebook account and Facebook Page(s) to the
-            Service to receive leads generated through Meta Lead Ads. A
-            tenant may also connect their own Google Ads account(s), using
-            Google Sign-In, to receive leads generated through Google Ads lead
-            forms. Every tenant&apos;s data is logically separated and
-            access-controlled so that one tenant can never view, access, or
-            receive another tenant&apos;s data. This Privacy Policy applies to
-            all data processed through AgentzPro CRM, including data belonging
-            to tenant businesses and data belonging to the end-customers
-            (&quot;leads&quot;) who submit their information through those
-            tenants&apos; Facebook Lead Ads or Google Ads lead forms.
-          </p>
-        </section>
-
-        <section id="information-we-collect" className={styles.section}>
-          <span className={styles.sectionNum}>03</span>
-          <h2 className={styles.sectionTitle}>Information We Collect</h2>
-
-          <h3 className={styles.subheading}>
-            3.1 Information You Provide Directly
-          </h3>
-          <p>
-            When a business signs up to use AgentzPro CRM, we collect account
-            information such as the tenant&apos;s business name, the name and
-            email address of the people who create and manage the account,
-            and login credentials.
-          </p>
-
-          <h3 className={styles.subheading}>
-            3.2 Information Collected via Facebook Login
-          </h3>
-          <p>
-            When a tenant connects their Facebook account to AgentzPro CRM
-            using Facebook Login, we receive basic profile information made
-            available through that login, such as the user&apos;s name, email
-            address, and Facebook user ID. This is used solely to
-            authenticate the tenant and establish their connection to Meta on
-            their own behalf.
-          </p>
-
-          <h3 className={styles.subheading}>
-            3.3 Information Collected via Connected Facebook Pages
-          </h3>
-          <p>
-            Once a tenant authorizes AgentzPro CRM to connect to one or more
-            of their Facebook Pages, we collect and securely store the Page
-            ID, Page name, and the Page access token required to receive
-            leads on that tenant&apos;s behalf. Access tokens are used only
-            to retrieve lead data for the tenant that authorized the
-            connection and are never used to access any other tenant&apos;s
-            Pages.
-          </p>
-
-          <h3 className={styles.subheading}>
-            3.4 Lead Data Collected via Meta Lead Ads
-          </h3>
-          <p>
-            When an end-customer submits a Meta (Facebook) Lead Ads form on a
-            tenant&apos;s connected Facebook Page, Meta sends that submission
-            to AgentzPro CRM through Meta&apos;s webhook and Graph API. This
-            lead data may include the submitter&apos;s name, email address,
-            phone number, and answers to any custom questions included in the
-            lead form, along with metadata identifying the campaign ID, ad set
-            ID, ad ID, and lead form ID associated with the submission. This
-            data is delivered only to the specific tenant who owns the
-            connected Facebook Page and ad.
-          </p>
-
-          <h3 className={styles.subheading}>
-            3.5 Information Collected via Google Sign-In and Google Ads
-          </h3>
-          <p>
-            When a tenant connects their Google Ads account to AgentzPro CRM,
-            they sign in with Google and are shown Google&apos;s consent screen
-            listing the access we request. With the tenant&apos;s permission,
-            we receive:
-          </p>
-          <ul>
-            <li>
-              <strong>Basic Google account information</strong> — the name,
-              email address, and Google account ID of the person who
-              connected, so the tenant can see which Google account is linked;
-            </li>
-            <li>
-              <strong>Google Ads account information</strong> — the IDs and
-              names of the Google Ads accounts that person can access and
-              chooses to connect, and the IDs and names of their campaigns, ad
-              groups, ads, and lead forms, so each lead can show which ad it
-              came from; and
-            </li>
-            <li>
-              <strong>Google OAuth tokens</strong> — the access token and
-              refresh token Google issues for that connection, which we store
-              encrypted and use only to read that tenant&apos;s own Google Ads
-              data.
-            </li>
-          </ul>
-          <p>
-            We only read this data. We do not create, edit, pause, or delete
-            campaigns or ads, and we do not change budgets, bids, or billing in
-            any Google Ads account.
-          </p>
-
-          <h3 className={styles.subheading}>
-            3.6 Lead Data Collected via Google Ads Lead Forms
-          </h3>
-          <p>
-            When an end-customer submits a Google Ads lead form on a
-            tenant&apos;s ad, Google sends that submission to AgentzPro CRM
-            through the lead form webhook the tenant has set up. This lead
-            data may include the submitter&apos;s name, email address, phone
-            number, and answers to any other questions included in the lead
-            form, along with metadata such as the lead ID, form ID, campaign
-            ID, ad group ID, ad ID, and Google click ID (GCLID). Each webhook
-            is protected by a secret key unique to the tenant, and the data is
-            delivered only to the tenant who owns that Google Ads account and
-            ad.
-          </p>
-
-          <h3 className={styles.subheading}>
-            3.7 Information Collected Automatically
-          </h3>
-          <p>
-            Like most web applications, when you visit our website or use the
-            Service we may automatically collect certain technical
-            information, including browser type, device information, IP
-            address, server logs, and general usage information (such as
-            pages visited and actions taken within the CRM). This information
-            is used to operate, secure, and improve the Service.
-          </p>
-        </section>
-
-        <section id="how-we-use" className={styles.section}>
-          <span className={styles.sectionNum}>04</span>
-          <h2 className={styles.sectionTitle}>How We Use Your Information</h2>
-          <p>We process the information described above to:</p>
-          <ul>
-            <li>
-              Provide, operate, and maintain AgentzPro CRM for each tenant,
-              including authenticating tenants and connecting their Facebook
-              Pages and Google Ads accounts;
-            </li>
-            <li>
-              Receive, display, organize, and allow tenants to manage and
-              respond to leads generated from their own Meta Lead Ads and
-              Google Ads lead forms;
-            </li>
-            <li>
-              Give each lead an AI lead label (Hot, Warm, or Cold) shown to the
-              tenant in their CRM, to help them decide which leads to contact
-              first. Before a lead is sent for labeling, we remove the name,
-              email address, and phone number the lead entered in the
-              form&apos;s contact fields, as described in Section 5;
-            </li>
-            <li>
-              Recognize a returning tenant user and keep their account
-              session secure;
-            </li>
-            <li>
-              Monitor, secure, diagnose, and improve the reliability and
-              performance of the Service;
-            </li>
-            <li>
-              Communicate with tenants about their account, support requests,
-              or material changes to the Service; and
-            </li>
-            <li>
-              Comply with applicable legal obligations and enforce our terms.
-            </li>
-          </ul>
-          <p>
-            <strong>
-              We do not use a client&apos;s lead data for any purpose other
-              than providing that client&apos;s own CRM services.
-            </strong>{" "}
-            We do not use lead data to market to leads on our own behalf, and
-            we do not sell lead data or tenant data to any third party.
-          </p>
-        </section>
-
-        <section id="data-sharing" className={styles.section}>
-          <span className={styles.sectionNum}>05</span>
-          <h2 className={styles.sectionTitle}>How We Share Information</h2>
-          <p>
-            We do not sell personal data. We only share information in the
-            following limited circumstances:
-          </p>
-          <ul>
-            <li>
-              <strong>With Meta Platforms, Inc.</strong> — to the extent
-              necessary to authenticate a tenant&apos;s Facebook account,
-              retrieve leads from their connected Facebook Pages, and comply
-              with Meta&apos;s Platform Terms;
-            </li>
-            <li>
-              <strong>With Google LLC</strong> — to the extent necessary to
-              authenticate a tenant&apos;s Google account, read their connected
-              Google Ads account data, receive leads from their Google Ads lead
-              forms, and comply with Google&apos;s terms and policies;
-            </li>
-            <li>
-              <strong>With service providers</strong> who process data strictly
-              on our behalf and under our instructions to operate the Service:
-              <ul>
-                <li>
-                  <strong>Supabase</strong> — our database provider, for secure
-                  data storage;
+            <div className={styles.summary}>
+              <h2 className={styles.summaryTitle}>At a glance</h2>
+              <ul className={styles.summaryGrid}>
+                <li className={styles.summaryItem}>
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <span><strong>We never sell your data.</strong> Not lead data, not account data, not Google data.</span>
                 </li>
-                <li>
-                  <strong>Vercel</strong> — our hosting provider, for running
-                  the application;
+                <li className={styles.summaryItem}>
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <span>
+                    <strong>Google data follows Limited Use.</strong> It is used only for the features you see in the
+                    app, and never for advertising or to train AI models.
+                  </span>
                 </li>
-                <li>
-                  <strong>Upstash</strong> — for queuing incoming leads so none
-                  are lost, and for rate limiting;
+                <li className={styles.summaryItem}>
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <span>
+                    <strong>We only read your Google Ads.</strong> We never change campaigns, budgets, bids or billing.
+                  </span>
                 </li>
-                <li>
-                  <strong>Resend</strong> — for sending account emails, such as
-                  invitations to join a tenant&apos;s team;
-                </li>
-                <li>
-                  <strong>Cloudflare Turnstile</strong> — for checking that a
-                  sign-in comes from a real person and not a bot;
-                </li>
-                <li>
-                  <strong>Razorpay</strong> — for processing subscription
-                  payments (see Section 13); and
-                </li>
-                <li>
-                  <strong>Portkey</strong> — an AI gateway that passes a lead to
-                  an AI model provider (Google Gemini models) to produce the
-                  AI lead label described in Section 4.
-                  Google uses the data only to return the label and does not
-                  use it to train its models. Before anything is sent, we replace the name,
-                  email address, and phone number from the form&apos;s contact
-                  fields (full name, first and last name, email, and phone
-                  number) with placeholders (such as [NAME], [EMAIL], and
-                  [PHONE]),
-                  including anywhere those same details are repeated inside
-                  other answers. Only the remaining form answers, the ad name,
-                  and the lead&apos;s current status are sent. The resulting
-                  label is shown only to the tenant who owns that lead;
+                <li className={styles.summaryItem}>
+                  <CheckCircle2 size={18} aria-hidden="true" />
+                  <span>
+                    <strong>You stay in control.</strong> Disconnect Facebook or Google at any time, and ask us to delete
+                    your data.
+                  </span>
                 </li>
               </ul>
-            </li>
-            <li>
-              <strong>For legal reasons</strong> — where required to comply
-              with a legal obligation, protect the rights, property, or
-              safety of AI Digital Tamizha, our tenants, or others.
-            </li>
-          </ul>
-          <p>
-            We do not share one tenant&apos;s data with any other tenant, and
-            we do not share lead data with any party for advertising or
-            marketing purposes.
-          </p>
-        </section>
-
-        <section id="google-user-data" className={styles.section}>
-          <span className={styles.sectionNum}>06</span>
-          <h2 className={styles.sectionTitle}>
-            Google User Data &amp; Limited Use
-          </h2>
-          <p>
-            <strong>
-              AgentzPro CRM&apos;s use and transfer to any other app of
-              information received from Google APIs will adhere to the{" "}
-              <a
-                className={styles.link}
-                href={GOOGLE_USER_DATA_POLICY_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Google API Services User Data Policy
-              </a>
-              , including the Limited Use requirements.
-            </strong>
-          </p>
-
-          <h3 className={styles.subheading}>6.1 What Google Data We Access</h3>
-          <p>
-            We request only the Google permissions needed for the Google Ads
-            features of AgentzPro CRM, and we ask for them only when a tenant
-            chooses to connect Google Ads:
-          </p>
-          <ul>
-            <li>
-              <strong>Google Sign-In (openid, email, profile)</strong> — to
-              identify the Google account that was connected;
-            </li>
-            <li>
-              <strong>
-                Google Ads API (https://www.googleapis.com/auth/adwords)
-              </strong>{" "}
-              — to read the tenant&apos;s Google Ads accounts, campaigns, ad
-              groups, ads, and lead forms, as described in Section 3.5.
-            </li>
-          </ul>
-
-          <h3 className={styles.subheading}>6.2 How We Use Google Data</h3>
-          <p>
-            We use Google user data only to provide the user-facing features
-            of AgentzPro CRM that the tenant can see in the app: linking their
-            Google Ads account, receiving their Google Ads leads, showing which
-            campaign and ad each lead came from, and producing the AI lead
-            label described in Section 4.
-          </p>
-
-          <h3 className={styles.subheading}>6.3 What We Never Do</h3>
-          <ul>
-            <li>We never sell Google user data.</li>
-            <li>
-              We never transfer Google user data to advertising platforms, data
-              brokers, or other information resellers.
-            </li>
-            <li>
-              We never use Google user data to serve ads, including
-              retargeting, personalized, or interest-based advertising.
-            </li>
-            <li>
-              We never use Google user data to determine credit-worthiness or
-              for lending purposes.
-            </li>
-            <li>
-              We never use Google user data to develop, improve, or train
-              generalized artificial intelligence or machine-learning models.
-            </li>
-          </ul>
-          <p>
-            We transfer Google user data only to the service providers listed
-            in Section 5, only to run the features above, and otherwise only
-            for security purposes (for example, investigating abuse), to comply
-            with applicable law, or as part of a merger, acquisition, or sale
-            of assets after obtaining the user&apos;s explicit prior consent.
-          </p>
-
-          <h3 className={styles.subheading}>6.4 Who Can See Google Data</h3>
-          <p>
-            Google Ads leads and account data are shown only to the users of
-            the tenant that connected the Google Ads account. Our own staff do
-            not read Google user data unless (a) the tenant has given us
-            permission to view specific data, for example to help with a
-            support request; (b) it is necessary for security purposes, such
-            as investigating a bug or abuse; (c) it is necessary to comply with
-            applicable law; or (d) the data is aggregated and used for internal
-            operations in line with applicable law.
-          </p>
-
-          <h3 className={styles.subheading}>
-            6.5 Disconnecting Google &amp; Revoking Access
-          </h3>
-          <p>
-            A tenant can disconnect Google Ads at any time from within
-            AgentzPro CRM. When they do, we revoke our access with Google and
-            delete the stored Google OAuth tokens, and we stop receiving new
-            data from that Google Ads account. Access can also be removed at
-            any time from the Google Account permissions page at{" "}
-            <a
-              className={styles.link}
-              href="https://myaccount.google.com/permissions"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              myaccount.google.com/permissions
-            </a>
-            . Leads that were already received stay in the tenant&apos;s CRM
-            until the tenant deletes them or asks us to delete them, as
-            described in Section 10.
-          </p>
-        </section>
-
-        <section id="tenant-isolation" className={styles.section}>
-          <span className={styles.sectionNum}>07</span>
-          <h2 className={styles.sectionTitle}>Multi-Tenant Data Isolation</h2>
-          <p>
-            AgentzPro CRM is architected so that every record is scoped to
-            the specific tenant it belongs to, with database-level access
-            controls (row-level security tied to a unique tenant identifier)
-            enforced on every request. This is designed to ensure that no
-            tenant can query, view, export, or otherwise access another
-            tenant&apos;s Facebook connections, Google Ads connections, leads,
-            or account data under any circumstance.
-          </p>
-        </section>
-
-        <section id="retention" className={styles.section}>
-          <span className={styles.sectionNum}>08</span>
-          <h2 className={styles.sectionTitle}>Data Retention</h2>
-          <p>
-            We retain tenant account data and lead data for as long as the
-            tenant&apos;s account with AgentzPro CRM remains active, in order
-            to continue providing the Service. If a tenant closes their
-            account, or if a deletion request is made as described in Section
-            10 below, we will delete the corresponding data, except where we
-            are required to retain limited information to comply with a legal
-            obligation, resolve disputes, or enforce our agreements. Google
-            OAuth tokens are kept only while the Google Ads connection is
-            active and are deleted when the tenant disconnects Google Ads, as
-            described in Section 6.5.
-          </p>
-        </section>
-
-        <section id="security" className={styles.section}>
-          <span className={styles.sectionNum}>09</span>
-          <h2 className={styles.sectionTitle}>Data Security</h2>
-          <p>
-            We apply technical and organizational measures designed to
-            protect the information in our care, including encrypted storage
-            of Facebook access tokens and Google OAuth tokens, verified
-            webhook signatures for incoming lead data from Meta, a secret key
-            check on every incoming Google Ads lead form webhook, encrypted
-            connections (HTTPS) for all data in transit, and tenant-isolated
-            database access controls as described in Section 7. While no system can be guaranteed
-            100% secure, we work to protect your information using
-            industry-standard practices.
-          </p>
-        </section>
-
-        <section id="your-rights" className={styles.section}>
-          <span className={styles.sectionNum}>10</span>
-          <h2 className={styles.sectionTitle}>Your Rights &amp; Data Deletion</h2>
-          <p>
-            Tenants and leads whose data is processed through AgentzPro CRM
-            have the right to request access to, correction of, or deletion
-            of their personal data.
-          </p>
-          <ul>
-            <li>
-              <strong>Tenants</strong> can delete lead records directly within
-              the AgentzPro CRM application using the built-in delete
-              function.
-            </li>
-            <li>
-              <strong>Anyone</strong> — including a tenant wishing to close
-              their account entirely, or an individual lead who wants their
-              data removed — can request deletion by contacting us directly
-              using the details in Section 16 (Contact Us).
-            </li>
-          </ul>
-          <p>
-            Once a deletion request is verified, we will delete the requested
-            data from our systems, except where retention is required by law.
-            Please note that once data is deleted, we are not able to recover
-            it.
-          </p>
-        </section>
-
-        <section id="cookies" className={styles.section}>
-          <span className={styles.sectionNum}>11</span>
-          <h2 className={styles.sectionTitle}>Cookies &amp; Tracking Technologies</h2>
-          <p>
-            This website and AgentzPro CRM do not use third-party advertising
-            or analytics cookies. We use only essential cookies required to
-            keep a tenant securely signed in to their CRM account session.
-            These essential cookies do not track you across other websites.
-          </p>
-        </section>
-
-        <section id="children" className={styles.section}>
-          <span className={styles.sectionNum}>12</span>
-          <h2 className={styles.sectionTitle}>Children&apos;s Privacy</h2>
-          <p>
-            AgentzPro CRM is a business-to-business product intended for use
-            by business owners and their staff. It is not directed at, and we
-            do not knowingly collect personal data from, children. If you
-            believe a child has provided us with personal data, please
-            contact us so we can delete it.
-          </p>
-        </section>
-
-        <section id="payments" className={styles.section}>
-          <span className={styles.sectionNum}>13</span>
-          <h2 className={styles.sectionTitle}>
-            Payments, Cancellation &amp; Refunds
-          </h2>
-          <p>
-            Paid plans for AgentzPro CRM are billed per seat, monthly or
-            yearly, and payments are processed securely by our payment
-            partner, Razorpay.
-          </p>
-          <ul>
-            <li>
-              <strong>Cancel anytime.</strong> Once a payment is made, you can
-              cancel your subscription at any time — it is entirely your
-              choice. Cancellation stops future renewals, and you keep access
-              until the end of the period you have already paid for.
-            </li>
-            <li>
-              <strong>No refunds.</strong> Payments already made are not
-              refunded, whether for a monthly plan or a yearly plan.
-            </li>
-          </ul>
-        </section>
-
-        <section id="governing-law" className={styles.section}>
-          <span className={styles.sectionNum}>14</span>
-          <h2 className={styles.sectionTitle}>Governing Law</h2>
-          <p>
-            AI Digital Tamizha is based in Chennai, Tamil Nadu, India, and we
-            process personal data in accordance with applicable Indian law,
-            including the Digital Personal Data Protection Act, 2023. This
-            Privacy Policy, and any dispute arising from it, is governed by
-            the laws of India.
-          </p>
-        </section>
-
-        <section id="changes" className={styles.section}>
-          <span className={styles.sectionNum}>15</span>
-          <h2 className={styles.sectionTitle}>Changes to This Policy</h2>
-          <p>
-            We may update this Privacy Policy from time to time to reflect
-            changes in our practices or for legal or operational reasons. We
-            will update the &quot;Last Updated&quot; date at the top of this
-            page when we make changes. We encourage you to review this page
-            periodically.
-          </p>
-        </section>
-
-        <section id="contact" className={styles.section}>
-          <span className={styles.sectionNum}>16</span>
-          <h2 className={styles.sectionTitle}>Contact Us</h2>
-          <p>
-            If you have any questions, concerns, or requests regarding this
-            Privacy Policy or the handling of your personal data — including
-            requests to delete your data — please contact us:
-          </p>
-          <div className={styles.contactCard}>
-            <div className={styles.contactGrid}>
-              <div className={styles.contactItem}>
-                <span className={styles.contactLabel}>Business</span>
-                <span className={styles.contactValue}>AI Digital Tamizha</span>
-              </div>
-              <div className={styles.contactItem}>
-                <span className={styles.contactLabel}>Email</span>
-                <a
-                  className={`${styles.contactValue} ${styles.link}`}
-                  href="mailto:aidigitaltamizha@gmail.com"
-                >
-                  aidigitaltamizha@gmail.com
-                </a>
-              </div>
-              <div className={styles.contactItem}>
-                <span className={styles.contactLabel}>Phone Number</span>
-                <a
-                  className={`${styles.contactValue} ${styles.link}`}
-                  href="tel:+919047227223"
-                >
-                  +91 90472 27223
-                </a>
-              </div>
-              <div className={styles.contactItem}>
-                <span className={styles.contactLabel}>Location</span>
-                <span className={styles.contactValue}>
-                  Lakshmi Nagar, Mudichur, Chennai 600028, Tamil Nadu, India
-                </span>
-              </div>
             </div>
-          </div>
-        </section>
 
-        <a href="#top" className={styles.backToTop}>
-          &uarr; Back to top
-        </a>
+            <section id="who-we-are" className={styles.section}>
+              <span className={styles.sectionNum}>01</span>
+              <h2 className={styles.sectionTitle}>Who we are</h2>
+              <p>
+                AgentzPro is owned and operated by AI Digital Tamizha, which is responsible for deciding why and how
+                personal data is processed through the Service.
+              </p>
+              <div className={styles.tableWrap}>
+                <table className={styles.infoTable}>
+                  <tbody>
+                    <tr><th scope="row">Business name</th><td>AI Digital Tamizha</td></tr>
+                    <tr><th scope="row">Product</th><td>AgentzPro</td></tr>
+                    <tr><th scope="row">Nature of work</th><td>Software as a service (SaaS)</td></tr>
+                    <tr><th scope="row">Registered location</th><td>Lakshmi Nagar, Mudichur, Chennai 600028, Tamil Nadu, India</td></tr>
+                    <tr><th scope="row">Email</th><td>aidigitaltamizha@gmail.com</td></tr>
+                    <tr><th scope="row">Phone</th><td>+91 90472 27223</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section id="scope" className={styles.section}>
+              <span className={styles.sectionNum}>02</span>
+              <h2 className={styles.sectionTitle}>Scope of this policy</h2>
+              <p>
+                AgentzPro is a <strong>multi-tenant SaaS platform</strong>. Many independent businesses
+                (&quot;companies&quot; or &quot;tenants&quot;) use the Service under their own separate accounts. Each
+                company may connect its own Facebook Pages to receive Meta Lead Ads leads, connect its own Google Ads
+                accounts with Google Sign-In, and set up its own Google Ads lead form webhook. Each company&apos;s data
+                is kept separate, so one company can never see another company&apos;s data.
+              </p>
+              <p>
+                This policy covers all data processed through AgentzPro: data about the companies and their team
+                members, and data about the people (&quot;leads&quot;) who submit a company&apos;s Facebook or Google
+                Ads lead forms or who call the company.
+              </p>
+            </section>
+
+            <section id="information-we-collect" className={styles.section}>
+              <span className={styles.sectionNum}>03</span>
+              <h2 className={styles.sectionTitle}>Information we collect</h2>
+
+              <h3 className={styles.subheading}>3.1 Account information</h3>
+              <p>
+                When a business signs up, we collect the company name and the name, email address and role of the owner
+                and each team member they invite. You sign in with a one-time code sent to your email address, so we do
+                not store passwords.
+              </p>
+
+              <h3 className={styles.subheading}>3.2 Facebook Login</h3>
+              <p>
+                When a company owner connects Facebook, we receive the basic profile information Facebook Login makes
+                available, such as the person&apos;s name and Facebook user ID. We use it only to connect that
+                company to Meta on its own behalf.
+              </p>
+
+              <h3 className={styles.subheading}>3.3 Connected Facebook Pages</h3>
+              <p>
+                When a company connects one or more of its Facebook Pages, we store the Page ID, the Page name and the
+                Page access token needed to receive leads for that Page. Access tokens are stored encrypted and are used
+                only to retrieve leads for the company that connected the Page.
+              </p>
+
+              <h3 className={styles.subheading}>3.4 Leads from Meta Lead Ads</h3>
+              <p>
+                When someone submits a Lead Ads form on a company&apos;s connected Facebook Page (including ads shown on
+                Instagram), Meta sends the submission to AgentzPro through Meta&apos;s webhook and Graph API. It may
+                include the person&apos;s name, email address, phone number and answers to the form&apos;s questions,
+                together with the campaign, ad set, ad and form IDs and the ad name. This data is delivered only to the
+                company that owns the Page and ad.
+              </p>
+
+              <h3 className={styles.subheading}>3.5 Google Sign-In and Google Ads</h3>
+              <p>
+                When a company owner connects Google Ads, they sign in with Google and see Google&apos;s consent screen
+                listing the access we ask for. With their permission, we receive:
+              </p>
+              <ul>
+                <li>
+                  <strong>Basic Google account information:</strong> the email address and Google account ID of the
+                  person who connected, so the company can see which Google account is linked;
+                </li>
+                <li>
+                  <strong>Google Ads account information:</strong> the list of Google Ads accounts that person can
+                  reach (including client accounts under a manager account) and their names, so the owner can choose
+                  which accounts to link. We store only the accounts the owner chooses;
+                </li>
+                <li>
+                  <strong>Campaign, ad group and asset group names:</strong> for each Google Ads lead, we look up the
+                  names that match the IDs in the lead, so the lead shows which campaign it came from; and
+                </li>
+                <li>
+                  <strong>A Google refresh token:</strong> the token Google issues for the connection, which we store
+                  encrypted. Short-lived access tokens made from it are kept in memory only while a request runs and
+                  are never saved.
+                </li>
+              </ul>
+              <p>
+                We only read this data. We never create, edit, pause or delete campaigns or ads, and we never change
+                budgets, bids or billing in any Google Ads account.
+              </p>
+
+              <h3 className={styles.subheading}>3.6 Leads from Google Ads lead forms</h3>
+              <p>
+                When someone submits a Google Ads lead form, Google sends the submission to AgentzPro through the
+                webhook the company owner has added to that form. It may include the person&apos;s name, email address,
+                phone number and answers to the form&apos;s questions, together with the lead ID, form ID, campaign ID,
+                ad group ID, ad ID and Google click ID (GCLID). Every webhook has a secret key unique to the company,
+                and the data is delivered only to that company.
+              </p>
+
+              <h3 className={styles.subheading}>3.7 Leads your team adds (call-in leads)</h3>
+              <p>
+                Team members can add a lead by hand, for example when someone calls the company. They may enter the
+                person&apos;s name, phone number, email address, the platform and ad the person came from, the call
+                date and notes.
+              </p>
+
+              <h3 className={styles.subheading}>3.8 Work your team does in the CRM</h3>
+              <p>
+                We store the statuses, notes, follow-up tasks, reminders and lead assignments your team records, and a
+                timeline of changes to each lead, so your team can see the history of every lead.
+              </p>
+
+              <h3 className={styles.subheading}>3.9 Browser notifications</h3>
+              <p>
+                If a team member turns on reminder notifications, their browser gives us a push subscription (a
+                web address and encryption keys for that browser). We use it only to send that person their task
+                reminders, and we delete it when it stops working. Notifications can be turned off at any time in the
+                browser settings.
+              </p>
+
+              <h3 className={styles.subheading}>3.10 Billing information</h3>
+              <p>
+                When a company subscribes, our payment partner Razorpay collects the payment details. We do not receive
+                or store card or bank details. We keep the plan, number of seats, billing period and payment status.
+              </p>
+
+              <h3 className={styles.subheading}>3.11 Technical information</h3>
+              <p>
+                When you use the Service, we and our hosting providers automatically process technical information
+                such as IP address, browser and device type, server logs and the actions taken in the app. We use it to
+                run, secure and fix the Service.
+              </p>
+            </section>
+
+            <section id="how-we-use" className={styles.section}>
+              <span className={styles.sectionNum}>04</span>
+              <h2 className={styles.sectionTitle}>How we use information</h2>
+              <p>We use the information described above only to:</p>
+              <ul>
+                <li>provide AgentzPro to each company, including signing people in and connecting their Facebook Pages and Google Ads accounts;</li>
+                <li>receive, show and organise each company&apos;s leads, and let its team update, assign and follow up on them;</li>
+                <li>show which campaign, ad group or ad each lead came from;</li>
+                <li>
+                  give each lead from Meta or Google Ads an AI label (Hot, Warm or Cold) to help the company decide who
+                  to contact first. Before
+                  a lead is labelled, we remove the name, email address and phone number from the form&apos;s contact
+                  fields, as described in Section 5;
+                </li>
+                <li>send task reminders, account emails and team invitations;</li>
+                <li>process subscription payments;</li>
+                <li>keep the Service secure, find and fix problems, and improve reliability; and</li>
+                <li>comply with the law and enforce our Terms of Service.</li>
+              </ul>
+              <p>
+                <strong>We use a company&apos;s lead data only to provide that company&apos;s own CRM.</strong> We never
+                market to leads ourselves, and we never sell lead data or company data to anyone.
+              </p>
+            </section>
+
+            <section id="data-sharing" className={styles.section}>
+              <span className={styles.sectionNum}>05</span>
+              <h2 className={styles.sectionTitle}>How we share information</h2>
+              <p>We do not sell personal data. We share information only in these cases:</p>
+              <ul>
+                <li>
+                  <strong>Meta Platforms, Inc.</strong>, to connect a company&apos;s Facebook account, receive leads from
+                  its connected Pages and comply with Meta&apos;s Platform Terms;
+                </li>
+                <li>
+                  <strong>Google LLC</strong>, to connect a company&apos;s Google account, read its linked Google Ads
+                  account data, and comply with Google&apos;s terms and policies;
+                </li>
+                <li>
+                  <strong>Service providers</strong> that process data only on our instructions to run the Service:
+                  <ul>
+                    <li><strong>Supabase</strong>, our database provider, for secure data storage;</li>
+                    <li><strong>Vercel</strong>, our hosting provider, for running the application;</li>
+                    <li><strong>Upstash</strong>, for queuing incoming leads so none are lost, and for rate limiting;</li>
+                    <li><strong>Resend</strong>, for sending account emails such as team invitations;</li>
+                    <li><strong>Cloudflare Turnstile</strong>, for checking that a sign-in comes from a real person;</li>
+                    <li><strong>Razorpay</strong>, for processing subscription payments (see Section 13);</li>
+                    <li>
+                      <strong>Web push services</strong> run by browser makers (such as Google, Mozilla and Apple), which
+                      deliver task reminders to the browsers where notifications are turned on. Each reminder is
+                      encrypted for that browser; and
+                    </li>
+                    <li>
+                      <strong>Portkey</strong>, an AI gateway that passes a lead to an AI model provider (Google Gemini
+                      models) to produce the AI label described in Section 4. Before anything is sent, we replace the
+                      name, email address and phone number from the form&apos;s contact fields (full name, first and
+                      last name, email and phone number) with placeholders such as [NAME], [EMAIL] and [PHONE],
+                      including anywhere those same details are repeated in other answers. Only the remaining form
+                      answers, the ad name and the lead&apos;s current status are sent. For a Google Ads lead, the ad
+                      name is the campaign and ad group (or asset group) name. The model provider uses this data only
+                      to return the label and does not use it to train its models. The label is shown only to the
+                      company that owns the lead.
+                    </li>
+                  </ul>
+                </li>
+                <li>
+                  <strong>For legal reasons</strong>, when required to comply with the law or to protect the rights,
+                  property or safety of AI Digital Tamizha, our customers or others.
+                </li>
+                <li>
+                  <strong>Business transfers</strong>, as part of a merger, acquisition or sale of assets. For Google
+                  user data, this happens only after we get your explicit prior consent.
+                </li>
+              </ul>
+              <p>
+                We never share one company&apos;s data with another company, and we never share lead data with anyone
+                for advertising or marketing.
+              </p>
+            </section>
+
+            <section id="google-user-data" className={styles.section}>
+              <span className={styles.sectionNum}>06</span>
+              <h2 className={styles.sectionTitle}>Google user data and Limited Use</h2>
+              <div className={styles.callout}>
+                <p>
+                  <strong>
+                    AgentzPro&apos;s use and transfer to any other app of information received from Google APIs will
+                    adhere to the{" "}
+                    <ExternalLink href={GOOGLE_USER_DATA_POLICY_URL}>Google API Services User Data Policy</ExternalLink>,
+                    including the Limited Use requirements.
+                  </strong>
+                </p>
+              </div>
+
+              <h3 className={styles.subheading}>6.1 What Google data we access</h3>
+              <p>
+                We ask for Google access only when a company owner chooses to connect Google Ads, and we ask only for
+                what the Google Ads features need:
+              </p>
+              <div className={styles.tableWrap}>
+                <table className={`${styles.infoTable} ${styles.stackTable}`}>
+                  <thead>
+                    <tr><th scope="col">Permission</th><th scope="col">Why we ask for it</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>openid</code>, <code>email</code>, <code>profile</code></td>
+                      <td>To identify the Google account that was connected and show its email address in the app.</td>
+                    </tr>
+                    <tr>
+                      <td><code>https://www.googleapis.com/<wbr />auth/adwords</code></td>
+                      <td>
+                        Google offers one permission for the Google Ads API. We use it only to read: the list of Google
+                        Ads accounts and their names, and the campaign, ad group and asset group names for your leads,
+                        as described in Section 3.5.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <h3 className={styles.subheading}>6.2 How we use Google data</h3>
+              <p>
+                We use Google user data only to provide and improve features that you can see in AgentzPro: showing
+                which Google account is connected, letting the owner choose Google Ads accounts, showing the campaign
+                and ad group each Google Ads lead came from, and the AI lead label described in Section 4.
+              </p>
+
+              <h3 className={styles.subheading}>6.3 How we store and protect Google data</h3>
+              <p>
+                The Google refresh token is encrypted with AES-256-GCM before it is saved. Short-lived access tokens are
+                never saved. All data travels over encrypted HTTPS connections and is stored with our database
+                provider, which encrypts data at rest. Google data is tied to the company that connected it and is
+                protected by the database access rules described in Section 7.
+              </p>
+
+              <h3 className={styles.subheading}>6.4 Who we share Google data with</h3>
+              <p>
+                We transfer Google user data only to the service providers in Section 5 that we need to run the features
+                above: Supabase (storage), Vercel (hosting) and, for the AI label, Portkey and Google Gemini (campaign
+                and ad group names only). We transfer it otherwise only for security purposes (for example,
+                investigating abuse), to comply with applicable law, or as part of a merger, acquisition or sale of
+                assets after getting your explicit prior consent.
+              </p>
+
+              <h3 className={styles.subheading}>6.5 What we never do with Google data</h3>
+              <ul>
+                <li>We never sell Google user data.</li>
+                <li>We never transfer Google user data to advertising platforms, data brokers or other information resellers.</li>
+                <li>We never use Google user data to serve ads, including retargeting, personalised or interest-based ads.</li>
+                <li>We never use Google user data to determine credit-worthiness or for lending.</li>
+                <li>
+                  We never use Google user data to develop, improve or train generalised or non-personalised artificial
+                  intelligence or machine learning models.
+                </li>
+              </ul>
+
+              <h3 className={styles.subheading}>6.6 Who can see Google data</h3>
+              <p>
+                Google Ads leads and account data are shown only to the team of the company that connected the Google
+                Ads account. Our own staff do not read Google user data unless (a) you give us permission to view
+                specific data, for example to help with a support request; (b) it is needed for security, such as
+                investigating a bug or abuse; (c) it is needed to comply with applicable law; or (d) the data is
+                aggregated and used for internal operations in line with applicable law.
+              </p>
+
+              <h3 className={styles.subheading}>6.7 Disconnecting Google and deleting Google data</h3>
+              <p>AgentzPro has two separate controls on the Connection page, both for the company owner:</p>
+              <ul>
+                <li>
+                  <strong>Disconnect Google sign-in.</strong> We revoke our access with Google and immediately delete
+                  the refresh token, the list of linked Google Ads accounts and the saved campaign and ad group names.
+                  We then can no longer read anything from Google Ads. We keep a record of which Google email address
+                  was connected and when, as connection history, until the company asks us to delete it or closes its
+                  account.
+                </li>
+                <li>
+                  <strong>Stop Google Ads leads.</strong> Turns off the company&apos;s lead form webhook, so new Google
+                  Ads leads are refused and not saved. Turning it back on creates a new secret key.
+                </li>
+              </ul>
+              <p>
+                You can also remove AgentzPro&apos;s access at any time from your Google Account at{" "}
+                <ExternalLink href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</ExternalLink>.
+                Leads already received, including the campaign and ad group name shown on each lead, stay in the
+                company&apos;s CRM until the company deletes them or asks us to delete them, as described in Section 10.
+              </p>
+            </section>
+
+            <section id="tenant-isolation" className={styles.section}>
+              <span className={styles.sectionNum}>07</span>
+              <h2 className={styles.sectionTitle}>Each company&apos;s data is separate</h2>
+              <p>
+                Every record in AgentzPro belongs to one company, and database-level access rules (row-level security
+                tied to a unique company ID) are checked on every request. This is designed so that no company can
+                view, search, export or otherwise reach another company&apos;s Facebook connections, Google Ads
+                connections, leads or account data.
+              </p>
+            </section>
+
+            <section id="retention" className={styles.section}>
+              <span className={styles.sectionNum}>08</span>
+              <h2 className={styles.sectionTitle}>Data retention</h2>
+              <p>
+                We keep company account data and lead data for as long as the company&apos;s AgentzPro account exists,
+                so we can keep providing the Service. If a subscription ends, the data is kept so the company can pick
+                up where it left off. When a company closes its account or asks us to delete data, as described in
+                Section 10, we delete it, except for limited information we must keep to comply with the law, resolve
+                disputes or enforce our agreements.
+              </p>
+              <p>
+                Google refresh tokens are kept only while Google Ads is connected and are deleted on disconnect, as
+                described in Section 6.7. Browser push subscriptions are deleted when they stop working or when you ask
+                us to delete your data.
+              </p>
+            </section>
+
+            <section id="security" className={styles.section}>
+              <span className={styles.sectionNum}>09</span>
+              <h2 className={styles.sectionTitle}>Data security</h2>
+              <p>We protect the information in our care with technical and organisational measures, including:</p>
+              <ul>
+                <li>encryption of Facebook access tokens, Google refresh tokens and webhook keys with AES-256-GCM before they are saved;</li>
+                <li>encrypted HTTPS connections for all data in transit, and encryption at rest by our database provider;</li>
+                <li>signature checks on every lead Meta sends us, and a secret key check on every Google Ads lead webhook;</li>
+                <li>company-separated database access rules, as described in Section 7; and</li>
+                <li>automatic sign-out of inactive sessions and bot checks at sign-in.</li>
+              </ul>
+              <p>
+                No system can be guaranteed 100% secure. If we learn of unauthorised access to your information, we will
+                tell affected users promptly, as required by applicable law.
+              </p>
+            </section>
+
+            <section id="your-rights" className={styles.section}>
+              <span className={styles.sectionNum}>10</span>
+              <h2 className={styles.sectionTitle}>Your rights and deleting your data</h2>
+              <p>
+                Companies, their team members and leads can ask to access, correct or delete their personal data. Here
+                is how to manage and delete data in AgentzPro:
+              </p>
+              <ul>
+                <li><strong>Delete leads:</strong> on the Leads page, tick the leads you want to remove and press Delete.</li>
+                <li>
+                  <strong>Disconnect Facebook:</strong> the owner disconnects a Page on the Connection page. You can also
+                  remove AgentzPro from your Facebook account&apos;s Business Integrations settings.
+                </li>
+                <li>
+                  <strong>Disconnect Google Ads:</strong> the owner disconnects Google on the Connection page, or removes
+                  access at myaccount.google.com/permissions (see Section 6.7).
+                </li>
+                <li><strong>Turn off reminders:</strong> turn off notifications for AgentzPro in your browser settings.</li>
+                <li>
+                  <strong>Close an account or delete everything:</strong> email us at aidigitaltamizha@gmail.com from
+                  the account&apos;s email address. A lead who wants their own details removed can contact us the same
+                  way.
+                </li>
+              </ul>
+              <p>
+                We reply to every request within 3 business days. If you ask us to disconnect your Google Ads account
+                from AgentzPro, we do so within 3 business days. Once we have confirmed a deletion request, we delete
+                the data from our systems, except where the law requires us to keep it. Deleted data cannot be
+                recovered.
+              </p>
+            </section>
+
+            <section id="cookies" className={styles.section}>
+              <span className={styles.sectionNum}>11</span>
+              <h2 className={styles.sectionTitle}>Cookies and browser storage</h2>
+              <p>
+                AgentzPro does not use advertising or analytics cookies. We use only essential cookies that keep you
+                securely signed in, sign out inactive sessions, and protect the Google sign-in step. The app also saves
+                small preferences in your browser, such as light or dark theme. None of these track you across other
+                websites.
+              </p>
+            </section>
+
+            <section id="children" className={styles.section}>
+              <span className={styles.sectionNum}>12</span>
+              <h2 className={styles.sectionTitle}>Children&apos;s privacy</h2>
+              <p>
+                AgentzPro is a business product for business owners and their staff. It is not directed at children, and
+                we do not knowingly collect personal data from children. If you believe a child has given us personal
+                data, please contact us so we can delete it.
+              </p>
+            </section>
+
+            <section id="payments" className={styles.section}>
+              <span className={styles.sectionNum}>13</span>
+              <h2 className={styles.sectionTitle}>Payments, cancellation and refunds</h2>
+              <p>
+                Paid plans are billed per seat, monthly or yearly, and payments are processed securely by our payment
+                partner, Razorpay.
+              </p>
+              <ul>
+                <li>
+                  <strong>Cancel anytime.</strong> You can cancel your subscription at any time. Cancelling stops future
+                  renewals, and you keep access until the end of the period you have already paid for.
+                </li>
+                <li><strong>No refunds.</strong> Payments already made are not refunded, for monthly or yearly plans.</li>
+              </ul>
+            </section>
+
+            <section id="governing-law" className={styles.section}>
+              <span className={styles.sectionNum}>14</span>
+              <h2 className={styles.sectionTitle}>Governing law</h2>
+              <p>
+                AI Digital Tamizha is based in Chennai, Tamil Nadu, India, and processes personal data in line with
+                applicable Indian law, including the Digital Personal Data Protection Act, 2023. This policy, and any
+                dispute arising from it, is governed by the laws of India.
+              </p>
+            </section>
+
+            <section id="changes" className={styles.section}>
+              <span className={styles.sectionNum}>15</span>
+              <h2 className={styles.sectionTitle}>Changes to this policy</h2>
+              <p>
+                We may update this policy to reflect changes in our practices or for legal or operational reasons. When
+                we do, we change the &quot;Last updated&quot; date at the top of this page. If we ever want to use
+                Google user data in a new way, we will tell you and ask for your consent first.
+              </p>
+            </section>
+
+            <section id="contact" className={styles.section}>
+              <span className={styles.sectionNum}>16</span>
+              <h2 className={styles.sectionTitle}>Contact us</h2>
+              <p>
+                For any question or request about this policy or your personal data, including deletion requests,
+                contact us:
+              </p>
+              <div className={styles.contactCard}>
+                <div className={styles.contactGrid}>
+                  <div className={styles.contactItem}>
+                    <span className={styles.contactLabel}>Business</span>
+                    <span className={styles.contactValue}>AI Digital Tamizha</span>
+                  </div>
+                  <div className={styles.contactItem}>
+                    <span className={styles.contactLabel}>Email</span>
+                    <a className={`${styles.contactValue} ${styles.link}`} href="mailto:aidigitaltamizha@gmail.com">
+                      aidigitaltamizha@gmail.com
+                    </a>
+                  </div>
+                  <div className={styles.contactItem}>
+                    <span className={styles.contactLabel}>Phone Number</span>
+                    <a className={`${styles.contactValue} ${styles.link}`} href="tel:+919047227223">
+                      +91 90472 27223
+                    </a>
+                  </div>
+                  <div className={styles.contactItem}>
+                    <span className={styles.contactLabel}>Location</span>
+                    <span className={styles.contactValue}>Lakshmi Nagar, Mudichur, Chennai 600028, Tamil Nadu, India</span>
+                  </div>
+                </div>
+              </div>
+              <p>
+                See also our <Link className={styles.link} href="/terms">Terms of Service</Link>.
+              </p>
+            </section>
+
+            <a href="#top" className={styles.backToTop}>
+              <ArrowUp size={16} aria-hidden="true" /> Back to top
+            </a>
+          </article>
+        </div>
       </main>
-      <SiteFooter />
-    </>
+      <PublicSiteFooter />
+    </div>
   );
 }

@@ -35,6 +35,17 @@
   --skeleton-sheen: #f7f9fc;
   --profile-backdrop: rgba(15, 23, 42, .46);
   --profile-dialog-shadow: 0 24px 70px rgba(15, 23, 42, .24);
+  /* One type scale for the public pages (home, pricing, contact, privacy policy, terms),
+     so the same kind of text is the same size on every page. */
+  --fs-caption: 12px;
+  --fs-small: 14px;
+  --fs-body: 16px;
+  --fs-lead: 18px;
+  --fs-h3: 18px;
+  --fs-h2-doc: 24px;
+  --fs-h2: clamp(24px, 3vw, 32px);
+  --fs-h1: clamp(38px, 5vw, 60px);
+  --fs-h1-doc: clamp(32px, 4.2vw, 44px);
   color-scheme: light;
 }
 
