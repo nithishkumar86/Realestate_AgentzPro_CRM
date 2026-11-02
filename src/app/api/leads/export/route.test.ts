@@ -24,10 +24,10 @@ describe("authenticated lead CSV route", () => {
     expect(response.status).toBe(200);
     expect(mocks.query).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, expect.objectContaining(filters), true);
     const lines = csv.replace(/^﻿/, "").split("\r\n");
-    expect(lines[0]).toBe("Lead ID,Lead Name,Lead Date,Email,Phone,Facebook Page,Ad Name,Ad ID,Status,Label,Assigned To");
+    expect(lines[0]).toBe("Lead ID,Lead Name,Lead Date,Status,Label,Email,Phone,Facebook Page,Ad Name,Ad ID,Assigned To");
     // The date sits right after the name in every row too, formatted on the company clock.
     const firstDate = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-09-09T02:00:00Z"));
-    expect(lines[1]).toBe(`lg-1,First,"${firstDate}",first@example.com,111,Page A,Ad A,ad-a,New Lead,Warm,`);
+    expect(lines[1]).toBe(`lg-1,First,"${firstDate}",New Lead,Warm,first@example.com,111,Page A,Ad A,ad-a,`);
     expect(csv).toContain("First");
     expect(csv).toContain("Second");
     expect(csv).not.toContain("Project");
@@ -71,6 +71,6 @@ describe("authenticated lead CSV route", () => {
     const response = await POST(new Request("http://localhost/api/leads/export", { method: "POST", body: JSON.stringify({ quickFilter: "all", source: "telecaller" }), headers: { "content-type": "application/json" } }));
     expect(response.status).toBe(200);
     const date = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-10-26T05:00:00Z"));
-    expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`,Caller,"${date}",,9876543210,,,,New Lead,Warm,Ravi`);
+    expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`,Caller,"${date}",New Lead,Warm,,9876543210,,,,Ravi`);
   });
 });

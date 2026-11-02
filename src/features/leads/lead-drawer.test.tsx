@@ -176,17 +176,19 @@ describe("Profile icon in the leads table", () => {
 });
 
 describe("leads table column order", () => {
-  it("shows Lead ID right after Profile, Date right after Client Name and Label last, with each row's cells under the matching heading", async () => {
+  it("shows Lead ID right after Profile, Date right after Client Name and Status, Label right after Date, with each row's cells under the matching heading", async () => {
     stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
     await renderPage();
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Profile", "Lead ID", "Client Name", "Date", "Phone", "Page", "Ad Name", "Assigned To", "Status", "Label"]);
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Profile", "Lead ID", "Client Name", "Date", "Status", "Label", "Phone", "Page", "Ad Name", "Assigned To"]);
     const cells = within(screen.getByRole("button", { name: "Open profile of Kumar" }).closest("tr")!).getAllByRole("cell");
     expect(cells).toHaveLength(11);
     expect(cells[2]).toHaveTextContent(`lg-${LEAD_1}`);
     expect(cells[3]).toHaveTextContent("Kumar");
     expect(cells[4]).toHaveTextContent(new Date("2026-10-01T05:00:00Z").toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }));
-    expect(cells[5]).toHaveTextContent("9999999999");
-    expect(cells[10]).toHaveClass("mvp-label-cell");
+    expect(within(cells[5]).getByRole("button", { name: "Change status for Kumar" })).toBeInTheDocument();
+    expect(cells[6]).toHaveClass("mvp-label-cell");
+    expect(within(cells[6]).getByRole("button", { name: "Change label for Kumar" })).toBeInTheDocument();
+    expect(cells[7]).toHaveTextContent("9999999999");
   });
 });
 
