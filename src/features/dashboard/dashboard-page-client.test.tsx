@@ -146,6 +146,29 @@ describe("dashboard page", () => {
     await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ dateFrom: "2026-09-01", dateTo: "2026-09-10", quickFilter: "all" }));
   });
 
+  it("shows the date range as one chip whose X clears both dates, and refuses a From after To", async () => {
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    fireEvent.click(screen.getByRole("button", { name: "Date" }));
+    const dialog = await screen.findByRole("dialog", { name: "Date range filter" });
+    const [from, to] = Array.from(dialog.querySelectorAll("input[type=date]")) as HTMLInputElement[];
+    const apply = within(dialog).getByRole("button", { name: "Apply" });
+    fireEvent.change(from, { target: { value: "2026-09-10" } });
+    fireEvent.change(to, { target: { value: "2026-09-01" } });
+    expect(apply).toBeDisabled();
+
+    fireEvent.change(from, { target: { value: "2026-09-01" } });
+    fireEvent.change(to, { target: { value: "2026-09-10" } });
+    fireEvent.click(apply);
+    await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ dateFrom: "2026-09-01", dateTo: "2026-09-10" }));
+    expect(screen.queryByRole("button", { name: /Remove (From|To) filter/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Date filter: 2026-09-01 → 2026-09-10" }));
+    await waitFor(() => expect(statBodies.at(-1)).not.toHaveProperty("dateFrom"));
+    expect(statBodies.at(-1)).not.toHaveProperty("dateTo");
+    for (const body of statBodies) expect("dateFrom" in body).toBe("dateTo" in body);
+  });
+
   it("updates in place when the server reports a new lead, without a reload", async () => {
     render(<DashboardPageClient />);
     expect(await screen.findByTestId("month-leads")).toHaveTextContent("3");

@@ -3,7 +3,7 @@
 import { BookOpen, CalendarDays, ChevronDown, Filter, LayoutGrid, Megaphone, PhoneIncoming, Search, Tag, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LEAD_LABELS, LEAD_SOURCE_LABELS, LEAD_SOURCES, LEAD_STATUSES, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
-import type { LeadFilters } from "@/features/leads/use-lead-filters";
+import { isValidDateRange, type LeadFilters } from "@/features/leads/use-lead-filters";
 
 type DropdownOption = { value: string; label: string };
 
@@ -68,7 +68,7 @@ function FieldDropdown({ id, icon, label, value, options, placeholder, openField
 
 /**
  * One removable pill inside the "Active Filters" bar. Each active filter
- * (search text, page, ad, status, label, quick range, date bounds) renders
+ * (search text, page, ad, status, label, quick range, date range) renders
  * exactly one of these with a human-readable value and its own X so a
  * single filter can be lifted without clearing the rest.
  */
@@ -96,8 +96,10 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
 
   const openDateFilter = () => { setDraftFrom(from); setDraftTo(to); setIsDateOpen(true); };
   const cancelDateFilter = () => setIsDateOpen(false);
+  // A typed date can skip the calendar's min/max (a To before From, a 5-digit year), so Apply checks the server's own rule.
+  const canApplyDate = isValidDateRange(draftFrom, draftTo);
   const applyDateFilter = () => {
-    if (!draftFrom || !draftTo) return;
+    if (!canApplyDate) return;
     filters.applyDateRange(draftFrom, draftTo);
     setIsDateOpen(false);
   };
@@ -147,10 +149,10 @@ export function LeadFilterBar({ filters, actions, showSearch = true, showQuickTo
             <button type="button" className="mvp-dropdown-close" aria-label="Cancel date filter" onClick={cancelDateFilter}><X size={14} /></button>
           </div>
           <div className="mvp-date-popover__fields">
-            <label><span>From</span><input type="date" value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} /></label>
+            <label><span>From</span><input type="date" max={draftTo || undefined} value={draftFrom} onChange={(event) => setDraftFrom(event.target.value)} /></label>
             <label><span>To</span><input type="date" min={draftFrom || undefined} value={draftTo} onChange={(event) => setDraftTo(event.target.value)} /></label>
           </div>
-          <button type="button" className="mvp-date-popover__apply" disabled={!draftFrom || !draftTo} onClick={applyDateFilter}>Apply</button>
+          <button type="button" className="mvp-date-popover__apply" disabled={!canApplyDate} onClick={applyDateFilter}>Apply</button>
         </div> : null}
       </div>
       {showQuickToggle ? <button className={`mvp-gradient-button mvp-gradient-button--filter${quick !== "All Leads" ? " mvp-gradient-button--on" : ""}`} type="button" onClick={filters.toggleQuickRange}>
@@ -190,8 +192,8 @@ export function LeadActiveFilters({ filters }: { filters: LeadFilters }) {
     {assignee ? <FilterChip chipLabel="Assignee" value={assigneeName} onRemove={() => filters.setAssignee("")} /> : null}
     {source ? <FilterChip chipLabel="Source" value={LEAD_SOURCE_LABELS[source]} onRemove={() => filters.setSource("")} /> : null}
     {quick !== "All Leads" ? <FilterChip chipLabel="Range" value={quick} onRemove={() => filters.setQuick("All Leads")} /> : null}
-    {from ? <FilterChip chipLabel="From" value={from} onRemove={() => filters.setFrom("")} /> : null}
-    {to ? <FilterChip chipLabel="To" value={to} onRemove={() => filters.setTo("")} /> : null}
+    {/* One chip for the whole range: its X clears both dates, so a half range is never sent. */}
+    {from && to ? <FilterChip chipLabel="Date" value={`${from} → ${to}`} onRemove={filters.clearDateRange} /> : null}
     <button className="mvp-clear-all" type="button" onClick={filters.reset}>Clear all</button>
   </div>;
 }

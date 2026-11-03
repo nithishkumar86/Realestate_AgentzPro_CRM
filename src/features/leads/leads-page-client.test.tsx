@@ -284,8 +284,7 @@ describe("downloading leads as CSV", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Today's Leads" }));
     await waitFor(() => expect(sent.query.at(-1)).toEqual({ quickFilter: "today", pageSize: 100 }));
-    expect(screen.queryByLabelText(/Remove From filter/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Remove To filter/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Remove Date filter/)).not.toBeInTheDocument();
 
     clickDownload();
 
@@ -332,6 +331,64 @@ describe("downloading leads as CSV", () => {
 
     await waitFor(() => expect(sent.export).toHaveLength(1));
     expect(sent.export[0]).toEqual({ quickFilter: "all", adId: "6301-karuvi", status: "New Lead", dateFrom: "2026-09-01", dateTo: "2026-09-10" });
+  });
+
+  /**
+   * The server answers a request with only one of dateFrom/dateTo with "Select a valid inclusive date range."
+   * Separate From and To chips let you remove one date and send exactly that, so the range is one chip now.
+   */
+  it("shows the applied range as one Date chip whose X clears both dates together", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+
+    fireEvent.click(screen.getByRole("button", { name: "Date" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-20" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ dateFrom: "2026-10-20", dateTo: "2026-10-25" }));
+    expect(screen.queryByLabelText(/Remove From filter/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Remove To filter/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Date filter: 2026-10-20 → 2026-10-25" }));
+    await waitFor(() => expect(sent.query.at(-1)).toEqual({ quickFilter: "all", pageSize: 100 }));
+    expect(screen.queryByLabelText(/Remove Date filter/)).not.toBeInTheDocument();
+    // Every request carried both dates or neither.
+    for (const body of sent.query) expect("dateFrom" in body).toBe("dateTo" in body);
+
+    clickDownload();
+    await waitFor(() => expect(sent.export).toHaveLength(1));
+    expect(sent.export[0]).toEqual({ quickFilter: "all" });
+  });
+
+  /** A typed date skips the calendar's min/max, so Apply itself must refuse what the server would reject. */
+  it("keeps Apply off for a From date after the To date and for a year with too many digits", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+
+    fireEvent.click(screen.getByRole("button", { name: "Date" }));
+    const apply = screen.getByRole("button", { name: "Apply" });
+    expect(apply).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-25" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-20" } });
+    expect(apply).toBeDisabled();
+    fireEvent.click(apply);
+
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "20262-10-20" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-25" } });
+    expect(screen.getByLabelText("From")).toHaveValue("20262-10-20");
+    expect(apply).toBeDisabled();
+    fireEvent.click(apply);
+
+    // Neither bad range was sent, and the popover is still open for the user to correct it.
+    expect(sent.query.every((body) => !("dateFrom" in body) && !("dateTo" in body))).toBe(true);
+    expect(screen.getByRole("dialog", { name: "Date range filter" })).toBeInTheDocument();
+
+    // From and To on the same day is a valid one-day range.
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-25" } });
+    expect(apply).toBeEnabled();
+    fireEvent.click(apply);
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ dateFrom: "2026-10-25", dateTo: "2026-10-25" }));
   });
 
   it("keeps the export unfiltered again after Clear all", async () => {

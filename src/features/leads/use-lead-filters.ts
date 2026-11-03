@@ -7,6 +7,16 @@ export type Quick = "All Leads" | "Today Leads" | "This Month Leads";
 export type AssigneeOption = { userId: string; fullName: string };
 export type LeadFilterOptions = { pages: Array<{ id: string; name: string }>; ads: Array<{ id: string; name: string | null }>; defaultAdId: string | null; assignees: AssigneeOption[]; isOwner: boolean };
 type ApiError = { error?: { message?: string } };
+type DateRange = { from: string; to: string };
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * The same rule the query service enforces (resolveDateRange): two complete YYYY-MM-DD dates, From on or
+ * before To. A range the Date popover lets you apply is therefore always one the server accepts.
+ */
+export function isValidDateRange(from: string, to: string): boolean {
+  return ISO_DATE.test(from) && ISO_DATE.test(to) && from <= to;
+}
 
 export async function readError(response: Response, fallback: string): Promise<string> {
   const body = await response.json().catch(() => null) as ApiError | null;
@@ -33,8 +43,10 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
   const [assignee, setAssignee] = useState("");
   // "facebook", "telecaller", or "" for both. Leads page only, like assignee: the dashboard never sets it.
   const [source, setSource] = useState<LeadSource | "">("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  // From and To are one value: both dates or none. The server rejects a half range, so it must never exist here.
+  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  const from = dateRange?.from ?? "";
+  const to = dateRange?.to ?? "";
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; });
 
@@ -62,12 +74,12 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
   const filterBody = () => ({
     quickFilter: quick === "Today Leads" ? "today" : quick === "This Month Leads" ? "month" : "all",
     ...(status ? { status } : {}), ...(label ? { label } : {}), ...(assignee ? { assignee } : {}), ...(source ? { source } : {}),
-    ...(from ? { dateFrom: from } : {}), ...(to ? { dateTo: to } : {}),
+    ...(dateRange ? { dateFrom: dateRange.from, dateTo: dateRange.to } : {}),
     ...(pageRecordId ? { pageRecordId } : {}), ...(adId ? { adId } : {}),
     ...(search.trim() ? { search: search.trim() } : {}),
   });
 
-  const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setAssignee(""); setSource(""); setFrom(""); setTo(""); };
+  const reset = () => { setPageRecordId(""); setAdId(""); setSearch(""); setQuick("All Leads"); setStatus(""); setLabel(""); setAssignee(""); setSource(""); setDateRange(null); };
   /**
    * Today's Leads and a From/To range are two ways of naming the same thing — a date window — and
    * the query service resolves that collision by letting the quick range win (see resolveDateRange).
@@ -78,16 +90,22 @@ export function useLeadFilters({ autoSelectDefaultAd, onError }: { autoSelectDef
   const toggleQuickRange = () => {
     const next: Quick = quick === "All Leads" ? "Today Leads" : "All Leads";
     setQuick(next);
-    if (next !== "All Leads") { setFrom(""); setTo(""); }
+    if (next !== "All Leads") setDateRange(null);
   };
-  const applyDateRange = (nextFrom: string, nextTo: string) => { setFrom(nextFrom); setTo(nextTo); setQuick("All Leads"); };
+  /** Applies both dates together, and only a range the server accepts; anything else is ignored. */
+  const applyDateRange = (nextFrom: string, nextTo: string) => {
+    if (!isValidDateRange(nextFrom, nextTo)) return;
+    setDateRange({ from: nextFrom, to: nextTo });
+    setQuick("All Leads");
+  };
+  const clearDateRange = () => setDateRange(null);
   const clearPage = () => { setPageRecordId(""); setAdId(""); };
-  const hasActiveFilters = Boolean(pageRecordId || adId || search.trim() || quick !== "All Leads" || status || label || assignee || source || from || to);
+  const hasActiveFilters = Boolean(pageRecordId || adId || search.trim() || quick !== "All Leads" || status || label || assignee || source || dateRange);
 
   return {
     options, pageRecordId, adId, search, quick, status, label, assignee, source, from, to,
-    setPageRecordId, setAdId, setSearch, setQuick, setStatus, setLabel, setAssignee, setSource, setFrom, setTo,
-    filterBody, reset, toggleQuickRange, applyDateRange, clearPage, hasActiveFilters,
+    setPageRecordId, setAdId, setSearch, setQuick, setStatus, setLabel, setAssignee, setSource,
+    filterBody, reset, toggleQuickRange, applyDateRange, clearDateRange, clearPage, hasActiveFilters,
   };
 }
 
