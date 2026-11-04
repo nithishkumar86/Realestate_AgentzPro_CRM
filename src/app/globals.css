@@ -2574,7 +2574,7 @@ button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; bord
 .mvp-row-dropdown:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 35%, transparent); outline-offset: 1px; }
 .mvp-row-dropdown__value { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mvp-row-dropdown__panel { position: fixed; right: auto; max-width: 300px; z-index: 60; }
-/* Leads table Status box for the highlighted statuses (STATUS_HIGHLIGHTS): a solid box with white text. */
+/* Leads table Status box, one colour per status (STATUS_HIGHLIGHTS): a solid box with white text. */
 .mvp-row-dropdown[data-tone] { border-color: var(--tone); background: var(--tone); color: #fff; }
 .mvp-row-dropdown[data-tone] .mvp-field-chevron { color: #fff; }
 .mvp-row-dropdown[data-tone]:hover, .mvp-row-dropdown[data-tone][aria-expanded="true"] { border-color: var(--tone); background: color-mix(in srgb, var(--tone) 85%, #000); }
@@ -2582,6 +2582,15 @@ button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; bord
 .mvp-row-dropdown[data-tone="green"] { --tone: #15803d; }
 .mvp-row-dropdown[data-tone="red"] { --tone: #d92d20; }
 .mvp-row-dropdown[data-tone="pink"] { --tone: #db2777; }
+.mvp-row-dropdown[data-tone="gray"] { --tone: #667085; }
+.mvp-row-dropdown[data-tone="blue"] { --tone: #2563eb; }
+.mvp-row-dropdown[data-tone="maroon"] { --tone: #7c2d12; }
+.mvp-row-dropdown[data-tone="yellow"] { --tone: #eab308; }
+.mvp-row-dropdown[data-tone="golden"] { --tone: #b45309; }
+/* Yellow is too light for white text (~1.9:1 contrast), so only yellow overrides to dark text (~9.7:1). */
+.mvp-row-dropdown[data-tone="yellow"] { color: #1a1200; }
+.mvp-row-dropdown[data-tone="yellow"] .mvp-field-chevron { color: #1a1200; }
+.mvp-row-dropdown[data-tone="yellow"]:hover, .mvp-row-dropdown[data-tone="yellow"][aria-expanded="true"] { color: #1a1200; }
 
 /* Add Task title picker: the options open inline under the field (never upward, never clipped), spaced like the other dropdowns but airier. */
 .mvp-option-picker { display: grid; gap: 8px; }
@@ -3785,10 +3794,13 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .mvp-form-answers__retry:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .mvp-lead-status { --tone: #2563eb; display: grid; gap: 10px; padding: 14px; border: 1px solid color-mix(in srgb, var(--tone) 35%, var(--border)); border-left: 4px solid var(--tone); border-radius: 10px; background: color-mix(in srgb, var(--tone) 9%, var(--surface)); }
 .mvp-lead-status[data-tone="green"] { --tone: #12a150; }
-.mvp-lead-status[data-tone="yellow"] { --tone: #d99100; }
+.mvp-lead-status[data-tone="yellow"] { --tone: #eab308; }
 .mvp-lead-status[data-tone="red"] { --tone: #d92d20; }
 .mvp-lead-status[data-tone="pink"] { --tone: #db2777; }
 .mvp-lead-status[data-tone="gray"] { --tone: #667085; }
+.mvp-lead-status[data-tone="blue"] { --tone: #2563eb; }
+.mvp-lead-status[data-tone="maroon"] { --tone: #7c2d12; }
+.mvp-lead-status[data-tone="golden"] { --tone: #b45309; }
 .mvp-lead-status__title { color: var(--text-muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .mvp-lead-status .mvp-row-dropdown { width: 100% !important; min-width: 0; min-height: 42px; border-color: color-mix(in srgb, var(--tone) 45%, var(--border)); background: var(--surface); font-size: .95rem; font-weight: 700; }
 .mvp-lead-status__hint { margin: 0; color: var(--text-muted); font-size: .78rem; line-height: 1.4; }

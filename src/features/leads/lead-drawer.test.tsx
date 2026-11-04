@@ -193,38 +193,54 @@ describe("leads table column order", () => {
 });
 
 describe("status colours", () => {
-  const LEAD_4 = "55555555-5555-4555-8555-555555555555";
+  // IDs beyond LEAD_1 follow the file's "repeat one hex digit" convention, kept unique per case.
+  const idFor = (hex: string) => `${hex.repeat(8)}-${hex.repeat(4)}-4${hex.repeat(3)}-8${hex.repeat(3)}-${hex.repeat(12)}`;
 
-  it("colours only the WhatsApp (green), Disqualified (red) and Didn't pick the call (pink) Status boxes in the table; other statuses and the Label box stay plain", async () => {
+  // Every status in LEAD_STATUSES order, with the tone STATUS_HIGHLIGHTS gives it. Keep in sync with lead-options.ts.
+  const STATUS_TONE_CASES: ReadonlyArray<{ name: string; status: string; tone: string }> = [
+    { name: "Kumar", status: "New Lead", tone: "maroon" },
+    { name: "Ravi", status: "Not reachable", tone: "yellow" },
+    { name: "Priya", status: "Working", tone: "pink" },
+    { name: "Arun", status: "Closed", tone: "gray" },
+    { name: "Deepa", status: "Archived", tone: "maroon" },
+    { name: "Vijay", status: "Sale", tone: "pink" },
+    { name: "Meena", status: "Site visit done", tone: "green" },
+    { name: "Karthik", status: "Next project", tone: "pink" },
+    { name: "Divya", status: "Site visit pending", tone: "golden" },
+    { name: "Suresh", status: "Final call", tone: "maroon" },
+    { name: "Latha", status: "Didn't pick the call", tone: "pink" },
+    { name: "Mani", status: "Details send via WhatsApp", tone: "green" },
+    { name: "Geetha", status: "Disqualified", tone: "red" },
+    { name: "Hari", status: "Asking Time for Taking Decision", tone: "blue" },
+  ];
+
+  it("colours every status's Status box in the table to match STATUS_HIGHLIGHTS; the Label box and the dropdown's options stay plain", async () => {
     stubApi({
-      leads: [
-        lead(LEAD_1, "Kumar", { status: "Details send via WhatsApp" }), lead(LEAD_2, "Ravi", { status: "Disqualified" }),
-        lead(LEAD_3, "Priya", { status: "Didn't pick the call" }), lead(LEAD_4, "Arun", { status: "Not reachable" }),
-      ],
+      leads: STATUS_TONE_CASES.map((c, i) => lead(i === 0 ? LEAD_1 : idFor((i + 1).toString(16)), c.name, { status: c.status })),
       pages: {}, openTask: null,
     });
     await renderPage();
     const tone = (name: string) => screen.getByRole("button", { name: `Change status for ${name}` }).getAttribute("data-tone");
-    expect([tone("Kumar"), tone("Ravi"), tone("Priya"), tone("Arun")]).toEqual(["green", "red", "pink", null]);
+    for (const c of STATUS_TONE_CASES) expect(tone(c.name)).toBe(c.tone);
     expect(screen.getByRole("button", { name: "Change label for Kumar" })).not.toHaveAttribute("data-tone");
     fireEvent.click(screen.getByRole("button", { name: "Change status for Kumar" }));
     for (const option of screen.getAllByRole("option")) expect(option).not.toHaveAttribute("data-tone");
-  });
+  }, 10000);
 
-  it("uses the same colours in the drawer's status banner, following the picked status", async () => {
-    stubApi({ leads: [lead(LEAD_1, "Kumar", { status: "Details send via WhatsApp" })], pages: {}, openTask: null });
+  // Cycles all 14 statuses in one test, so it gets more headroom than the 5s default.
+  it("uses the same colours in the drawer's status banner as the table, for every status", async () => {
+    stubApi({ leads: [lead(LEAD_1, "Kumar")], pages: {}, openTask: null });
     await renderPage();
     const drawer = await openDrawer();
     const banner = () => drawer.querySelector(".mvp-lead-status");
-    expect(banner()).toHaveAttribute("data-tone", "green");
-    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
-    fireEvent.click(screen.getByRole("option", { name: "Didn't pick the call" }));
-    expect(banner()).toHaveAttribute("data-tone", "pink");
-    fireEvent.click(within(drawer).getByRole("button", { name: "Change status for Kumar" }));
-    fireEvent.click(screen.getByRole("option", { name: "Disqualified" }));
-    expect(banner()).toHaveAttribute("data-tone", "red");
-    expect(within(drawer).getByRole("button", { name: "Change status for Kumar" })).not.toHaveAttribute("data-tone");
-  });
+    const statusButton = () => within(drawer).getByRole("button", { name: "Change status for Kumar" });
+    for (const c of STATUS_TONE_CASES) {
+      fireEvent.click(statusButton());
+      fireEvent.click(screen.getByRole("option", { name: c.status }));
+      expect(banner()).toHaveAttribute("data-tone", c.tone);
+    }
+    expect(statusButton()).not.toHaveAttribute("data-tone");
+  }, 10000);
 });
 
 describe("no open task marker in the leads table", () => {

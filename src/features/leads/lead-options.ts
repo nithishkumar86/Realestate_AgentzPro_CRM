@@ -32,18 +32,30 @@ export function isFinalLeadStatus(status: LeadStatus): boolean {
   return (FINAL_LEAD_STATUSES as readonly LeadStatus[]).includes(status);
 }
 
-// The only statuses the leads table colours, so a telecaller spots them at a glance. Every other status stays plain.
-// The drawer's status banner uses the same colours for these three. UI-only rule.
+// Colours every status in the leads table and the drawer's status banner, so a telecaller spots a lead's
+// stage at a glance. Single source of truth for both: `satisfies Record<LeadStatus, ...>` means a status
+// added to LEAD_STATUSES without a colour here fails the build. UI-only rule.
 export const STATUS_HIGHLIGHTS = {
+  "New Lead": "maroon",
+  "Not reachable": "yellow",
+  Working: "pink",
+  Closed: "gray",
+  Archived: "maroon",
+  Sale: "pink",
+  "Site visit done": "green",
+  "Next project": "pink",
+  "Site visit pending": "golden",
+  "Final call": "maroon",
+  "Didn't pick the call": "pink",
   "Details send via WhatsApp": "green",
   Disqualified: "red",
-  "Didn't pick the call": "pink",
-} as const satisfies Partial<Record<LeadStatus, string>>;
+  "Asking Time for Taking Decision": "blue",
+} as const satisfies Record<LeadStatus, string>;
 
 export type StatusHighlight = (typeof STATUS_HIGHLIGHTS)[keyof typeof STATUS_HIGHLIGHTS];
 
-export function statusHighlight(status: LeadStatus): StatusHighlight | undefined {
-  return (STATUS_HIGHLIGHTS as Partial<Record<LeadStatus, StatusHighlight>>)[status];
+export function statusHighlight(status: LeadStatus): StatusHighlight {
+  return STATUS_HIGHLIGHTS[status];
 }
 
 // The status every lead starts with. While a lead is still on it nobody has recorded the outcome of a first
