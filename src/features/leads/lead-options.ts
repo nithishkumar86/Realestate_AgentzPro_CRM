@@ -102,6 +102,10 @@ export const CALL_IN_PHONE_MIN_DIGITS = 10;
 // The Leads page "Assignee" filter: one of these two shortcuts, or a member's user id.
 export const ASSIGNEE_FILTER_SHORTCUTS = ["me", "unassigned"] as const;
 
+// The Leads page / dashboard "Campaign" filter: a Google Ads campaign id (Google's int64, kept as digits) or
+// "unattributed". Digits only, because the id is placed inside a PostgREST or() filter.
+export const GOOGLE_CAMPAIGN_ID_PATTERN = /^\d{1,30}$/;
+
 export const NOTE_MAX_LENGTH = 2000;
 export const TASK_TITLE_MAX_LENGTH = 200;
 export const TASK_DESCRIPTION_MAX_LENGTH = 2000;

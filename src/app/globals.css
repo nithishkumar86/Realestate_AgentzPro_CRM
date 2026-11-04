@@ -2277,6 +2277,11 @@ button.mvp-field-box__control {
 
 button.mvp-field-box__control:focus-visible { outline: none; }
 
+/* A filter that does not apply to the leads shown (Page and Ad while Google Ads leads are shown): greyed out and
+   inert, with no hover lift. The pointer passes through to the wrapper, which carries the tooltip and the cursor. */
+.mvp-field-box:has(> button.mvp-field-box__control:disabled) { cursor: not-allowed; }
+button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; border-color: var(--field-outline); box-shadow: none; transform: none; }
+
 .mvp-field-box__value {
   flex: 1 1 auto;
   min-width: 0;
@@ -2391,6 +2396,13 @@ button.mvp-field-box__control:focus-visible { outline: none; }
 }
 
 .mvp-dropdown-option:hover { background: var(--surface-muted); border-color: var(--border); }
+/* The option is a flex box, where text-overflow has no effect: the label span carries the "…" (long Google Ads
+   campaign names; the Campaign options also show the full name on hover). */
+.mvp-dropdown-option__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A long filter value with no spaces (e.g. IN_TN_Chennai_Search_Brand_Exact) wraps inside its chip instead of
+   widening the page. */
+.mvp-active-filters .mvp-filter-chip { max-width: 100%; }
+.mvp-filter-chip > span { min-width: 0; overflow-wrap: anywhere; text-align: left; }
 
 .mvp-dropdown-option--active {
   border-color: var(--nav-active-border);

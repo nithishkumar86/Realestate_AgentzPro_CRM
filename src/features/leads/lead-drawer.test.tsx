@@ -1156,10 +1156,13 @@ describe("call-in leads", () => {
     fireEvent.change(within(dialog).getByLabelText(/^Phone/), { target: { value: "98765 43210" } });
     fireEvent.change(within(dialog).getByLabelText(/Project Name/), { target: { value: "Karuvi" } });
     const before = queryCalls(calls).length;
+    const filterLoadsBefore = calls.filter((call) => call.url.startsWith("/api/leads/filters")).length;
     fireEvent.click(within(dialog).getByRole("button", { name: "Save lead" }));
     await waitFor(() => expect(calls.find((call) => call.url === "/api/leads/telecaller")?.body).toEqual({ leadName: "Ravi", phone: "98765 43210", whatsapp: "", projectName: "Karuvi", callDate: "2026-10-30" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add call-in lead" })).not.toBeInTheDocument());
     await waitFor(() => expect(queryCalls(calls).length).toBeGreaterThan(before));
+    // The filter choices reload too, so a campaign (or "Unattributed") the new lead brings is offered at once.
+    await waitFor(() => expect(calls.filter((call) => call.url.startsWith("/api/leads/filters")).length).toBeGreaterThan(filterLoadsBefore));
   });
 
   it("keeps the form open and shows the message when the phone number already exists", async () => {

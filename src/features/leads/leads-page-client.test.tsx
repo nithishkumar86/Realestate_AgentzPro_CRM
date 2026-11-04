@@ -47,6 +47,9 @@ const FILTER_OPTIONS = {
   // Two ads on the same Page, the case the Ad filter exists for.
   ads: [{ id: "6301-karuvi", name: "karuvi" }, { id: "6302-aruvi", name: "aruvi" }],
   defaultAdId: null,
+  // The Google Ads Campaign filter's choices, shaped as list_google_lead_campaigns returns them.
+  campaigns: [{ id: "22334455", name: "Chennai Villas" }, { id: "99887766", name: "Coimbatore Plots" }],
+  hasUnattributedCampaign: true,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -64,11 +67,15 @@ function jsonResponse(body: unknown, status = 200): Response {
  */
 type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string; source?: string };
 
-function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolean } = {}) {
-  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[], patches: [] as Array<{ id: string; body: Record<string, unknown> }> };
+/** `filterOptions` may be a list: the n-th filters load gets the n-th entry (the last one repeats). */
+function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolean } = {}, filterOptions: Record<string, unknown> | Array<Record<string, unknown>> = FILTER_OPTIONS) {
+  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[], patches: [] as Array<{ id: string; body: Record<string, unknown> }>, filterLoads: 0 };
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
-    if (url.startsWith("/api/leads/filters")) return jsonResponse(FILTER_OPTIONS);
+    if (url.startsWith("/api/leads/filters")) {
+      sent.filterLoads += 1;
+      return jsonResponse(Array.isArray(filterOptions) ? filterOptions[Math.min(sent.filterLoads, filterOptions.length) - 1] : filterOptions);
+    }
     if (url === "/api/leads/query") {
       sent.query.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const remaining = dummyLeads.filter((lead) => !sent.deletes.includes(lead.id)).map((lead) => sent.patches.filter((patch) => patch.id === lead.id).reduce((current, patch) => ({ ...current, ...patch.body, labelSource: "telecaller" }), lead));
@@ -442,10 +449,13 @@ describe("deleting leads", () => {
     expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("cannot be undone"));
     expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("never be recovered"));
 
+    const filterLoadsBefore = sent.filterLoads;
     await waitFor(() => expect(sent.deletes).toEqual(["lead-1"]));
     await waitFor(() => expect(screen.queryByText("Dummy One")).not.toBeInTheDocument());
     expect(screen.getByText("Dummy Two")).toBeInTheDocument();
     expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining("1 lead"));
+    // The deleted lead may have been the last of a campaign: the filter choices reload.
+    await waitFor(() => expect(sent.filterLoads).toBeGreaterThan(filterLoadsBefore));
     expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
   });
 
@@ -654,5 +664,222 @@ describe("call-in leads in the table", () => {
     expect(within(callerRow).getByText("Villa Ad")).toBeInTheDocument();
     const metaRow = screen.getByText("Meta lead").closest("tr")!;
     expect(within(metaRow).queryByRole("img", { name: "Added by telecaller" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Google Ads Campaign filter", () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:leads");
+    URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** Picks a Source once both connection checks have answered (the Source list is final by then). */
+  async function chooseSource(option: string) {
+    await waitFor(() => expect(sourceChecks.google).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); });
+    await chooseFilter("Source", option);
+  }
+
+  it("is offered only for Google Ads, where Page and All ads show greyed out and cannot open", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+    expect(screen.queryByRole("button", { name: "Campaign" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Page" })).toBeEnabled();
+
+    await chooseSource("Google Ads");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "google_ads" }));
+    expect(screen.getByRole("button", { name: "Page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ad" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Page" }).closest(".mvp-field-box")).toHaveAttribute("title", "Facebook only");
+    fireEvent.click(screen.getByRole("button", { name: "Ad" }));
+    expect(screen.queryByRole("option", { name: /karuvi/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Campaign" }));
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["All campaigns", "Unattributed", "Chennai Villas", "Coimbatore Plots"]);
+  });
+
+  it("drops a Facebook Page and ad when switching to Google Ads, then filters and downloads by campaign", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+    await chooseFilter("Page", "Chennai Homes");
+    await chooseFilter("Ad", /karuvi/);
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ pageRecordId: PAGE_ID, adId: "6301-karuvi" }));
+
+    await chooseSource("Google Ads");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "google_ads" }));
+    expect(sent.query.at(-1)).not.toHaveProperty("pageRecordId");
+    expect(sent.query.at(-1)).not.toHaveProperty("adId");
+
+    await chooseFilter("Campaign", "Chennai Villas");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "google_ads", campaignId: "22334455" }));
+    expect(screen.getByRole("button", { name: "Remove Campaign filter: Chennai Villas" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(sent.export).toHaveLength(1));
+    expect(sent.export[0]).toEqual({ quickFilter: "all", source: "google_ads", campaignId: "22334455" });
+  });
+
+  it("filters Unattributed Google Ads leads, and the chip's X brings back every campaign", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+    await chooseSource("Google Ads");
+    await chooseFilter("Campaign", "Unattributed");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ campaignId: "unattributed" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Campaign filter: Unattributed" }));
+    await waitFor(() => expect(sent.query.at(-1)).not.toHaveProperty("campaignId"));
+    expect(sent.query.at(-1)).toMatchObject({ source: "google_ads" });
+  });
+
+  it("keeps Page, Ad and Assignee working when only the campaign lookup failed, and says so on Google Ads", async () => {
+    const sent = stubLeadApi([], {}, { ...FILTER_OPTIONS, campaigns: [], hasUnattributedCampaign: false, campaignsUnavailable: true });
+    await renderLeadsPage(sent);
+    expect(screen.queryByText("Lead filters could not be loaded.")).not.toBeInTheDocument();
+    await chooseFilter("Page", "Chennai Homes");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ pageRecordId: PAGE_ID }));
+
+    await chooseSource("Google Ads");
+    const campaign = screen.getByRole("button", { name: "Campaign" });
+    expect(campaign).toBeDisabled();
+    expect(campaign).toHaveTextContent("Campaigns unavailable");
+    expect(campaign.closest(".mvp-field-box")).toHaveAttribute("title", "Campaigns could not be loaded. Reload the page to try again.");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "google_ads" }));
+    expect(sent.query.at(-1)).not.toHaveProperty("campaignId");
+
+    await chooseFilter("Source", "Facebook");
+    expect(screen.queryByRole("button", { name: "Campaign" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Campaigns unavailable")).not.toBeInTheDocument();
+  });
+
+  it("keeps the last loaded campaigns (and the selected one) when a later reload of the choices fails", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS, {}, [FILTER_OPTIONS, { ...FILTER_OPTIONS, campaigns: [], hasUnattributedCampaign: false, campaignsUnavailable: true }]);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    await renderLeadsPage(sent);
+    await chooseSource("Google Ads");
+    await chooseFilter("Campaign", "Chennai Villas");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ campaignId: "22334455" }));
+
+    // Deleting a lead reloads the choices, and that reload's campaign lookup fails.
+    const loads = sent.filterLoads;
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+    await waitFor(() => expect(sent.filterLoads).toBeGreaterThan(loads));
+
+    const campaign = screen.getByRole("button", { name: "Campaign" });
+    expect(campaign).toBeEnabled();
+    expect(campaign).toHaveTextContent("Chennai Villas");
+    expect(screen.getByRole("button", { name: "Remove Campaign filter: Chennai Villas" })).toBeInTheDocument();
+    fireEvent.click(campaign);
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["All campaigns", "Unattributed", "Chennai Villas", "Coimbatore Plots"]);
+  });
+
+  it("drops the campaign and re-enables Page and Ad when the source changes or its chip is removed", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+    await chooseSource("Google Ads");
+    await chooseFilter("Campaign", "Coimbatore Plots");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ campaignId: "99887766" }));
+
+    await chooseFilter("Source", "Facebook");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "facebook" }));
+    expect(sent.query.at(-1)).not.toHaveProperty("campaignId");
+    expect(screen.queryByRole("button", { name: "Campaign" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Page" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Ad" })).toBeEnabled();
+
+    await chooseFilter("Source", "Google Ads");
+    await chooseFilter("Campaign", "Chennai Villas");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ campaignId: "22334455" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Source filter: Google Ads" }));
+    await waitFor(() => expect(sent.query.at(-1)).not.toHaveProperty("source"));
+    expect(sent.query.at(-1)).not.toHaveProperty("campaignId");
+    expect(screen.queryByRole("button", { name: /Remove Campaign filter/ })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a campaign", "Chennai Villas", "22334455", { campaigns: [{ id: "99887766", name: "Coimbatore Plots" }] }],
+    ["Unattributed", "Unattributed", "unattributed", { hasUnattributedCampaign: false }],
+  ])("drops %s that is no longer offered after a delete, so the dropdown, chip and rows agree", async (_kind, name, id, afterDelete) => {
+    const sent = stubLeadApi(DUMMY_LEADS, {}, [FILTER_OPTIONS, { ...FILTER_OPTIONS, ...afterDelete }]);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    await renderLeadsPage(sent);
+    await chooseSource("Google Ads");
+    await chooseFilter("Campaign", name);
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ campaignId: id }));
+
+    // The deleted lead was the campaign's last one: the reloaded choices no longer have it.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+    await waitFor(() => expect(sent.query.at(-1)).not.toHaveProperty("campaignId"));
+    expect(sent.query.at(-1)).toMatchObject({ source: "google_ads" });
+    expect(screen.getByRole("button", { name: "Campaign" })).toHaveTextContent("All campaigns");
+    expect(screen.queryByRole("button", { name: /Remove Campaign filter/ })).not.toBeInTheDocument();
+  });
+
+  it("reloads the choices exactly once after a successful delete", async () => {
+    const sent = stubLeadApi(DUMMY_LEADS);
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    await renderLeadsPage(sent);
+    await waitFor(() => expect(sent.filterLoads).toBe(1));
+
+    // Both deletes succeed: one reload.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (1)" }));
+    await waitFor(() => expect(sent.deletes).toEqual(["lead-1"]));
+    await waitFor(() => expect(sent.filterLoads).toBe(2));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(sent.filterLoads).toBe(2);
+  });
+
+  it("reloads the choices when one lead of a bulk delete was deleted and another failed", async () => {
+    const sent = { query: [] as Array<Record<string, unknown>>, filterLoads: 0 };
+    vi.spyOn(globalThis, "confirm").mockReturnValue(true);
+    vi.spyOn(globalThis, "alert").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/leads/filters")) { sent.filterLoads += 1; return jsonResponse(FILTER_OPTIONS); }
+      if (url === "/api/leads/query") { sent.query.push(JSON.parse(String(init?.body)) as Record<string, unknown>); return jsonResponse({ items: DUMMY_LEADS, total: DUMMY_LEADS.length, timezone: "Asia/Kolkata" }); }
+      if (url === "/api/leads/lead-1" && init?.method === "DELETE") return jsonResponse({ error: { message: "This lead cannot be deleted because other records still reference it." } }, 409);
+      if (url === "/api/leads/lead-2" && init?.method === "DELETE") return jsonResponse({ id: "lead-2" });
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    render(<LeadsPageClient />);
+    await waitFor(() => expect(sent.query).toHaveLength(1));
+    await screen.findByText("Dummy Two");
+    await waitFor(() => expect(sent.filterLoads).toBe(1));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy One" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Dummy Two" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete (2)" }));
+    await screen.findByText("This lead cannot be deleted because other records still reference it.");
+    await waitFor(() => expect(sent.filterLoads).toBe(2));
+  });
+
+  it("never offers a campaign id the lead routes would reject", async () => {
+    const sent = stubLeadApi([], {}, { ...FILTER_OPTIONS, campaigns: [{ id: "", name: "Ghost Campaign" }, { id: "customers/1/campaigns/2", name: "Resource path" }, ...FILTER_OPTIONS.campaigns] });
+    await renderLeadsPage(sent);
+    await chooseSource("Google Ads");
+    const campaign = screen.getByRole("button", { name: "Campaign" });
+    expect(campaign).toHaveTextContent("All campaigns");
+    fireEvent.click(campaign);
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["All campaigns", "Unattributed", "Chennai Villas", "Coimbatore Plots"]);
+  });
+
+  it("shows a campaign's full name on hover, and no hover text on the other filters' options", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+    await chooseSource("Google Ads");
+    fireEvent.click(screen.getByRole("button", { name: "Campaign" }));
+    expect(await screen.findByRole("option", { name: "Chennai Villas" })).toHaveAttribute("title", "Chennai Villas");
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    expect(await screen.findByRole("option", { name: "Working" })).not.toHaveAttribute("title");
   });
 });
