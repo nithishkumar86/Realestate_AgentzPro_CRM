@@ -40,11 +40,23 @@ describe("POST /api/dashboard/stats", () => {
     ["an unknown platform", { platform: "myspace" }],
     ["a Page filter on the Google Ads view", { platform: "google_ads", pageRecordId: "00000000-0000-4000-8000-000000000001" }],
     ["an Ad filter on the Telecaller view", { platform: "telecaller", adId: "unattributed" }],
+    ["a Campaign filter on the Facebook view", { platform: "facebook", campaignId: "22334455" }],
+    ["a Campaign filter on the Telecaller view", { platform: "telecaller", campaignId: "unattributed" }],
+    ["a non-numeric campaign id", { platform: "google_ads", campaignId: "1,lead_name.eq.x" }],
+    ["an Ad filter on the Google Ads view", { platform: "google_ads", adId: "6301" }],
   ])("rejects %s with a 400 before touching data", async (_name, body) => {
     mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
     const response = await POST(post(body));
     expect(response.status).toBe(400);
     expect(mocks.stats).not.toHaveBeenCalled();
+  });
+
+  it.each(["22334455", "unattributed"])("accepts the Campaign filter %s on the Google Ads view", async (campaignId) => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.stats.mockResolvedValue({ tenantId: "tenant-a", platform: "google_ads", total: 0 });
+    const response = await POST(post({ platform: "google_ads", campaignId, status: "Sale" }));
+    expect(response.status).toBe(200);
+    expect(mocks.stats).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, { platform: "google_ads", campaignId, status: "Sale" });
   });
 
   it.each(["facebook", "google_ads", "telecaller"])("accepts the %s platform with the common filters", async (platform) => {

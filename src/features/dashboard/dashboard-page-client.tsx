@@ -11,6 +11,7 @@ import { DASHBOARD_PLATFORMS, getDashboardPlatform, resolveDashboardPlatform, ty
 import { PlatformSwitcher } from "@/features/dashboard/platform-switcher";
 import { useDashboardStats, type LiveState } from "@/features/dashboard/use-dashboard-live";
 import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters";
+import { GOOGLE_CAMPAIGN_ID_PATTERN } from "@/features/leads/lead-options";
 import { useLeadFilters } from "@/features/leads/use-lead-filters";
 import { useLeadSources, type ConnectionHealth } from "@/features/leads/use-lead-sources";
 import { getConnectionOverview, getGoogleAdsOverview } from "@/services/crm-api-client";
@@ -24,9 +25,9 @@ const LIVE_TEXT: Record<LiveState, string> = {
 
 const DESCRIPTION = "Live lead analytics for your company, one platform at a time. Filters work exactly like the Leads page.";
 
-/** "Page, Ad, Status and Label" for Facebook, "Status and Label" where Page and Ad do not apply. */
+/** "Page, Ad, Status and Label" for Facebook, "Campaign, Status and Label" for Google Ads, "Status and Label" otherwise. */
 function filterNames(platform: DashboardPlatform): string {
-  return [...(platform.filters.page ? ["Page"] : []), ...(platform.filters.ad ? ["Ad"] : []), "Status", "Label"].join(", ").replace(/, (?=[^,]*$)/, " and ");
+  return [...(platform.filters.page ? ["Page"] : []), ...(platform.filters.ad ? ["Ad"] : []), ...(platform.filters.campaign ? ["Campaign"] : []), "Status", "Label"].join(", ").replace(/, (?=[^,]*$)/, " and ");
 }
 
 /**
@@ -64,18 +65,36 @@ function DashboardView({ platforms, initialPlatform, initialHealth }: { platform
   // An aggregate view opens on ALL ads: pre-selecting one ad (as /leads does) would silently narrow every number.
   const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setFilterError });
 
-  // Page and Ad are sent only for a platform that has them; switching platform also clears them (see switchPlatform).
-  const { pageRecordId, adId, ...commonFilters } = filters.filterBody();
+  // Page, Ad and Campaign are sent only for a platform that has them; switching platform also clears them (see
+  // switchPlatform).
+  const { pageRecordId, adId, campaignId, ...commonFilters } = filters.filterBody();
   const body = {
     ...commonFilters,
     ...(platform.filters.page && pageRecordId ? { pageRecordId } : {}),
     ...(platform.filters.ad && adId ? { adId } : {}),
+    ...(platform.filters.campaign && campaignId ? { campaignId } : {}),
     platform: platformId,
   };
   const { stats: latestStats, isFetching, error, liveState, lastUpdated, refresh } = useDashboardStats(body);
   // Right after a switch the last response is still the previous platform's: show the loader, never those numbers
   // under the new platform's name.
   const stats = latestStats?.platform === platformId ? latestStats : null;
+
+  // Live updates add and delete leads, so the Campaign filter's choices can go stale. The "Leads by campaign" chart and
+  // the choices use the same campaign key (coalesce(google_campaign_id, lead_ad_ref), "unattributed" when none):
+  // - the chart names a campaign the choices lack → a lead brought it → reload;
+  // - with no other filter narrowing the chart, it lists exactly every campaign, so a choice it lacks was deleted → reload.
+  // In normal use the two agree and nothing reloads (at most one extra reload in the moment a filter changes before
+  // the new numbers arrive; the check is skipped while numbers are loading).
+  const { reloadOptions } = filters;
+  const { campaigns, hasUnattributedCampaign, campaignsUnavailable } = filters.options;
+  // An id the choices never offer (not 1–30 digits, see useLeadFilters) is left out, so it cannot cause a reload every update.
+  const chartKeys = new Set((stats?.byGroup ?? []).flatMap((group) => group.id == null ? ["unattributed"] : GOOGLE_CAMPAIGN_ID_PATTERN.test(group.id) ? [group.id] : []));
+  const choiceKeys = new Set([...campaigns.map((campaign) => campaign.id), ...(hasUnattributedCampaign ? ["unattributed"] : [])]);
+  const chartIsUnfiltered = !filters.campaignId && !filters.status && !filters.label && !filters.from && filters.quick === "All Leads";
+  const campaignChoicesStale = Boolean(platform.filters.campaign && stats && !isFetching && filters.optionsLoaded && !campaignsUnavailable
+    && ([...chartKeys].some((key) => !choiceKeys.has(key)) || (chartIsUnfiltered && [...choiceKeys].some((key) => !chartKeys.has(key)))));
+  useEffect(() => { if (campaignChoicesStale) reloadOptions(); }, [campaignChoicesStale, lastUpdated, reloadOptions]);
 
   // Each connection's health is loaded the first time a platform that depends on it is shown. It is skipped only once
   // it has LOADED (not once it was requested), so React Strict Mode's mount → unmount → mount still shows the warning.
@@ -110,6 +129,7 @@ function DashboardView({ platforms, initialPlatform, initialHealth }: { platform
   function switchPlatform(next: DashboardPlatformId) {
     setPlatformId(next);
     filters.clearPage();
+    filters.setCampaignId("");
     writePlatformToUrl(next);
   }
 
@@ -126,7 +146,10 @@ function DashboardView({ platforms, initialPlatform, initialHealth }: { platform
 
       <ConnectionNotice platform={platform} health={health} />
 
-      <LeadFilterBar filters={filters} showSearch={false} showQuickToggle={false} showPage={platform.filters.page} showAd={platform.filters.ad} />
+      {/* On Google Ads, Page and Ad stay on screen greyed out (Facebook only) and Campaign is added, as on the Leads page. */}
+      <LeadFilterBar filters={filters} showSearch={false} showQuickToggle={false}
+        showPage={platform.filters.page || platform.filters.campaign} showAd={platform.filters.ad || platform.filters.campaign}
+        showCampaign={platform.filters.campaign} pageAdDisabled={platform.filters.campaign} />
       {filterError ? <div className="mvp-inline-error">{filterError}</div> : null}
       <LeadActiveFilters filters={filters} />
 

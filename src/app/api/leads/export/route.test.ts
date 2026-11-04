@@ -51,6 +51,9 @@ describe("authenticated lead CSV route", () => {
       { quickFilter: "all", status: "New Lead", dateFrom: "2026-09-01", dateTo: "2026-09-10", pageRecordId: "00000000-0000-4000-8000-000000000001", adId: "6301-karuvi" },
       // Everything at once: search, Page, Ad, Status, Label and both date bounds.
       { quickFilter: "all", search: "Kumar", pageRecordId: "00000000-0000-4000-8000-000000000001", adId: "6301-karuvi", status: "New Lead", label: "Hot", dateFrom: "2026-09-01", dateTo: "2026-09-10" },
+      // Google Ads with a campaign (or Unattributed): the download follows the Campaign filter.
+      { quickFilter: "all", source: "google_ads", campaignId: "22334455" },
+      { quickFilter: "all", source: "google_ads", campaignId: "unattributed", status: "New Lead", search: "Kumar" },
     ];
 
     for (const body of bodies) {
@@ -72,5 +75,17 @@ describe("authenticated lead CSV route", () => {
     expect(response.status).toBe(200);
     const date = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-10-26T05:00:00Z"));
     expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`,Caller,"${date}",New Lead,Warm,,9876543210,,,,Ravi`);
+  });
+
+  it.each([
+    ["a non-numeric campaign id", "abc"],
+    ["a campaign id that would add a PostgREST filter", "1,lead_name.eq.x"],
+    ["an empty campaign id", ""],
+  ])("rejects %s with a 400 before reading any lead", async (_name, campaignId) => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.query.mockClear();
+    const response = await POST(new Request("http://localhost/api/leads/export", { method: "POST", body: JSON.stringify({ quickFilter: "all", source: "google_ads", campaignId }), headers: { "content-type": "application/json" } }));
+    expect(response.status).toBe(400);
+    expect(mocks.query).not.toHaveBeenCalled();
   });
 });

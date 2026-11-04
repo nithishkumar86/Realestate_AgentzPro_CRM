@@ -3,7 +3,7 @@ import "server-only";
 import { AppError } from "@/lib/server/app-error";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 import type { TenantRequestContext } from "@/lib/server/tenant-context";
-import { LEAD_SOURCE_LABELS, LEAD_SOURCES, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
+import { GOOGLE_CAMPAIGN_ID_PATTERN, LEAD_SOURCE_LABELS, LEAD_SOURCES, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import { listAssignableMembers, loadProfileNames, type AssignableMember } from "@/lib/server/lead-assignment-service";
 import { EMAIL_FIELD_KEYS, NAME_FIELD_KEYS, PHONE_FIELD_KEYS } from "@/lib/server/lead-redaction";
 
@@ -18,6 +18,8 @@ export interface LeadSearchRequest {
   dateTo?: string;
   pageRecordId?: string;
   adId?: string | "unattributed";
+  /** A Google Ads campaign id (digits only, checked by the routes) or "unattributed". */
+  campaignId?: string | "unattributed";
   status?: LeadStatus;
   label?: LeadLabel;
   /** "me" (the signed-in member), "unassigned", or a member's user id. */
@@ -61,6 +63,11 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   // scoped to Facebook so a Google campaign id can never match. "Unattributed" = a Facebook lead with no known ad.
   if (request.adId === "unattributed") query = query.is("lead_ad_ref", null).eq("lead_platform", "facebook");
   else if (request.adId) query = query.eq("lead_ad_ref", request.adId).eq("lead_platform", "facebook");
+  // The Campaign filter lists Google Ads campaigns: google_campaign_id of a lead Google sent, lead_ad_ref of a call-in
+  // lead credited to a Google campaign (the dashboard's "Leads by campaign" rule, get_dashboard_platform_stats_v2).
+  // Scoped to Google Ads so a Facebook ad id can never match. "Unattributed" = a Google Ads lead with neither.
+  if (request.campaignId === "unattributed") query = query.eq("lead_platform", "google_ads").is("google_campaign_id", null).is("lead_ad_ref", null);
+  else if (request.campaignId) query = query.eq("lead_platform", "google_ads").or(`google_campaign_id.eq.${request.campaignId},lead_ad_ref.eq.${request.campaignId}`);
   if (request.status) query = query.eq("status", request.status);
   if (request.label) query = query.eq("label", request.label);
   if (request.assignee === "unassigned") query = query.is("assigned_user_id", null);
@@ -130,6 +137,12 @@ export type LeadFilterOptions = {
   pages: Array<{ id: string; name: string }>;
   ads: Array<{ id: string; name: string | null }>;
   defaultAdId: string | null;
+  /** The Google Ads campaigns this company's Google Ads leads belong to (the Campaign filter's choices). */
+  campaigns: Array<{ id: string; name: string }>;
+  /** Whether any Google Ads lead has no campaign (the Campaign filter then offers "Unattributed"). */
+  hasUnattributedCampaign: boolean;
+  /** The campaign lookup failed: the Campaign filter says so, every other filter still loads. */
+  campaignsUnavailable: boolean;
   /** Active members a lead can be assigned to (also the Assignee filter's choices). */
   assignees: AssignableMember[];
   /** Whether the caller may change a lead's assignee; only the owner can. */
@@ -154,13 +167,24 @@ export async function getLeadFilterOptions(context: TenantRequestContext, isOwne
   if (selectedPageId) adQuery = adQuery.eq("facebook_page_record_id", selectedPageId);
   const { data: leads, error: adsError } = await adQuery;
   if (adsError) throw new AppError("Lead filters could not be loaded.", { status: 500, code: "LEAD_FILTERS_FAILED" });
+  // Google Ads campaigns are isolated: if only their lookup fails, Page, Ad and Assignee still load for every company
+  // (most use Facebook only) and the Campaign filter reports it, instead of the whole filter bar failing.
+  const { data: campaignData, error: campaignsError } = await db.rpc("list_google_lead_campaigns", { p_tenant_id: context.tenantId });
+  if (campaignsError) console.error(JSON.stringify({ operation: "lead_filter_options", code: "GOOGLE_CAMPAIGNS_LOOKUP_FAILED", dbCode: campaignsError.code ?? null }));
+  const campaignResult = (campaignsError ? {} : campaignData ?? {}) as { campaigns?: unknown; hasUnattributed?: unknown };
+  // Only ids the lead routes accept are offered (any other id would be rejected the moment it was picked), and a blank
+  // name falls back to "Campaign <id>", the database function's own last fallback.
+  const campaigns = (Array.isArray(campaignResult.campaigns) ? campaignResult.campaigns : []).flatMap((item) => {
+    const { id, name } = (item ?? {}) as { id?: unknown; name?: unknown };
+    return typeof id === "string" && GOOGLE_CAMPAIGN_ID_PATTERN.test(id) && typeof name === "string" ? [{ id, name: name.trim() || `Campaign ${id}` }] : [];
+  });
   const assignees = await listAssignableMembers(context.tenantId);
   const ads = new Map<string, { id: string; name: string | null }>();
   for (const lead of leads ?? []) {
     if (typeof lead.ad_id === "string" && !ads.has(lead.ad_id)) ads.set(lead.ad_id, { id: lead.ad_id, name: asNullableString(lead.ad_name) });
   }
   const values = [...ads.values()].sort((left, right) => (left.name ?? left.id).localeCompare(right.name ?? right.id));
-  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null, assignees, isOwner };
+  return { pages: (pages ?? []).map((page) => ({ id: page.id, name: page.facebook_page_name })), ads: values, defaultAdId: leads?.[0]?.ad_id ?? null, campaigns, hasUnattributedCampaign: campaignResult.hasUnattributed === true, campaignsUnavailable: Boolean(campaignsError), assignees, isOwner };
 }
 
 /**

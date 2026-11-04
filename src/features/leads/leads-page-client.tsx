@@ -45,7 +45,9 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   const [reloadKey, setReloadKey] = useState(0);
   // The leads page opens on ALL leads with no filter applied; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setError });
-  const { quick, status, label, assignee, source, from, to, pageRecordId, adId, search } = filters;
+  const { quick, status, label, assignee, source, from, to, pageRecordId, adId, campaignId, search } = filters;
+  // Google Ads leads have no Facebook Page or ad: the Campaign filter replaces them, and Page / Ad show greyed out.
+  const isGoogleAds = source === "google_ads";
   const { sources } = useLeadSources();
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     void loadLeads();
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filterBody() is a pure function of exactly these values
-  }, [quick, status, label, assignee, source, from, to, pageRecordId, adId, search, reloadKey]);
+  }, [quick, status, label, assignee, source, from, to, pageRecordId, adId, campaignId, search, reloadKey]);
 
   async function download(): Promise<void> {
     try {
@@ -93,6 +95,9 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     setIsDeleting(true);
     try {
       const responses = await Promise.all(selectedLeadIds.map((id) => fetch(`/api/leads/${id}`, { method: "DELETE" })));
+      // A deleted lead may have been the last one of a campaign (or the last unattributed one): refresh the choices
+      // whenever any lead was deleted, also when another one in the same batch failed.
+      if (responses.some((response) => response.ok)) filters.reloadOptions();
       const failed = responses.find((response) => !response.ok);
       if (failed) throw new Error(await readError(failed, "Selected leads could not be deleted."));
       setLeads((current) => current.filter((lead) => !selectedLeadIds.includes(lead.id)));
@@ -149,7 +154,10 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   }, []);
   const closeDrawer = useCallback(() => setDrawerLeadId(null), []);
   const closeAddLead = useCallback(() => setIsAddLeadOpen(false), []);
-  const handleLeadAdded = useCallback(() => { setIsAddLeadOpen(false); setReloadKey((key) => key + 1); }, []);
+  // A new call-in lead can bring a filter choice the page has not loaded yet (a Google Ads campaign, or the first
+  // unattributed Google Ads lead), so the filter choices reload together with the table. Deleting does the same.
+  const { reloadOptions } = filters;
+  const handleLeadAdded = useCallback(() => { setIsAddLeadOpen(false); setReloadKey((key) => key + 1); reloadOptions(); }, [reloadOptions]);
   // A task alert links here with ?lead=<id>: fetch that lead on its own (it may be filtered out or past the first
   // page) and open its drawer.
   const [focusedLead, setFocusedLead] = useState<Lead | null>(null);
@@ -165,7 +173,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? (focusedLead?.id === drawerLeadId ? focusedLead : null) : null;
 
   return <div className="mvp-leads">
-    <LeadFilterBar filters={filters} showAssignee showSource sources={sources ?? LOADING_SOURCES} actions={<>
+    <LeadFilterBar filters={filters} showAssignee showSource showCampaign={isGoogleAds} pageAdDisabled={isGoogleAds} sources={sources ?? LOADING_SOURCES} actions={<>
       <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
         <Trash2 size={16} />{isDeleting ? "Deleting..." : selectedLeadIds.length > 0 ? `Delete (${selectedLeadIds.length})` : "Delete"}
       </button>

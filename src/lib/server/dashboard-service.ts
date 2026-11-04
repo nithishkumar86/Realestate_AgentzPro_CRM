@@ -14,11 +14,11 @@ import type { TenantRequestContext } from "@/lib/server/tenant-context";
 
 /**
  * The platform the dashboard shows plus the /leads filters it honours. Paging, sorting and bulk actions do not
- * apply. Page and Ad only reach here for a platform that offers them (the route rejects them otherwise).
+ * apply. Page, Ad and Campaign only reach here for a platform that offers them (the route rejects them otherwise).
  */
 export type DashboardStatsRequest = Pick<
   LeadSearchRequest,
-  "quickFilter" | "dateFrom" | "dateTo" | "pageRecordId" | "adId" | "status" | "label"
+  "quickFilter" | "dateFrom" | "dateTo" | "pageRecordId" | "adId" | "campaignId" | "status" | "label"
 > & { platform: DashboardPlatformId };
 
 export type TimelineGranularity = "hour" | "day" | "month";
@@ -65,6 +65,7 @@ export interface DashboardRpcArgs {
   p_label: string | null;
   p_tz: string;
   p_granularity: TimelineGranularity;
+  p_campaign_id: string | null;
 }
 
 /**
@@ -104,6 +105,7 @@ export function buildDashboardRpcArgs(
     p_label: request.label ?? null,
     p_tz: timezone,
     p_granularity: chooseGranularity(range),
+    p_campaign_id: request.campaignId ?? null,
   };
 }
 
@@ -123,7 +125,7 @@ function chooseGranularity(range: { from: string; to: string } | null): Timeline
 export async function getDashboardStats(context: TenantRequestContext, request: DashboardStatsRequest): Promise<DashboardStats> {
   const timezone = await getTenantTimezone(context.tenantId);
   const args = buildDashboardRpcArgs(context.tenantId, timezone, request);
-  const { data, error } = await getSupabaseAdminClient().rpc("get_dashboard_platform_stats", args);
+  const { data, error } = await getSupabaseAdminClient().rpc("get_dashboard_platform_stats_v2", args);
   if (error || !data || typeof data !== "object") {
     throw new AppError("The dashboard could not be loaded.", { status: 500, code: "DASHBOARD_STATS_FAILED" });
   }

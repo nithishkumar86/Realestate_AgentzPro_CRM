@@ -101,9 +101,14 @@ describe("buildDashboardRpcArgs", () => {
     const all = buildDashboardRpcArgs(TENANT, TZ, { ...FB, pageRecordId: "p1", adId: "unattributed", status: "Sale", label: "Hot" }, NOW);
     expect(all).toMatchObject({ p_page_record_id: "p1", p_ad_id: "unattributed", p_status: "Sale", p_label: "Hot" });
     const none = buildDashboardRpcArgs(TENANT, TZ, FB, NOW);
-    expect(none).toMatchObject({ p_page_record_id: null, p_ad_id: null, p_status: null, p_label: null });
+    expect(none).toMatchObject({ p_page_record_id: null, p_ad_id: null, p_campaign_id: null, p_status: null, p_label: null });
     expect(none).not.toHaveProperty("p_search");
     expect(none).not.toHaveProperty("p_search_digits");
+  });
+
+  it("passes the Google Ads Campaign filter (a campaign id or unattributed) as p_campaign_id", () => {
+    expect(buildDashboardRpcArgs(TENANT, TZ, { platform: "google_ads", campaignId: "22334455" }, NOW).p_campaign_id).toBe("22334455");
+    expect(buildDashboardRpcArgs(TENANT, TZ, { platform: "google_ads", campaignId: "unattributed" }, NOW).p_campaign_id).toBe("unattributed");
   });
 
   it.each(["facebook", "google_ads", "telecaller"] as const)("scopes the aggregate to the %s platform", (platform) => {
@@ -120,7 +125,7 @@ describe("getDashboardStats", () => {
     const stats = await getDashboardStats({ tenantId: TENANT, userId: "u" }, { ...FB, status: "Sale" });
     expect(mocks.from).toHaveBeenCalledWith("tenants");
     expect((timezone.eq as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("tenant_id", TENANT);
-    expect(mocks.rpc).toHaveBeenCalledWith("get_dashboard_platform_stats", expect.objectContaining({ p_tenant_id: TENANT, p_lead_source: "facebook", p_status: "Sale", p_tz: TZ }));
+    expect(mocks.rpc).toHaveBeenCalledWith("get_dashboard_platform_stats_v2", expect.objectContaining({ p_tenant_id: TENANT, p_lead_source: "facebook", p_status: "Sale", p_tz: TZ, p_campaign_id: null }));
     expect(stats).toMatchObject({ tenantId: TENANT, platform: "facebook", timezone: TZ, total: 4, monthToDate: 2 });
   });
 

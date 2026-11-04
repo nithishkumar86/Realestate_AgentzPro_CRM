@@ -32,7 +32,7 @@ class FakeEventSource {
 }
 
 const PAGE_ID = "11111111-1111-4111-8111-111111111111";
-const OPTIONS = { pages: [{ id: PAGE_ID, name: "Chennai Homes" }], ads: [{ id: "6301-karuvi", name: "karuvi" }], defaultAdId: "6301-karuvi" };
+const OPTIONS = { pages: [{ id: PAGE_ID, name: "Chennai Homes" }], ads: [{ id: "6301-karuvi", name: "karuvi" }], defaultAdId: "6301-karuvi", campaigns: [{ id: "22334455", name: "Chennai Villas" }], hasUnattributedCampaign: false };
 const LABELS = ["Hot", "Warm", "Cold", "Not Interested"].map((label, index) => ({ label, count: [2, 1, 1, 1][index] }));
 function stats(overrides: Record<string, unknown> = {}) {
   return {
@@ -50,12 +50,14 @@ const GOOGLE_NONE = { connection: null, hasWebhook: false, webhookStopped: false
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const statBodies: Array<Record<string, unknown>> = [];
+let filterLoads = 0;
 // Like the real route, the response is for the platform the request asked for (overrides can say otherwise).
 let nextStats: (body: Record<string, unknown>) => Response;
 const respond = (overrides: Record<string, unknown> = {}) => (body: Record<string, unknown>) => json(stats({ platform: body.platform, ...overrides }));
 
 beforeEach(() => {
   statBodies.length = 0;
+  filterLoads = 0;
   FakeEventSource.instances = [];
   nextStats = respond();
   // By default the company uses every platform: a Facebook Page is connected and Google Ads is signed in with a webhook.
@@ -64,7 +66,7 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/dashboard");
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.startsWith("/api/leads/filters")) return json(OPTIONS);
+    if (url.startsWith("/api/leads/filters")) { filterLoads += 1; return json(OPTIONS); }
     if (url === "/api/dashboard/stats") { const body = JSON.parse(String(init?.body)) as Record<string, unknown>; statBodies.push(body); return nextStats(body); }
     throw new Error(`unexpected fetch ${url}`);
   }));
@@ -225,7 +227,7 @@ describe("dashboard platform switch", () => {
     expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["Facebook", "Google Ads", "Telecaller"]);
   });
 
-  it("switches the whole dashboard to Google Ads: own breakdowns, no Page/Ad filters, stale page cleared, URL kept", async () => {
+  it("switches the whole dashboard to Google Ads: own breakdowns, Page/Ad greyed out, stale page cleared, URL kept", async () => {
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     fireEvent.click(screen.getByRole("button", { name: "Page" }));
@@ -240,14 +242,96 @@ describe("dashboard platform switch", () => {
     expect(screen.getByTestId("Leads by Google Ads ad group")).toHaveTextContent("Search assets:5");
     expect(screen.getByText("Top ad groups")).toBeInTheDocument();
     expect(screen.getByText("This Month Google Ads Leads")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Page" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Ad" })).not.toBeInTheDocument();
+    // Page and Ad stay on screen greyed out (Facebook only), as on the Leads page; Campaign takes their place.
+    expect(screen.getByRole("button", { name: "Page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ad" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Campaign" })).toBeEnabled();
     expect(screen.queryByTestId("Leads by Facebook Page")).not.toBeInTheDocument();
     expect(window.location.search).toBe("?platform=google_ads");
 
     await switchTo("Facebook");
     await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ platform: "facebook" }));
     expect(window.location.search).toBe("");
+  });
+
+  it("filters the Google Ads view by campaign, and drops the campaign when switching platform", async () => {
+    render(<DashboardPageClient initialPlatform="google_ads" />);
+    await screen.findByTestId("month-leads");
+    expect(screen.getByText(/Follows the Campaign, Status and Label filters\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Campaign" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Chennai Villas" }));
+    await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ platform: "google_ads", campaignId: "22334455" }));
+    expect(screen.getByRole("button", { name: "Remove Campaign filter: Chennai Villas" })).toBeInTheDocument();
+
+    await switchTo("Facebook");
+    await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ platform: "facebook" }));
+    expect(statBodies.at(-1)).not.toHaveProperty("campaignId");
+    expect(screen.queryByRole("button", { name: "Campaign" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Page" })).toBeEnabled();
+
+    await switchTo("Google Ads");
+    await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ platform: "google_ads" }));
+    expect(statBodies.at(-1)).not.toHaveProperty("campaignId");
+  });
+
+  it("reloads the Campaign choices when a live update shows a campaign the filter does not have yet", async () => {
+    nextStats = respond({ byGroup: [{ id: "22334455", name: "Chennai Villas", count: 1 }] });
+    render(<DashboardPageClient initialPlatform="google_ads" />);
+    await screen.findByTestId("month-leads");
+    await waitFor(() => expect(filterLoads).toBeGreaterThan(0));
+    const settled = filterLoads;
+    // Every campaign in the chart is known: nothing reloads.
+    act(() => FakeEventSource.instances[0].emit("ready", { tenantId: "tenant-a" }));
+    act(() => FakeEventSource.instances[0].emit("change"));
+    await waitFor(() => expect(statBodies.length).toBeGreaterThan(1), { timeout: 3000 });
+    await act(async () => { await Promise.resolve(); });
+    expect(filterLoads).toBe(settled);
+
+    // A new lead brings campaign 999, which the filter has not loaded: the choices reload.
+    nextStats = respond({ byGroup: [{ id: "22334455", name: "Chennai Villas", count: 1 }, { id: "999", name: "Campaign 999", count: 1 }] });
+    const before = statBodies.length;
+    act(() => FakeEventSource.instances[0].emit("change"));
+    await waitFor(() => expect(statBodies.length).toBeGreaterThan(before), { timeout: 3000 });
+    await waitFor(() => expect(filterLoads).toBeGreaterThan(settled), { timeout: 3000 });
+  });
+
+  it("does not reload the Campaign choices for a chart campaign id the filter can never offer", async () => {
+    nextStats = respond({ byGroup: [{ id: "22334455", name: "Chennai Villas", count: 1 }, { id: "abc", name: "Bad id", count: 1 }, { id: "", name: "Blank id", count: 1 }] });
+    render(<DashboardPageClient initialPlatform="google_ads" />);
+    await screen.findByTestId("month-leads");
+    await waitFor(() => expect(filterLoads).toBeGreaterThan(0));
+    const settled = filterLoads;
+    act(() => FakeEventSource.instances[0].emit("ready", { tenantId: "tenant-a" }));
+    act(() => FakeEventSource.instances[0].emit("change"));
+    await waitFor(() => expect(statBodies.length).toBeGreaterThan(1), { timeout: 3000 });
+    await act(async () => { await Promise.resolve(); });
+    expect(filterLoads).toBe(settled);
+  });
+
+  it("reloads the Campaign choices when a live update shows a campaign was deleted, but not while another filter narrows the chart", async () => {
+    nextStats = respond({ byGroup: [{ id: "22334455", name: "Chennai Villas", count: 1 }] });
+    render(<DashboardPageClient initialPlatform="google_ads" />);
+    await screen.findByTestId("month-leads");
+    await waitFor(() => expect(filterLoads).toBeGreaterThan(0));
+    act(() => FakeEventSource.instances[0].emit("ready", { tenantId: "tenant-a" }));
+
+    // A Status filter narrows the chart: a campaign missing from it is not a deleted campaign, nothing reloads.
+    fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    nextStats = respond({ byGroup: [] });
+    fireEvent.click(await screen.findByRole("option", { name: "Sale" }));
+    await waitFor(() => expect(statBodies.at(-1)).toMatchObject({ status: "Sale" }));
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    const settled = filterLoads;
+    act(() => FakeEventSource.instances[0].emit("change"));
+    const before = statBodies.length;
+    await waitFor(() => expect(statBodies.length).toBeGreaterThan(before), { timeout: 3000 });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(filterLoads).toBe(settled);
+
+    // No filter narrows the chart and it no longer lists the campaign: its last lead was deleted, the choices reload.
+    fireEvent.click(screen.getByRole("button", { name: "Remove Status filter: Sale" }));
+    await waitFor(() => expect(statBodies.at(-1)).not.toHaveProperty("status"));
+    await waitFor(() => expect(filterLoads).toBeGreaterThan(settled), { timeout: 3000 });
   });
 
   it("keeps the platform when Clear all removes the filters", async () => {
