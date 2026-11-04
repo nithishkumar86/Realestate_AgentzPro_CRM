@@ -3,8 +3,8 @@
 import { BookOpen, Check, ChevronDown, Lock, Mail, Megaphone, Phone, X, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
-  DUE_DATE_PRESET_OPTIONS, LEAD_STATUSES, NOTE_MAX_LENGTH, STATUS_HIGHLIGHTS, TASK_DESCRIPTION_MAX_LENGTH, TASK_REPEAT_OPTIONS, TASK_TITLE_MAX_LENGTH, TASK_TITLE_OTHER, TASK_TITLE_PRESETS,
-  isFinalLeadStatus, isTaskCreationLocked, type DueDatePreset, type LeadStatus, type TaskRepeatRule,
+  DUE_DATE_PRESET_OPTIONS, LEAD_STATUSES, NOTE_MAX_LENGTH, TASK_DESCRIPTION_MAX_LENGTH, TASK_REPEAT_OPTIONS, TASK_TITLE_MAX_LENGTH, TASK_TITLE_OTHER, TASK_TITLE_PRESETS,
+  isFinalLeadStatus, isTaskCreationLocked, statusHighlight, type DueDatePreset, type LeadStatus, type TaskRepeatRule,
 } from "@/features/leads/lead-options";
 import { LeadRequestError, describeRepeat, fetchOpenTask, formatActivityTime, formatTaskDue, offerToCancelOpenTask, todayIn, updateTask } from "@/features/leads/lead-task-client";
 import { TIME_PATTERN, defaultDueChoice, nowInZone, presetDueDate, zonedDateTime } from "@/features/leads/task-schedule";
@@ -16,17 +16,6 @@ import { readError, type AssigneeOption } from "@/features/leads/use-lead-filter
 import type { LeadTask } from "@/lib/server/lead-timeline-service";
 
 export interface DrawerLead { id: string; leadName: string | null; phone: string | null; email?: string | null; facebookPage: string; adName: string; leadDate?: string; label?: string; status: LeadStatus; assignedUserId?: string | null; assigneeName?: string | null }
-
-/** Colour of the status banner: where the lead is in the pipeline at a glance (UI only). */
-const STATUS_TONES: Partial<Record<LeadStatus, "blue" | "green" | "yellow" | "red" | "pink" | "gray">> = {
-  "New Lead": "blue",
-  Working: "yellow", "Site visit pending": "yellow", "Final call": "yellow", "Next project": "yellow", "Asking Time for Taking Decision": "yellow",
-  Sale: "green", "Site visit done": "green",
-  "Not reachable": "red",
-  Closed: "gray", Archived: "gray",
-  // The leads table's highlighted statuses keep the same colour here.
-  ...STATUS_HIGHLIGHTS,
-};
 
 const LABEL_PILLS: Record<string, string> = { Hot: "red", Warm: "yellow", Cold: "blue", "Not Interested": "gray" };
 
@@ -289,7 +278,7 @@ export function LeadDrawer({ lead, timezone, assignees = [], isOwner = false, on
 
         <ol className="mvp-flow" aria-label="After every call">
           <StepItem number={1} done={shown.status} current={currentStep === "status"}>
-            <div className="mvp-lead-status" data-tone={STATUS_TONES[displayStatus] ?? "gray"}>
+            <div className="mvp-lead-status" data-tone={statusHighlight(displayStatus)}>
               <span className="mvp-lead-status__title">Current status</span>
               <RowDropdown ariaLabel={`Change status for ${lead.leadName ?? "Unnamed Lead"}`} value={displayStatus} options={LEAD_STATUSES} width={220}
                 open={statusOpen} onOpenChange={setStatusOpen} onChange={chooseStatus} />
