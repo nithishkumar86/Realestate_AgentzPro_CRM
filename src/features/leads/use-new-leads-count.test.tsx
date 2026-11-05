@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LEADS_CHANGED_EVENT } from "@/components/task-bell";
 import { NEW_LEADS_POLL_MS, useNewLeadsCount, type NewLeadsSnapshot } from "@/features/leads/use-new-leads-count";
 
+/** The shell's answer to "is the live stream up?"; down unless a test says otherwise. */
+const live = vi.hoisted(() => { const state = { up: false }; return { state, isUp: () => state.up }; });
+vi.mock("@/components/task-bell", async (importOriginal) => ({ ...await importOriginal<typeof import("@/components/task-bell")>(), useLiveStreamUp: () => live.isUp }));
+
 const CURSOR = "2026-11-05T09:30:12.123456+00:00";
 const snapshot = (body: Record<string, unknown> = { quickFilter: "all", pageSize: 100 }, cursor: string | null = CURSOR): NewLeadsSnapshot => ({ body, cursor });
 
@@ -23,6 +27,7 @@ const setHidden = (hidden: boolean) => Object.defineProperty(document, "hidden",
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   setHidden(false);
+  live.state.up = false;
   fetchMock = vi.fn(async () => reply(1));
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -68,7 +73,7 @@ describe("useNewLeadsCount", () => {
     expect(result.current).toBe(4);
   });
 
-  it("checks every 60 s while the tab is visible, and never while it is hidden", async () => {
+  it("checks every 60 s while the tab is visible and the live stream is down, and never while it is hidden", async () => {
     const saved = snapshot();
     renderHook(() => useNewLeadsCount(saved));
     await wait(NEW_LEADS_POLL_MS - 1);
@@ -81,6 +86,19 @@ describe("useNewLeadsCount", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     setHidden(false);
     leadWritten(); await wait(750);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends nothing on the 60 s fallback while the live stream is up, and checks again once it is down", async () => {
+    live.state.up = true;
+    const saved = snapshot();
+    renderHook(() => useNewLeadsCount(saved));
+    await wait(NEW_LEADS_POLL_MS * 3);
+    expect(fetchMock).not.toHaveBeenCalled();
+    leadWritten(); await wait(750);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    live.state.up = false;
+    await wait(NEW_LEADS_POLL_MS);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

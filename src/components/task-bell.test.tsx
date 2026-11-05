@@ -1,14 +1,17 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LEADS_CHANGED_EVENT, TASKS_CHANGED_EVENT, TaskAlertsProvider, TaskBell } from "@/components/task-bell";
+import { LEADS_CHANGED_EVENT, TASKS_CHANGED_EVENT, TaskAlertsProvider, TaskBell, useLiveStreamUp } from "@/components/task-bell";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
-  private listeners = new Map<string, Array<() => void>>();
+  private listeners = new Map<string, Array<(event: { data: string }) => void>>();
+  onerror: (() => void) | null = null;
   constructor(public url: string) { FakeEventSource.instances.push(this); }
-  addEventListener(type: string, callback: () => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]); }
-  emit(type: string) { for (const callback of this.listeners.get(type) ?? []) callback(); }
+  addEventListener(type: string, callback: (event: { data: string }) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), callback]); }
+  /** Sends an event the way the stream route does: JSON data, or a raw string as it arrived. */
+  emit(type: string, data: unknown = {}) { for (const callback of this.listeners.get(type) ?? []) callback({ data: typeof data === "string" ? data : JSON.stringify(data) }); }
+  fail() { this.onerror?.(); }
   close() {}
 }
 
@@ -201,5 +204,86 @@ describe("window events for the Tasks and Leads pages", () => {
     expect(fired).toEqual({ tasks: 1, leads: 1 });
     stop();
     await settle();
+  });
+});
+
+describe("live stream health for /leads", () => {
+  async function mount() {
+    const view = renderHook(() => useLiveStreamUp(), { wrapper: ({ children }) => <TaskAlertsProvider>{children}</TaskAlertsProvider> });
+    await settle();
+    return () => view.result.current();
+  }
+  function countLeadEvents() {
+    let count = 0;
+    const onLeads = () => { count += 1; };
+    window.addEventListener(LEADS_CHANGED_EVENT, onLeads);
+    return { count: () => count, stop: () => window.removeEventListener(LEADS_CHANGED_EVENT, onLeads) };
+  }
+  const sayLive = () => act(() => stream().emit("status", { state: "live" }));
+
+  it("is down until the server says live, then up, and asks /leads for one catch-up check", async () => {
+    const isUp = await mount();
+    const leads = countLeadEvents();
+    act(() => stream().emit("ready", { tenantId: "tenant-a" }));
+    expect(isUp()).toBe(false);
+    sayLive();
+    expect(isUp()).toBe(true);
+    expect(leads.count()).toBe(1);
+    sayLive();
+    expect(leads.count()).toBe(1);
+    leads.stop();
+  });
+
+  it("goes down on a stream error and on degraded, and checks again each time it is live again", async () => {
+    const isUp = await mount();
+    const leads = countLeadEvents();
+    sayLive();
+    act(() => stream().fail());
+    expect(isUp()).toBe(false);
+    sayLive();
+    expect(isUp()).toBe(true);
+    expect(leads.count()).toBe(2);
+    act(() => stream().emit("status", { state: "degraded" }));
+    expect(isUp()).toBe(false);
+    sayLive();
+    expect(leads.count()).toBe(3);
+    leads.stop();
+  });
+
+  it("goes down while the tab is hidden and stays down after return until the new stream says live", async () => {
+    const isUp = await mount();
+    sayLive();
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(isUp()).toBe(false);
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(isUp()).toBe(false);
+    sayLive();
+    expect(isUp()).toBe(true);
+    await settle();
+  });
+
+  it("counts a stream that stays quiet longer than a healthy reconnect cycle as down", async () => {
+    const isUp = await mount();
+    sayLive();
+    await act(async () => { await vi.advanceTimersByTimeAsync(329_999); });
+    expect(isUp()).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(isUp()).toBe(false);
+    sayLive();
+    expect(isUp()).toBe(true);
+  });
+
+  it("counts unreadable status data as down", async () => {
+    const isUp = await mount();
+    sayLive();
+    act(() => stream().emit("status", "not json"));
+    expect(isUp()).toBe(false);
+  });
+
+  it("says down outside the shell, so a page keeps its own checks", () => {
+    const { result } = renderHook(() => useLiveStreamUp());
+    expect(result.current()).toBe(false);
   });
 });

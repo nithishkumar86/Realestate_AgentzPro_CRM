@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LEADS_CHANGED_EVENT } from "@/components/task-bell";
+import { LEADS_CHANGED_EVENT, useLiveStreamUp } from "@/components/task-bell";
 
 /**
  * The table's last successful load: the exact request it sent and the cursor it got back (when the company's newest
@@ -12,16 +12,18 @@ export interface NewLeadsSnapshot { body: Record<string, unknown>; cursor: strin
 
 /** Same pause as the dashboard: several lead writes in a burst become one check. */
 const CHANGE_DEBOUNCE_MS = 750;
-/** Fallback while the tab is visible, for when the live signal is down. */
+/** Fallback while the tab is visible and the live signal is down. */
 export const NEW_LEADS_POLL_MS = 60_000;
 
 /**
  * How many new leads the /leads table would show if it were reloaded now; 0 while it is loading.
  *
- * - The shell's live stream fires LEADS_CHANGED_EVENT on any lead write and when the tab comes back into view; a
- *   check follows after a short pause. Only new leads raise the count: a status, label or assignee change does not.
- * - Every 60 s while the tab is visible a check runs anyway, so the count still arrives with the live signal down.
- *   Background checks never renew the idle-logout clock (only real activity does).
+ * - The shell's live stream fires LEADS_CHANGED_EVENT on any lead write, when the tab comes back into view and when
+ *   the stream (re)connects; a check follows after a short pause. Only new leads raise the count: a status, label or
+ *   assignee change does not.
+ * - Every 60 s while the tab is visible and the live stream is down, a check runs anyway, so the count still arrives
+ *   without the live signal. While the stream is up the fallback sends nothing. Background checks never renew the
+ *   idle-logout clock (only real activity does).
  * - One request at a time; events during a request queue exactly one more. An event during a table load is kept and
  *   checked right after the load. A reply for an older load is never shown (the count belongs to its snapshot).
  * - Best effort: a failed check shows nothing, and a signed-out session (401) stops checking until the next load.
@@ -29,6 +31,7 @@ export const NEW_LEADS_POLL_MS = 60_000;
 export function useNewLeadsCount(snapshot: NewLeadsSnapshot | undefined): number {
   const [result, setResult] = useState<{ snapshot: NewLeadsSnapshot; count: number } | null>(null);
   const missedWhileLoading = useRef(false);
+  const isStreamUp = useLiveStreamUp();
 
   useEffect(() => {
     if (!snapshot) {
@@ -68,7 +71,8 @@ export function useNewLeadsCount(snapshot: NewLeadsSnapshot | undefined): number
     const schedule = () => { clearTimeout(debounce); debounce = setTimeout(() => void check(), CHANGE_DEBOUNCE_MS); };
 
     window.addEventListener(LEADS_CHANGED_EVENT, schedule);
-    const poll = setInterval(() => void check(), NEW_LEADS_POLL_MS);
+    // Asked at each tick, so the fallback starts and stops with the stream without restarting anything else.
+    const poll = setInterval(() => { if (!isStreamUp()) void check(); }, NEW_LEADS_POLL_MS);
     if (missedWhileLoading.current) { missedWhileLoading.current = false; schedule(); }
     return () => {
       disposed = true;
@@ -77,7 +81,7 @@ export function useNewLeadsCount(snapshot: NewLeadsSnapshot | undefined): number
       clearTimeout(debounce);
       controller?.abort();
     };
-  }, [snapshot]);
+  }, [snapshot, isStreamUp]);
 
   // A count belongs to the load it was checked for; a newer load (or one still running) shows none.
   if (!snapshot || !result || result.snapshot !== snapshot) return 0;

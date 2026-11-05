@@ -18,6 +18,12 @@ export const TASKS_CHANGED_EVENT = "agentz:tasks-changed";
  * view; the /leads page then checks for new leads.
  */
 export const LEADS_CHANGED_EVENT = "agentz:leads-changed";
+/**
+ * How long the live stream may stay quiet before /leads stops trusting it. The stream route ends every stream after
+ * 280 s and the browser reconnects 3 s later, which says "live" again, so a working stream is never quiet this long;
+ * a connection that died without an error counts as down after it.
+ */
+const LIVE_STREAM_QUIET_MS = 330_000;
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
 function urlBase64ToBytes(value: string): Uint8Array<ArrayBuffer> {
@@ -43,6 +49,14 @@ interface TaskAlerts {
   clearAll: () => Promise<void>;
 }
 const TaskAlertsContext = createContext<TaskAlerts | null>(null);
+/**
+ * Asks whether the shell's live stream is delivering lead changes right now. A function, not a value, so asking
+ * never re-renders a page. Outside the shell it always answers no, so the caller keeps its own checks.
+ */
+const LiveStreamContext = createContext<() => boolean>(() => false);
+export function useLiveStreamUp(): () => boolean {
+  return useContext(LiveStreamContext);
+}
 
 /**
  * Lives in the shell so reminders reach the member on every page: it owns the live stream, the alert list, browser
@@ -52,6 +66,8 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
   const [feed, setFeed] = useState<Feed>({ items: [], unread: 0 });
   const [toasts, setToasts] = useState<TaskNotification[]>([]);
   const known = useRef<Set<string> | null>(null);
+  const streamUp = useRef(false);
+  const isStreamUp = useCallback(() => streamUp.current, []);
 
   const load = useCallback(async (announce: boolean) => {
     try {
@@ -77,14 +93,36 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
     // One live stream for the whole shell (the Tasks page listens to the window events below instead of opening
     // its own). It is closed while the tab is hidden, like the dashboard's, and a catch-up fetch runs on return.
     let source: EventSource | null = null;
+    // Up only once the server says "live" on this connection: from then on every lead write reaches the page. Any
+    // doubt (an error, "degraded", unreadable data, a hidden tab, a stream quiet for too long) counts as down, and
+    // /leads then runs its own once-a-minute check, as it did before.
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const markDown = () => { clearTimeout(quiet); quiet = undefined; streamUp.current = false; };
+    const markUp = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(markDown, LIVE_STREAM_QUIET_MS);
+      if (streamUp.current) return;
+      streamUp.current = true;
+      // A lead saved while the stream was down or still connecting sent no signal, so /leads checks once now.
+      window.dispatchEvent(new Event(LEADS_CHANGED_EVENT));
+    };
     const open = () => {
       source?.close();
-      source = new EventSource("/api/dashboard/stream");
-      source.addEventListener("task_reminder", () => { void load(true); window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); });
-      source.addEventListener("change", () => { window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); window.dispatchEvent(new Event(LEADS_CHANGED_EVENT)); });
+      const next = new EventSource("/api/dashboard/stream");
+      source = next;
+      next.addEventListener("task_reminder", () => { void load(true); window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); });
+      next.addEventListener("change", () => { window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); window.dispatchEvent(new Event(LEADS_CHANGED_EVENT)); });
+      next.addEventListener("status", (event) => {
+        let state: unknown;
+        try { state = (JSON.parse((event as MessageEvent<string>).data) as { state?: unknown }).state; } catch { state = undefined; }
+        if (state === "live") markUp();
+        else markDown();
+      });
+      // The browser reconnects by itself (or gives up); either way nothing arrives until the server says "live" again.
+      next.onerror = () => { if (source === next) markDown(); };
     };
     const onVisibility = () => {
-      if (document.hidden) { source?.close(); source = null; return; }
+      if (document.hidden) { source?.close(); source = null; markDown(); return; }
       open();
       void load(true);
       window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
@@ -92,7 +130,7 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
     };
     if (!document.hidden) open();
     document.addEventListener("visibilitychange", onVisibility);
-    return () => { clearTimeout(first); document.removeEventListener("visibilitychange", onVisibility); source?.close(); };
+    return () => { clearTimeout(first); document.removeEventListener("visibilitychange", onVisibility); source?.close(); markDown(); };
   }, [load]);
 
   // Browser push: offered only where the browser supports it and the member has not decided yet.
@@ -162,7 +200,7 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
   }
 
   return <TaskAlertsContext.Provider value={{ feed, pushState, enablePush, disablePush, markRead, clearAll }}>
-    {children}
+    <LiveStreamContext.Provider value={isStreamUp}>{children}</LiveStreamContext.Provider>
     {/* Always mounted so screen readers announce a card the moment it is added. */}
     <div className="mvp-reminder-stack" aria-live="polite">
       {toasts.map((item) => <div key={item.id} className={item.kind === "due_now" ? "mvp-reminder mvp-reminder--now" : "mvp-reminder"} role="group" aria-label="Task reminder">
