@@ -21,9 +21,10 @@ const CALLBACK_MESSAGES: Record<string, { tone: "success" | "danger" | "warning"
 };
 
 /**
- * Google Ads on the Connection page. Two independent parts:
- * 1. Lead form webhook: the URL and key the owner pastes into each Google Ads lead form. This alone delivers leads.
- * 2. Google sign-in (read-only): used only to show which campaign each lead came from.
+ * Google Ads on the Connection page. The owner is asked to complete both parts, in this order:
+ * 1. Google sign-in (read-only): used only to show which campaign each lead came from.
+ * 2. Lead form webhook: the URL and key the owner pastes into each Google Ads lead form. This alone delivers leads,
+ *    so it is never locked behind step 1 (e.g. an agency-run Google Ads account the owner cannot sign in to).
  */
 export function GoogleAdsConnectionCard() {
   const [overview, setOverview] = useState<GoogleAdsOverview | null>(null);
@@ -88,8 +89,41 @@ export function GoogleAdsConnectionCard() {
     {isLoading ? <LoadingState label="Loading Google Ads details" /> : null}
     {overview && !canManage ? <Notice tone="info" title="Only the company owner can set up Google Ads." /> : null}
     {overview && canManage ? <>
+      <p className="field-help"><strong>Complete steps 1 and 2 to start receiving leads to your account.</strong></p>
       <div className="google-ads-step">
-        <h3><span className="google-step-number" aria-hidden="true">1</span>Lead form webhook</h3>
+        <h3><span className="google-step-number" aria-hidden="true">1</span>Campaign names</h3>
+        <p className="field-help">Sign in with Google so each lead shows the campaign it came from. AgentzPro CRM only reads your campaign and ad group names; it never changes your campaigns, budgets or billing. <Link href="/privacy-policy">Privacy Policy</Link></p>
+        {overview.needsReconnect ? <Notice tone="warning" title="Google stopped accepting this sign-in. Sign in with Google again so campaign names keep loading." /> : null}
+        {overview.connection ? <>
+          <div className="meta-list">
+            <div className="meta-item"><span>Google account</span><strong>{overview.connection.email}</strong></div>
+            <div className="meta-item"><span>Connected</span><strong>{formatDateTime(overview.connection.connectedAt)}</strong></div>
+            <div className="meta-item"><span>Ads accounts</span><strong>{overview.linkedAccounts.length > 0 ? overview.linkedAccounts.map((account) => account.name ?? formatCustomerId(account.customerId)).join(", ") : "None chosen"}</strong></div>
+          </div>
+          {accountOptions ? <div className="stack">
+            {accountOptions.length === 0 ? <p className="field-help">This Google account has no Google Ads accounts it can open.</p> : <div className="google-account-list">{accountOptions.map((account) => <label className="google-account-list__item" key={account.customerId}>
+              <input type="checkbox" checked={selected.includes(account.customerId)} onChange={() => setSelected((current) => current.includes(account.customerId) ? current.filter((id) => id !== account.customerId) : [...current, account.customerId])} />
+              <span><strong>{account.name ?? "Unnamed account"}</strong><small>{formatCustomerId(account.customerId)}{account.loginCustomerId ? ` · via manager ${formatCustomerId(account.loginCustomerId)}` : ""}</small></span>
+            </label>)}</div>}
+            <div className="button-group">
+              <button className="button" type="button" disabled={busy === "save"} onClick={() => void run("save", async () => { await saveGoogleAdsAccounts(selected); setAccountOptions(null); await reload(); setMessage({ tone: "success", text: "Google Ads accounts saved." }); })}>{busy === "save" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Check aria-hidden="true" size={18} />}Save accounts</button>
+              <button className="button button--secondary" type="button" onClick={() => setAccountOptions(null)}><X aria-hidden="true" size={18} />Cancel</button>
+            </div>
+          </div> : null}
+          <div className="button-group">
+            {!accountOptions ? <button className="button button--secondary" type="button" disabled={busy === "accounts"} onClick={() => void run("accounts", async () => { const { accounts } = await getGoogleAdsAccountOptions(); setAccountOptions(accounts); setSelected(accounts.filter((account) => account.selected).map((account) => account.customerId)); })}>{busy === "accounts" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Check aria-hidden="true" size={18} />}Choose accounts</button> : null}
+            {overview.needsReconnect ? <GoogleSignInButton /> : null}
+            {confirmDisconnect ? <>
+              <span className="field-help">This removes only the Google sign-in. Leads keep arriving; new leads will not get campaign names until you sign in again. To stop leads, use Stop receiving Google Ads leads in step 2.</span>
+              <button className="button button--danger" type="button" disabled={busy === "disconnect"} onClick={() => void run("disconnect", async () => { await disconnectGoogleAds(); setConfirmDisconnect(false); setAccountOptions(null); await reload(); setMessage({ tone: "success", text: "Google sign-in removed. Leads keep arriving." }); })}>{busy === "disconnect" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Disconnect Google</button>
+              <button className="button button--secondary" type="button" onClick={() => setConfirmDisconnect(false)}><X aria-hidden="true" size={18} />Cancel</button>
+            </> : <button className="button button--danger" type="button" onClick={() => setConfirmDisconnect(true)}><Unplug aria-hidden="true" size={18} />Disconnect Google</button>}
+          </div>
+        </> : <div className="button-group"><GoogleSignInButton /></div>}
+      </div>
+
+      <div className="google-ads-step">
+        <h3><span className="google-step-number" aria-hidden="true">2</span>Lead form webhook</h3>
         {overview.webhookStopped && !webhook ? null : <p className="field-help">In Google Ads, open each lead form, go to Lead delivery → Webhook integration, and paste this URL and key. Then select Send test data.</p>}
         {webhook ? <>
           <div className="field"><label htmlFor="google-webhook-url">Webhook URL</label>
@@ -119,38 +153,6 @@ export function GoogleAdsConnectionCard() {
         </> : <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Create webhook URL and key</button></div>}
       </div>
       {stoppedNotice ? <LeadsStoppedPopup onOk={() => setStoppedNotice(false)} /> : null}
-
-      <div className="google-ads-step">
-        <h3><span className="google-step-number" aria-hidden="true">2</span>Campaign names <span className="google-step-optional">Optional</span></h3>
-        <p className="field-help">Sign in with Google so each lead shows the campaign it came from. AgentzPro CRM only reads your campaign and ad group names; it never changes your campaigns, budgets or billing. <Link href="/privacy-policy">Privacy Policy</Link></p>
-        {overview.needsReconnect ? <Notice tone="warning" title="Google stopped accepting this sign-in. Sign in with Google again so campaign names keep loading." /> : null}
-        {overview.connection ? <>
-          <div className="meta-list">
-            <div className="meta-item"><span>Google account</span><strong>{overview.connection.email}</strong></div>
-            <div className="meta-item"><span>Connected</span><strong>{formatDateTime(overview.connection.connectedAt)}</strong></div>
-            <div className="meta-item"><span>Ads accounts</span><strong>{overview.linkedAccounts.length > 0 ? overview.linkedAccounts.map((account) => account.name ?? formatCustomerId(account.customerId)).join(", ") : "None chosen"}</strong></div>
-          </div>
-          {accountOptions ? <div className="stack">
-            {accountOptions.length === 0 ? <p className="field-help">This Google account has no Google Ads accounts it can open.</p> : <div className="google-account-list">{accountOptions.map((account) => <label className="google-account-list__item" key={account.customerId}>
-              <input type="checkbox" checked={selected.includes(account.customerId)} onChange={() => setSelected((current) => current.includes(account.customerId) ? current.filter((id) => id !== account.customerId) : [...current, account.customerId])} />
-              <span><strong>{account.name ?? "Unnamed account"}</strong><small>{formatCustomerId(account.customerId)}{account.loginCustomerId ? ` · via manager ${formatCustomerId(account.loginCustomerId)}` : ""}</small></span>
-            </label>)}</div>}
-            <div className="button-group">
-              <button className="button" type="button" disabled={busy === "save"} onClick={() => void run("save", async () => { await saveGoogleAdsAccounts(selected); setAccountOptions(null); await reload(); setMessage({ tone: "success", text: "Google Ads accounts saved." }); })}>{busy === "save" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Check aria-hidden="true" size={18} />}Save accounts</button>
-              <button className="button button--secondary" type="button" onClick={() => setAccountOptions(null)}><X aria-hidden="true" size={18} />Cancel</button>
-            </div>
-          </div> : null}
-          <div className="button-group">
-            {!accountOptions ? <button className="button button--secondary" type="button" disabled={busy === "accounts"} onClick={() => void run("accounts", async () => { const { accounts } = await getGoogleAdsAccountOptions(); setAccountOptions(accounts); setSelected(accounts.filter((account) => account.selected).map((account) => account.customerId)); })}>{busy === "accounts" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Check aria-hidden="true" size={18} />}Choose accounts</button> : null}
-            {overview.needsReconnect ? <GoogleSignInButton /> : null}
-            {confirmDisconnect ? <>
-              <span className="field-help">This removes only the Google sign-in. Leads keep arriving; new leads will not get campaign names until you sign in again. To stop leads, use Stop receiving Google Ads leads in step 1.</span>
-              <button className="button button--danger" type="button" disabled={busy === "disconnect"} onClick={() => void run("disconnect", async () => { await disconnectGoogleAds(); setConfirmDisconnect(false); setAccountOptions(null); await reload(); setMessage({ tone: "success", text: "Google sign-in removed. Leads keep arriving." }); })}>{busy === "disconnect" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Disconnect Google</button>
-              <button className="button button--secondary" type="button" onClick={() => setConfirmDisconnect(false)}><X aria-hidden="true" size={18} />Cancel</button>
-            </> : <button className="button button--danger" type="button" onClick={() => setConfirmDisconnect(true)}><Unplug aria-hidden="true" size={18} />Disconnect Google</button>}
-          </div>
-        </> : <div className="button-group"><GoogleSignInButton /></div>}
-      </div>
     </> : null}
   </div></section>;
 }
