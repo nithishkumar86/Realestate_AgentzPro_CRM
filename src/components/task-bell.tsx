@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { formatDateTime } from "@/lib/date-utils";
+import { readLeadChange } from "@/lib/lead-change-signal";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
 import logoIcon from "@/logo-icon.png";
 
@@ -15,7 +16,8 @@ const MAX_TOASTS = 3;
 export const TASKS_CHANGED_EVENT = "agentz:tasks-changed";
 /**
  * Fired on window when the live stream says a lead was added, changed or deleted, and when the tab comes back into
- * view; the /leads page then checks for new leads.
+ * view; the /leads page then checks for new leads. For an update its detail is a LeadChangeDetail (when the newest
+ * changed lead was saved), so /leads can skip changes to older leads; every other case has no detail.
  */
 export const LEADS_CHANGED_EVENT = "agentz:leads-changed";
 /**
@@ -111,7 +113,10 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
       const next = new EventSource("/api/dashboard/stream");
       source = next;
       next.addEventListener("task_reminder", () => { void load(true); window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); });
-      next.addEventListener("change", () => { window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); window.dispatchEvent(new Event(LEADS_CHANGED_EVENT)); });
+      next.addEventListener("change", (event) => {
+        window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
+        window.dispatchEvent(new CustomEvent(LEADS_CHANGED_EVENT, { detail: readLeadChange((event as MessageEvent<unknown>).data) }));
+      });
       next.addEventListener("status", (event) => {
         let state: unknown;
         try { state = (JSON.parse((event as MessageEvent<string>).data) as { state?: unknown }).state; } catch { state = undefined; }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LEADS_CHANGED_EVENT, useLiveStreamUp } from "@/components/task-bell";
+import { onlyOlderLeadsChanged } from "@/lib/lead-change-signal";
 
 /**
  * The table's last successful load: the exact request it sent and the cursor it got back (when the company's newest
@@ -20,7 +21,8 @@ export const NEW_LEADS_POLL_MS = 60_000;
  *
  * - The shell's live stream fires LEADS_CHANGED_EVENT on any lead write, when the tab comes back into view and when
  *   the stream (re)connects; a check follows after a short pause. Only new leads raise the count: a status, label or
- *   assignee change does not.
+ *   assignee change does not. An update that only changed leads saved at or before the cursor is skipped without a
+ *   request (it can never change the count); a change to a lead saved after it (an AI label, a status) still checks.
  * - Every 60 s while the tab is visible and the live stream is down, a check runs anyway, so the count still arrives
  *   without the live signal. While the stream is up the fallback sends nothing. Background checks never renew the
  *   idle-logout clock (only real activity does).
@@ -69,14 +71,16 @@ export function useNewLeadsCount(snapshot: NewLeadsSnapshot | undefined): number
       }
     };
     const schedule = () => { clearTimeout(debounce); debounce = setTimeout(() => void check(), CHANGE_DEBOUNCE_MS); };
+    // Returns before touching the timer, so a skipped update can never cancel a check already waiting for a new lead.
+    const onLeadsChanged = (event: Event) => { if (!onlyOlderLeadsChanged(event, snapshot.cursor)) schedule(); };
 
-    window.addEventListener(LEADS_CHANGED_EVENT, schedule);
+    window.addEventListener(LEADS_CHANGED_EVENT, onLeadsChanged);
     // Asked at each tick, so the fallback starts and stops with the stream without restarting anything else.
     const poll = setInterval(() => { if (!isStreamUp()) void check(); }, NEW_LEADS_POLL_MS);
     if (missedWhileLoading.current) { missedWhileLoading.current = false; schedule(); }
     return () => {
       disposed = true;
-      window.removeEventListener(LEADS_CHANGED_EVENT, schedule);
+      window.removeEventListener(LEADS_CHANGED_EVENT, onLeadsChanged);
       clearInterval(poll);
       clearTimeout(debounce);
       controller?.abort();

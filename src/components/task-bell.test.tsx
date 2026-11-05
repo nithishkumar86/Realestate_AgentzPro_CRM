@@ -183,6 +183,25 @@ describe("window events for the Tasks and Leads pages", () => {
     stop();
   });
 
+  it("hands /leads an update's newest saved time, and no detail for any other change", async () => {
+    render(<TaskAlertsProvider><main /></TaskAlertsProvider>);
+    await settle();
+    const details: unknown[] = [];
+    let tasks = 0;
+    const onLeads = (event: Event) => { details.push((event as CustomEvent).detail); };
+    const onTasks = () => { tasks += 1; };
+    window.addEventListener(LEADS_CHANGED_EVENT, onLeads);
+    window.addEventListener(TASKS_CHANGED_EVENT, onTasks);
+    act(() => stream().emit("change", { kind: "update", newestSavedUs: "1793859911562817" }));
+    act(() => stream().emit("change", {}));
+    act(() => stream().emit("change", { kind: "update", newestSavedUs: "bad" }));
+    act(() => stream().emit("change", "not json"));
+    expect(details).toEqual([{ newestSavedUs: 1793859911562817 }, null, null, null]);
+    expect(tasks).toBe(4); // the Tasks page still hears every change
+    window.removeEventListener(LEADS_CHANGED_EVENT, onLeads);
+    window.removeEventListener(TASKS_CHANGED_EVENT, onTasks);
+  });
+
   it("tells only the Tasks page about a task reminder", async () => {
     render(<TaskAlertsProvider><main /></TaskAlertsProvider>);
     await settle();
