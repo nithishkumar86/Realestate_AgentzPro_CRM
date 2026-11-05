@@ -4040,7 +4040,6 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .google-ads-step { display: grid; gap: 14px; padding-top: 18px; border-top: 1px solid var(--border); }
 .google-ads-step h3 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 1rem; }
 .google-step-number { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--nav-active-bg); border: 1px solid var(--nav-active-border); color: var(--primary-strong); font-size: .8rem; font-weight: 700; }
-.google-step-optional { padding: 2px 8px; border-radius: 999px; background: var(--surface-muted); border: 1px solid var(--border); color: var(--text-muted); font-size: .72rem; font-weight: 600; }
 /* URL and key: one rounded box with its actions built in. */
 .google-copy-row { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); box-shadow: var(--shadow-field); transition: border-color .15s ease, box-shadow .15s ease; }
 .google-copy-row:hover { border-color: var(--border-strong); }
