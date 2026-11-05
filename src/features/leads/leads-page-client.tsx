@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, ListTodo, PhoneCall, Plus, Trash2, UserRound } from "lucide-react";
+import { BellRing, Download, ListTodo, PhoneCall, Plus, Trash2, UserRound } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { LEAD_LABELS, LEAD_STATUSES, isFinalLeadStatus, statusHighlight, type LeadLabel, type LeadSource, type LeadStatus } from "@/features/leads/lead-options";
 import { AddCallInLeadDialog } from "@/features/leads/add-call-in-lead-dialog";
@@ -9,6 +9,7 @@ import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters"
 import { RowDropdown } from "@/features/leads/row-dropdown";
 import { readError, useLeadFilters } from "@/features/leads/use-lead-filters";
 import { useLeadSources } from "@/features/leads/use-lead-sources";
+import { useNewLeadsCount, type NewLeadsSnapshot } from "@/features/leads/use-new-leads-count";
 
 // While the connection checks load, the Source filter offers only Telecaller (always available), so no option ever
 // appears and then disappears.
@@ -49,16 +50,25 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   // Google Ads leads have no Facebook Page or ad: the Campaign filter replaces them, and Page / Ad show greyed out.
   const isGoogleAds = source === "google_ads";
   const { sources } = useLeadSources();
+  // The last successful load (its request and cursor), for the "new leads arrived" bar. Unset while a load runs, or
+  // when the cursor could not be read: the bar then stays off and the table works as before.
+  const [newLeadsSnapshot, setNewLeadsSnapshot] = useState<NewLeadsSnapshot | undefined>(undefined);
+  const newLeadCount = useNewLeadsCount(newLeadsSnapshot);
 
   useEffect(() => {
     let active = true;
     async function loadLeads() {
       setLoading(true);
+      setNewLeadsSnapshot(undefined);
       try {
-        const response = await fetch("/api/leads/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...filters.filterBody(), pageSize: 100 }) });
+        const body: Record<string, unknown> = { ...filters.filterBody(), pageSize: 100 };
+        const response = await fetch("/api/leads/query", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
         if (!response.ok) throw new Error(await readError(response, "Leads could not be loaded."));
-        const result = await response.json() as { items: Lead[]; timezone: string };
-        if (active) { setLeads(result.items); setTimezone(result.timezone); setSelectedLeadIds([]); }
+        const result = await response.json() as { items: Lead[]; timezone: string; cursor?: string | null };
+        if (active) {
+          setLeads(result.items); setTimezone(result.timezone); setSelectedLeadIds([]);
+          if (typeof result.cursor === "string" || result.cursor === null) setNewLeadsSnapshot({ body, cursor: result.cursor });
+        }
       } catch (cause) { if (active) setError(cause instanceof Error ? cause.message : "Leads could not be loaded."); }
       finally { if (active) setLoading(false); }
     }
@@ -158,6 +168,9 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   // unattributed Google Ads lead), so the filter choices reload together with the table. Deleting does the same.
   const { reloadOptions } = filters;
   const handleLeadAdded = useCallback(() => { setIsAddLeadOpen(false); setReloadKey((key) => key + 1); reloadOptions(); }, [reloadOptions]);
+  // The bar's Show: reload with the same filters (new leads can bring a new ad or campaign to the filter choices) and
+  // go to the top, where the new leads are.
+  const showNewLeads = useCallback(() => { setReloadKey((key) => key + 1); reloadOptions(); window.scrollTo({ top: 0, behavior: "smooth" }); }, [reloadOptions]);
   // A task alert links here with ?lead=<id>: fetch that lead on its own (it may be filtered out or past the first
   // page) and open its drawer.
   const [focusedLead, setFocusedLead] = useState<Lead | null>(null);
@@ -183,6 +196,11 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
     </>} />
     {error ? <div className="mvp-inline-error">{error}</div> : null}
     <LeadActiveFilters filters={filters} />
+    {newLeadCount > 0 ? <div className="notice notice--info mvp-new-leads-banner" role="status">
+      <BellRing size={18} aria-hidden="true" />
+      <div><strong>{newLeadCount > 99 ? "99+" : newLeadCount} new lead{newLeadCount === 1 ? "" : "s"} arrived.</strong></div>
+      <div className="notice__action"><button type="button" className="button button--secondary" onClick={showNewLeads}>Show</button></div>
+    </div> : null}
     <section className="mvp-table-wrap"><table className="mvp-table"><thead><tr><th aria-hidden="true" /><th className="mvp-lead-profile-cell">Profile</th>{["Lead ID", "Client Name", "Date", "Status", "Label", "Phone", "Page", "Ad Name", "Assigned To"].map((heading) => <th key={heading}>{heading}</th>)}</tr></thead><tbody>
       {loading ? <tr><td className="mvp-empty" colSpan={11}>Loading leads...</td></tr> : null}
       {!loading && leads.length === 0 ? <tr><td className="mvp-empty" colSpan={11}>No leads match these filters.</td></tr> : null}

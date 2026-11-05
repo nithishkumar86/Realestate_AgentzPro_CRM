@@ -44,16 +44,84 @@ export interface LeadRow {
 }
 export interface PaginatedLeadRows { items: LeadRow[]; total: number; page: number; pageSize: number; totalPages: number; timezone: string; }
 
+/** The query builder calls the shared lead filters and order use; each returns the same builder. */
+interface LeadFilterBuilder<Q> {
+  eq(column: string, value: unknown): Q;
+  is(column: string, value: null): Q;
+  or(filters: string): Q;
+  gte(column: string, value: string): Q;
+  lt(column: string, value: string): Q;
+  order(column: string, options: { ascending: boolean; nullsFirst?: boolean }): Q;
+}
+
 export async function queryLeads(context: TenantRequestContext, request: LeadSearchRequest, exportAll = false): Promise<PaginatedLeadRows> {
   const timezone = await getTenantTimezone(context.tenantId);
   const page = Math.max(1, request.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, request.pageSize ?? 25));
-  const sortField = request.sortField ?? "leadDate";
-  const ascending = (request.sortDirection ?? "desc") === "asc";
   let query = getSupabaseAdminClient().from("lead_data")
     .select("id,leadgen_id,google_lead_id,google_campaign_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,came_from_platform,came_from_ref_name,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.leadId) query = query.eq("id", request.leadId);
+  query = applyLeadOrder(applyLeadFilters(query, context, request, timezone), request);
+  if (!exportAll) query = query.range((page - 1) * pageSize, page * pageSize - 1);
+  const { data, error, count } = await query;
+  if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
+  const items = (data ?? []).map((lead) => toLeadRow(lead as Record<string, unknown>));
+  await attachAssigneeNames(items);
+  if (!exportAll) await attachOpenTaskFlags(context, items);
+  const total = exportAll ? items.length : count ?? 0;
+  return { items, total, page: exportAll ? 1 : page, pageSize: exportAll ? items.length : pageSize, totalPages: exportAll ? 1 : Math.max(1, Math.ceil(total / pageSize)), timezone };
+}
+
+/**
+ * When the company's newest lead was saved (lead_data.created_at), exactly as the database wrote it. The /leads table
+ * reads it just before its list, and the "new leads" bar counts leads saved after it. It stays the raw string: a JS
+ * Date keeps only milliseconds, and the newest lead would then always look newer than the cursor. Null while the
+ * company has no leads.
+ */
+export async function getLeadsCursor(tenantId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdminClient().from("lead_data")
+    .select("created_at")
+    .eq("tenant_id", tenantId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
+  const createdAt = (data as { created_at?: unknown } | null)?.created_at;
+  return typeof createdAt === "string" ? createdAt : null;
+}
+
+/**
+ * How many of the rows the table would show right now (its first page, same filters and order) were saved after
+ * `since`, the cursor of the table's last load. That is exactly what the bar's Show button would reveal, so it never
+ * announces a lead that lands below the visible page. Postgres compares the timestamps itself (microseconds kept).
+ * Only a count leaves the server: no names, phones or other lead data. `since: null` = the company had no leads at the
+ * last load, so every row counts.
+ */
+export async function countNewLeadsOnFirstPage(context: TenantRequestContext, request: LeadSearchRequest, since: string | null, pageSize: number): Promise<number> {
+  const timezone = await getTenantTimezone(context.tenantId);
+  const size = Math.min(100, Math.max(1, pageSize));
+  let page = getSupabaseAdminClient().from("lead_data").select("id").eq("tenant_id", context.tenantId);
+  page = applyLeadOrder(applyLeadFilters(page, context, request, timezone), request);
+  const { data, error } = await page.range(0, size - 1);
+  if (error) throw new AppError("New leads could not be checked.", { status: 500, code: "LEAD_QUERY_FAILED" });
+  const ids = (data ?? []).map((row) => String((row as { id: unknown }).id));
+  if (ids.length === 0 || since === null) return ids.length;
+  const { error: countError, count } = await getSupabaseAdminClient().from("lead_data")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", context.tenantId)
+    .in("id", ids)
+    .gt("created_at", since);
+  if (countError) throw new AppError("New leads could not be checked.", { status: 500, code: "LEAD_QUERY_FAILED" });
+  return count ?? 0;
+}
+
+/**
+ * The table's filters, shared by the table and CSV download (queryLeads) and the new-leads count
+ * (countNewLeadsOnFirstPage), so the count can never include a lead the table would not show. The caller has already
+ * scoped the query to the tenant.
+ */
+function applyLeadFilters<Q extends LeadFilterBuilder<Q>>(query: Q, context: TenantRequestContext, request: LeadSearchRequest, timezone: string): Q {
   // Telecaller = every lead added with the "+" button. A platform = every lead that belongs to it (lead_platform),
   // including call-in leads whose "Came from" is that platform.
   if (request.source === "telecaller") query = query.eq("lead_source", "telecaller");
@@ -82,15 +150,14 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   }
   const range = resolveDateRange(request, timezone);
   if (range) query = query.gte("lead_created_time", range.from).lt("lead_created_time", range.to);
-  query = query.order(sortField === "leadName" ? "lead_name" : "lead_created_time", { ascending, nullsFirst: false }).order("id", { ascending });
-  if (!exportAll) query = query.range((page - 1) * pageSize, page * pageSize - 1);
-  const { data, error, count } = await query;
-  if (error) throw new AppError("Leads could not be loaded.", { status: 500, code: "LEAD_QUERY_FAILED" });
-  const items = (data ?? []).map((lead) => toLeadRow(lead as Record<string, unknown>));
-  await attachAssigneeNames(items);
-  if (!exportAll) await attachOpenTaskFlags(context, items);
-  const total = exportAll ? items.length : count ?? 0;
-  return { items, total, page: exportAll ? 1 : page, pageSize: exportAll ? items.length : pageSize, totalPages: exportAll ? 1 : Math.max(1, Math.ceil(total / pageSize)), timezone };
+  return query;
+}
+
+/** The table's order (newest lead date first by default, id breaking ties), shared like the filters above. */
+function applyLeadOrder<Q extends LeadFilterBuilder<Q>>(query: Q, request: LeadSearchRequest): Q {
+  const sortField = request.sortField ?? "leadDate";
+  const ascending = (request.sortDirection ?? "desc") === "asc";
+  return query.order(sortField === "leadName" ? "lead_name" : "lead_created_time", { ascending, nullsFirst: false }).order("id", { ascending });
 }
 
 /** Fills assigneeName from the profiles of the (tenant-scoped) assignees of these rows. One query per page. */

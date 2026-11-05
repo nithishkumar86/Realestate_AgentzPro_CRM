@@ -2625,6 +2625,9 @@ button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; bord
 .mvp-date-dialog { display: grid; gap: 16px; padding: 24px; }.mvp-date-dialog label { display: grid; gap: 7px; color: var(--text-muted); font-size: .8rem; font-weight: 800; }.mvp-date-dialog input { min-height: 40px; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); }
 .mvp-empty { padding: 26px; margin: 0; color: var(--text-muted); text-align: center; }
 .mvp-inline-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; margin: 0 0 14px; border: 1px solid #fda29b; border-radius: 8px; background: #fee4e2; color: #b42318; font-size: .82rem; font-weight: 700; }.mvp-inline-error button { display: inline-flex; padding: 2px; border: 0; background: transparent; color: #b42318; }
+/* /leads "N new leads arrived." bar: stays in view while the table scrolls; below the lead drawer (49) and dialogs. */
+.mvp-new-leads-banner { position: sticky; top: 12px; z-index: 30; align-items: center; margin: 0 0 14px; box-shadow: var(--shadow); }
+.mvp-new-leads-banner strong { margin-bottom: 0; }
 .mvp-detail-panel { position: fixed; inset: 0 0 0 auto; z-index: 50; width: min(430px, 100vw); overflow-y: auto; border-left: 1px solid var(--border); background: var(--surface); box-shadow: -16px 0 40px rgba(15, 23, 42, .16); }
 .mvp-detail-panel__header { display: flex; align-items: start; justify-content: space-between; padding: 24px; border-bottom: 1px solid var(--border); }.mvp-detail-panel__header h2 { margin: 2px 0 0; }.mvp-detail-panel__body { display: grid; gap: 18px; padding: 24px; }
 .mvp-detail { display: grid; gap: 5px; }.mvp-detail > span { color: var(--text-muted); font-size: .75rem; font-weight: 900; text-transform: uppercase; }.mvp-detail strong { font-size: .96rem; }.mvp-detail select { padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; }

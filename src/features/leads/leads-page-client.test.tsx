@@ -4,6 +4,7 @@ import { toReadableLabel } from "@/lib/date-utils";
 import { displayValue } from "@/components/ui";
 import { LEAD_STATUSES } from "@/features/leads/lead-options";
 import { LeadsPageClient } from "@/features/leads/leads-page-client";
+import { LEADS_CHANGED_EVENT } from "@/components/task-bell";
 
 // The Source filter's connection checks (useLeadSources). By default the company uses every source.
 const sourceChecks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn() }));
@@ -68,8 +69,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string; source?: string };
 
 /** `filterOptions` may be a list: the n-th filters load gets the n-th entry (the last one repeats). */
+/** The cursor the real query route returns: the newest lead's created_at exactly as Postgres writes it. */
+const CURSOR = "2026-11-05T09:30:12.123456+00:00";
+
 function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolean } = {}, filterOptions: Record<string, unknown> | Array<Record<string, unknown>> = FILTER_OPTIONS) {
-  const sent = { query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[], patches: [] as Array<{ id: string; body: Record<string, unknown> }>, filterLoads: 0 };
+  const sent = {
+    query: [] as Array<Record<string, unknown>>, export: [] as Array<Record<string, unknown>>, deletes: [] as string[], patches: [] as Array<{ id: string; body: Record<string, unknown> }>, filterLoads: 0,
+    // The "new leads" bar: the query route's cursor (undefined = the route left it out because it could not be read),
+    // and the reply of /api/leads/new-count, whose request bodies are recorded.
+    cursor: CURSOR as string | null | undefined, newCountReply: { status: 200, count: 0 }, newCounts: [] as Array<Record<string, unknown>>,
+  };
   vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
     const url = String(input);
     if (url.startsWith("/api/leads/filters")) {
@@ -79,7 +88,12 @@ function stubLeadApi(dummyLeads: DummyLead[] = [], patchOptions: { fail?: boolea
     if (url === "/api/leads/query") {
       sent.query.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       const remaining = dummyLeads.filter((lead) => !sent.deletes.includes(lead.id)).map((lead) => sent.patches.filter((patch) => patch.id === lead.id).reduce((current, patch) => ({ ...current, ...patch.body, labelSource: "telecaller" }), lead));
-      return jsonResponse({ items: remaining, total: remaining.length, timezone: "Asia/Kolkata" });
+      return jsonResponse({ items: remaining, total: remaining.length, timezone: "Asia/Kolkata", ...(sent.cursor === undefined ? {} : { cursor: sent.cursor }) });
+    }
+    if (url === "/api/leads/new-count") {
+      sent.newCounts.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      const { status, count } = sent.newCountReply;
+      return status === 200 ? jsonResponse({ count }) : jsonResponse({ error: { message: "New leads could not be checked." } }, status);
     }
     if (url === "/api/leads/export") {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -881,5 +895,102 @@ describe("Google Ads Campaign filter", () => {
     expect(await screen.findByRole("option", { name: "Chennai Villas" })).toHaveAttribute("title", "Chennai Villas");
     fireEvent.click(screen.getByRole("button", { name: "Status" }));
     expect(await screen.findByRole("option", { name: "Working" })).not.toHaveAttribute("title");
+  });
+});
+
+describe("new leads arrived bar", () => {
+  const LEAD = { id: "lead-1", leadName: "Kumar", phone: "9999999999", facebookPage: "Chennai Homes", adName: "karuvi", leadDate: "2026-11-05T09:00:00.000Z", status: "New Lead", label: "Warm" };
+  const BAR_WAIT = { timeout: 3000 };
+  beforeEach(() => { vi.spyOn(window, "scrollTo").mockImplementation(() => undefined); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  /** What the shell's live stream does when a lead is written. */
+  const leadWritten = () => act(() => { window.dispatchEvent(new Event(LEADS_CHANGED_EVENT)); });
+  const pause = (ms: number) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+
+  it("shows no bar on load, then the new count after a lead arrives, checked with the load's own request and cursor", async () => {
+    const sent = stubLeadApi([LEAD]);
+    await renderLeadsPage(sent);
+    expect(screen.queryByText(/new leads? arrived/)).not.toBeInTheDocument();
+
+    sent.newCountReply = { status: 200, count: 1 };
+    leadWritten();
+    expect(await screen.findByText("1 new lead arrived.", {}, BAR_WAIT)).toBeInTheDocument();
+    expect(sent.newCounts).toEqual([{ ...sent.query[0], since: CURSOR }]);
+
+    sent.newCountReply = { status: 200, count: 2 };
+    leadWritten();
+    expect(await screen.findByText("2 new leads arrived.", {}, BAR_WAIT)).toBeInTheDocument();
+  });
+
+  it("Show reloads the table with the same filters, refreshes the filter choices, goes to the top and hides the bar", async () => {
+    const sent = stubLeadApi([LEAD]);
+    await renderLeadsPage(sent);
+    await waitFor(() => expect(sent.filterLoads).toBe(1));
+    sent.newCountReply = { status: 200, count: 3 };
+    leadWritten();
+    await screen.findByText("3 new leads arrived.", {}, BAR_WAIT);
+
+    sent.newCountReply = { status: 200, count: 0 };
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    expect(screen.queryByText(/new leads? arrived/)).not.toBeInTheDocument();
+    await waitFor(() => expect(sent.query).toHaveLength(2));
+    expect(sent.query[1]).toEqual(sent.query[0]);
+    await waitFor(() => expect(sent.filterLoads).toBe(2));
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  it("a filter change hides the bar, and the next check uses the new load's filters", async () => {
+    const sent = stubLeadApi([LEAD]);
+    await renderLeadsPage(sent);
+    sent.newCountReply = { status: 200, count: 1 };
+    leadWritten();
+    await screen.findByText("1 new lead arrived.", {}, BAR_WAIT);
+
+    await chooseFilter("Status", "Working");
+    expect(screen.queryByText(/new leads? arrived/)).not.toBeInTheDocument();
+    await waitFor(() => expect(sent.query).toHaveLength(2));
+    await screen.findByText("Kumar");
+    leadWritten();
+    await waitFor(() => expect(sent.newCounts).toHaveLength(2), BAR_WAIT);
+    expect(sent.newCounts[1]).toEqual({ ...sent.query[1], since: CURSOR });
+    expect(sent.newCounts[1]).toMatchObject({ status: "Working" });
+  });
+
+  it("shows nothing when there is nothing new or the check fails, and never an error", async () => {
+    const sent = stubLeadApi([LEAD]);
+    await renderLeadsPage(sent);
+    leadWritten();
+    await waitFor(() => expect(sent.newCounts).toHaveLength(1), BAR_WAIT);
+    await pause(50);
+    expect(screen.queryByText(/new leads? arrived/)).not.toBeInTheDocument();
+
+    sent.newCountReply = { status: 500, count: 0 };
+    leadWritten();
+    await waitFor(() => expect(sent.newCounts).toHaveLength(2), BAR_WAIT);
+    await pause(50);
+    expect(screen.queryByText(/new leads? arrived/)).not.toBeInTheDocument();
+    expect(screen.queryByText("New leads could not be checked.")).not.toBeInTheDocument();
+  });
+
+  it("stays off, and the table still works, when the query route could not read a cursor", async () => {
+    const sent = stubLeadApi([LEAD]);
+    sent.cursor = undefined;
+    await renderLeadsPage(sent);
+    await screen.findByText("Kumar");
+    leadWritten();
+    await pause(1000);
+    expect(sent.newCounts).toHaveLength(0);
+    expect(screen.queryByText(/new leads? arrived/)).not.toBeInTheDocument();
+  });
+
+  it("checks a company with no leads yet with a null cursor", async () => {
+    const sent = stubLeadApi([]);
+    sent.cursor = null;
+    await renderLeadsPage(sent);
+    sent.newCountReply = { status: 200, count: 1 };
+    leadWritten();
+    expect(await screen.findByText("1 new lead arrived.", {}, BAR_WAIT)).toBeInTheDocument();
+    expect(sent.newCounts[0]).toMatchObject({ since: null });
   });
 });
