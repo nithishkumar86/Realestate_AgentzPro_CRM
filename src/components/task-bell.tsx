@@ -13,6 +13,11 @@ interface Feed { items: TaskNotification[]; unread: number }
 const MAX_TOASTS = 3;
 /** Fired on window when the live stream says tasks may have changed; the Tasks page refetches on it. */
 export const TASKS_CHANGED_EVENT = "agentz:tasks-changed";
+/**
+ * Fired on window when the live stream says a lead was added, changed or deleted, and when the tab comes back into
+ * view; the /leads page then checks for new leads.
+ */
+export const LEADS_CHANGED_EVENT = "agentz:leads-changed";
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
 function urlBase64ToBytes(value: string): Uint8Array<ArrayBuffer> {
@@ -76,13 +81,14 @@ export function TaskAlertsProvider({ children }: Readonly<{ children: React.Reac
       source?.close();
       source = new EventSource("/api/dashboard/stream");
       source.addEventListener("task_reminder", () => { void load(true); window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); });
-      source.addEventListener("change", () => window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)));
+      source.addEventListener("change", () => { window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)); window.dispatchEvent(new Event(LEADS_CHANGED_EVENT)); });
     };
     const onVisibility = () => {
       if (document.hidden) { source?.close(); source = null; return; }
       open();
       void load(true);
       window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
+      window.dispatchEvent(new Event(LEADS_CHANGED_EVENT));
     };
     if (!document.hidden) open();
     document.addEventListener("visibilitychange", onVisibility);

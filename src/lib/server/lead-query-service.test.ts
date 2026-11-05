@@ -1,13 +1,13 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteLead, getLeadFilterOptions, getLeadFormAnswers, queryLeads, updateLeadTriage } from "@/lib/server/lead-query-service";
+import { countNewLeadsOnFirstPage, deleteLead, getLeadFilterOptions, getLeadFormAnswers, getLeadsCursor, queryLeads, updateLeadTriage } from "@/lib/server/lead-query-service";
 
 const mocks = vi.hoisted(() => ({ from: vi.fn(), rpc: vi.fn() }));
 vi.mock("@/lib/server/supabase-admin", () => ({ getSupabaseAdminClient: () => ({ from: mocks.from, rpc: mocks.rpc }) }));
 
 function builder(result: { data: unknown; error: unknown; count?: number }) {
   const query: Record<string, ReturnType<typeof vi.fn>> = {};
-  for (const method of ["select", "eq", "is", "not", "or", "gte", "lt", "order", "range", "limit", "update", "delete", "in"]) {
+  for (const method of ["select", "eq", "is", "not", "or", "gt", "gte", "lt", "order", "range", "limit", "update", "delete", "in"]) {
     query[method] = vi.fn(() => query);
   }
   query.single = vi.fn(() => Promise.resolve(result));
@@ -390,5 +390,111 @@ describe("lead assignment in the leads list", () => {
     expect(options.isOwner).toBe(false);
     expect(memberships.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
     expect(memberships.eq).toHaveBeenCalledWith("membership_status", "active");
+  });
+});
+
+describe("the table's order after the shared filters moved", () => {
+  it("still sorts the newest lead date first (nulls last), id breaking ties, then pages", async () => {
+    const leads = builder({ data: [], error: null, count: 0 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    await queryLeads(context, { pageSize: 100 });
+    expect(leads.order.mock.calls).toEqual([["lead_created_time", { ascending: false, nullsFirst: false }], ["id", { ascending: false }]]);
+    expect(leads.range).toHaveBeenCalledWith(0, 99);
+  });
+});
+
+describe("getLeadsCursor (when the newest lead was saved)", () => {
+  it("reads the session company's newest created_at and returns it exactly as the database wrote it", async () => {
+    const leads = builder({ data: { created_at: "2026-11-05T09:30:12.123456+00:00" }, error: null });
+    mocks.from.mockReturnValue(leads);
+    await expect(getLeadsCursor("tenant-a")).resolves.toBe("2026-11-05T09:30:12.123456+00:00");
+    expect(mocks.from).toHaveBeenCalledWith("lead_data");
+    expect(leads.select).toHaveBeenCalledWith("created_at");
+    expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(leads.order).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(leads.limit).toHaveBeenCalledWith(1);
+  });
+
+  it("is null for a company with no leads yet", async () => {
+    mocks.from.mockReturnValue(builder({ data: null, error: null }));
+    await expect(getLeadsCursor("tenant-a")).resolves.toBeNull();
+  });
+
+  it("throws when the read fails, so the route can leave the cursor out", async () => {
+    mocks.from.mockReturnValue(builder({ data: null, error: { message: "down" } }));
+    await expect(getLeadsCursor("tenant-a")).rejects.toMatchObject({ code: "LEAD_QUERY_FAILED" });
+  });
+});
+
+describe("countNewLeadsOnFirstPage (the new-leads bar)", () => {
+  const since = "2026-11-05T09:30:12.123456+00:00";
+  /** The first lead_data query reads the table's first page; the second counts the new ones among it. */
+  function stub(pageRows: Array<{ id: string }>, newCount: number, errors: { page?: unknown; count?: unknown } = {}) {
+    const page = builder({ data: errors.page ? null : pageRows, error: errors.page ?? null });
+    const counted = builder({ data: null, error: errors.count ?? null, count: newCount });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    let leadQueries = 0;
+    mocks.from.mockImplementation((table: string) => {
+      if (table === "tenants") return timezone;
+      leadQueries += 1;
+      return leadQueries === 1 ? page : counted;
+    });
+    return { page, counted, leadQueries: () => leadQueries };
+  }
+
+  it("reads only the ids of the table's first page, with the same tenant scope, filters and order", async () => {
+    const { page } = stub([{ id: "lead-1" }, { id: "lead-2" }], 1);
+    await countNewLeadsOnFirstPage(context, { source: "google_ads", campaignId: "22334455", status: "New Lead", search: "Ravi" }, since, 100);
+    expect(page.select).toHaveBeenCalledWith("id");
+    expect(page.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(page.eq).toHaveBeenCalledWith("lead_platform", "google_ads");
+    expect(page.or).toHaveBeenCalledWith("google_campaign_id.eq.22334455,lead_ad_ref.eq.22334455");
+    expect(page.eq).toHaveBeenCalledWith("status", "New Lead");
+    expect(String(page.or.mock.calls[1][0])).toContain("lead_name.ilike.%Ravi%");
+    expect(page.order.mock.calls).toEqual([["lead_created_time", { ascending: false, nullsFirst: false }], ["id", { ascending: false }]]);
+    expect(page.range).toHaveBeenCalledWith(0, 99);
+  });
+
+  it("applies the same date window as the table for Today", async () => {
+    const { page } = stub([], 0);
+    await countNewLeadsOnFirstPage(context, { quickFilter: "today" }, since, 100);
+    expect(page.gte).toHaveBeenCalledWith("lead_created_time", expect.any(String));
+    expect(page.lt).toHaveBeenCalledWith("lead_created_time", expect.any(String));
+  });
+
+  it("counts, in the database, the page's leads saved after the cursor: a count only, tenant-scoped", async () => {
+    const { counted } = stub([{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }], 2);
+    await expect(countNewLeadsOnFirstPage(context, {}, since, 100)).resolves.toBe(2);
+    expect(counted.select).toHaveBeenCalledWith("id", { count: "exact", head: true });
+    expect(counted.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(counted.in).toHaveBeenCalledWith("id", ["lead-1", "lead-2", "lead-3"]);
+    // The cursor goes to Postgres exactly as received, microseconds included.
+    expect(counted.gt).toHaveBeenCalledWith("created_at", since);
+  });
+
+  it("counts every row on the page when the company had no leads at the last load (null cursor)", async () => {
+    const { leadQueries } = stub([{ id: "lead-1" }, { id: "lead-2" }], 99);
+    await expect(countNewLeadsOnFirstPage(context, {}, null, 100)).resolves.toBe(2);
+    expect(leadQueries()).toBe(1);
+  });
+
+  it("is 0 without a second query when the filters match no lead", async () => {
+    const { leadQueries } = stub([], 5);
+    await expect(countNewLeadsOnFirstPage(context, { status: "Closed" }, since, 100)).resolves.toBe(0);
+    expect(leadQueries()).toBe(1);
+  });
+
+  it("never reads past the table's 100 rows", async () => {
+    const { page } = stub([], 0);
+    await countNewLeadsOnFirstPage(context, {}, since, 500);
+    expect(page.range).toHaveBeenCalledWith(0, 99);
+  });
+
+  it("throws instead of guessing when either read fails", async () => {
+    stub([], 0, { page: { message: "down" } });
+    await expect(countNewLeadsOnFirstPage(context, {}, since, 100)).rejects.toMatchObject({ code: "LEAD_QUERY_FAILED" });
+    stub([{ id: "lead-1" }], 0, { count: { message: "down" } });
+    await expect(countNewLeadsOnFirstPage(context, {}, since, 100)).rejects.toMatchObject({ code: "LEAD_QUERY_FAILED" });
   });
 });

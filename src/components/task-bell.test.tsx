@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TaskAlertsProvider, TaskBell } from "@/components/task-bell";
+import { LEADS_CHANGED_EVENT, TASKS_CHANGED_EVENT, TaskAlertsProvider, TaskBell } from "@/components/task-bell";
 import type { TaskNotification } from "@/lib/server/task-notification-service";
 
 class FakeEventSource {
@@ -158,5 +158,48 @@ describe("Turn on notifications line beside the bell", () => {
     render(<TaskAlertsProvider><TaskBell /></TaskAlertsProvider>);
     await settle();
     expect(screen.queryByRole("button", { name: LINE })).not.toBeInTheDocument();
+  });
+});
+
+describe("window events for the Tasks and Leads pages", () => {
+  function listen() {
+    const fired = { tasks: 0, leads: 0 };
+    const onTasks = () => { fired.tasks += 1; };
+    const onLeads = () => { fired.leads += 1; };
+    window.addEventListener(TASKS_CHANGED_EVENT, onTasks);
+    window.addEventListener(LEADS_CHANGED_EVENT, onLeads);
+    return { fired, stop: () => { window.removeEventListener(TASKS_CHANGED_EVENT, onTasks); window.removeEventListener(LEADS_CHANGED_EVENT, onLeads); } };
+  }
+
+  it("tells both pages when the stream says a lead changed", async () => {
+    render(<TaskAlertsProvider><main /></TaskAlertsProvider>);
+    await settle();
+    const { fired, stop } = listen();
+    act(() => stream().emit("change"));
+    expect(fired).toEqual({ tasks: 1, leads: 1 });
+    stop();
+  });
+
+  it("tells only the Tasks page about a task reminder", async () => {
+    render(<TaskAlertsProvider><main /></TaskAlertsProvider>);
+    await settle();
+    const { fired, stop } = listen();
+    await remind([alert("a")]);
+    expect(fired).toEqual({ tasks: 1, leads: 0 });
+    stop();
+  });
+
+  it("tells both pages when the tab comes back into view, and nothing while it is hidden", async () => {
+    render(<TaskAlertsProvider><main /></TaskAlertsProvider>);
+    await settle();
+    const { fired, stop } = listen();
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(fired).toEqual({ tasks: 0, leads: 0 });
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(fired).toEqual({ tasks: 1, leads: 1 });
+    stop();
+    await settle();
   });
 });
