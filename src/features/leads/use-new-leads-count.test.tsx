@@ -21,6 +21,10 @@ const reply = (count: unknown, status = 200) => new Response(JSON.stringify(stat
 let fetchMock: ReturnType<typeof vi.fn>;
 const bodies = () => fetchMock.mock.calls.map((call) => JSON.parse(String((call[1] as RequestInit).body)) as Record<string, unknown>);
 const leadWritten = () => act(() => { window.dispatchEvent(new Event(LEADS_CHANGED_EVENT)); });
+/** CURSOR in microseconds since 1970. */
+const CURSOR_US = 1793871012123456;
+/** An update, as the shell hands it on: when the newest lead it changed was saved. */
+const leadUpdated = (newestSavedUs: number) => act(() => { window.dispatchEvent(new CustomEvent(LEADS_CHANGED_EVENT, { detail: { newestSavedUs } })); });
 const wait = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const setHidden = (hidden: boolean) => Object.defineProperty(document, "hidden", { configurable: true, value: hidden });
 
@@ -45,6 +49,52 @@ describe("useNewLeadsCount", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/leads/new-count");
     expect(bodies()[0]).toEqual({ quickFilter: "today", status: "New Lead", pageSize: 100, since: CURSOR });
     expect(result.current).toBe(1);
+  });
+
+  it("sends no request for an update that only changed leads saved at or before the cursor", async () => {
+    const saved = snapshot();
+    renderHook(() => useNewLeadsCount(saved));
+    leadUpdated(CURSOR_US);
+    leadUpdated(CURSOR_US - 1);
+    leadUpdated(CURSOR_US - 30 * 86_400_000_000);
+    await wait(5_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("checks an update to a lead saved after the cursor (an AI label or status on a new lead)", async () => {
+    const saved = snapshot();
+    const { result } = renderHook(() => useNewLeadsCount(saved));
+    leadUpdated(CURSOR_US + 1);
+    await wait(750);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(bodies()[0]).toMatchObject({ since: CURSOR });
+    expect(result.current).toBe(1);
+  });
+
+  it("never lets a skipped update cancel the check a new lead is waiting for", async () => {
+    const saved = snapshot();
+    renderHook(() => useNewLeadsCount(saved));
+    leadWritten();
+    await wait(200);
+    leadUpdated(CURSOR_US - 1);
+    await wait(549);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await wait(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await wait(5_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks every update when the company had no leads at the last load, or the cursor cannot be read", async () => {
+    for (const cursor of [null, "garbage"]) {
+      fetchMock.mockClear();
+      const saved = snapshot(undefined, cursor);
+      const { unmount } = renderHook(() => useNewLeadsCount(saved));
+      leadUpdated(CURSOR_US - 1);
+      await wait(750);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      unmount();
+    }
   });
 
   it("sends a null cursor as null", async () => {

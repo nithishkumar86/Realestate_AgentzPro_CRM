@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { readNewestSavedUs } from "@/lib/lead-change-signal";
 import { getSupabaseAdminClient } from "@/lib/server/supabase-admin";
 
 /**
@@ -19,8 +20,10 @@ export type RelayEvent = "change" | "degraded" | "live" | "activity" | "reminder
 /**
  * "activity": the lead whose timeline gained a row. "reminder": a task alert and the one member it is for
  * (the stream route forwards it only to that member). Both are UUIDs, no PII.
+ * "change" from an update: when the newest lead it changed was saved (microseconds since 1970, a digit string; see
+ * migration 20261105150000), so /leads can skip its check for changes to older leads. Any other "change" has none.
  */
-export interface RelayPayload { leadId?: string; notificationId?: string; userId?: string }
+export interface RelayPayload { leadId?: string; notificationId?: string; userId?: string; newestSavedUs?: string }
 export type RelayListener = (event: RelayEvent, payload?: RelayPayload) => void;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,7 +57,12 @@ function openTenantChannel(tenantId: string): TenantChannel {
   const channel = getSupabaseAdminClient().channel(`dashboard:${tenantId}`, { config: { private: true } });
   const entry: TenantChannel = { channel, listeners: new Set(), state: "connecting", degradedTimer: undefined, hasBeenLive: false };
 
-  channel.on("broadcast", { event: "lead_change" }, () => emit(entry, "change"));
+  // Only a well-formed update value is passed on; a new lead, a delete or anything unreadable is a plain "change".
+  channel.on("broadcast", { event: "lead_change" }, (message?: { payload?: { kind?: unknown; newest_saved_us?: unknown } }) => {
+    const newestSavedUs = message?.payload?.kind === "update" ? readNewestSavedUs(message.payload.newest_saved_us) : undefined;
+    if (newestSavedUs) emit(entry, "change", { newestSavedUs });
+    else emit(entry, "change");
+  });
   // A Lead Timeline row was written (migration 20261005120000). Only a well-formed lead id is passed on.
   channel.on("broadcast", { event: "lead_activity" }, (message?: { payload?: { lead_id?: unknown } }) => {
     const leadId = message?.payload?.lead_id;

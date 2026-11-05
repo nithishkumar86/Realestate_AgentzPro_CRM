@@ -50,7 +50,9 @@ export async function GET(request: Request): Promise<Response> {
       const sendEvent = (event: string, data: unknown) => send(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
       const unsubscribe = subscribeToTenantChanges(tenantId, (event, payload) => {
-        if (event === "change") sendEvent("change", {});
+        // An update says when the newest lead it changed was saved (a number, no lead data), so /leads can skip its
+        // check for older leads; every other change stays {}.
+        if (event === "change") sendEvent("change", payload?.newestSavedUs ? { kind: "update", newestSavedUs: payload.newestSavedUs } : {});
         else if (event === "activity") { if (payload?.leadId) sendEvent("activity", { leadId: payload.leadId }); }
         // A reminder belongs to one member; the other streams of the tenant never see it.
         else if (event === "reminder") { if (payload?.userId === userId && payload.notificationId) sendEvent("task_reminder", { notificationId: payload.notificationId }); }

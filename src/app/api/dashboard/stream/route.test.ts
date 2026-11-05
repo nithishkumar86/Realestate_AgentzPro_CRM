@@ -60,6 +60,22 @@ describe("GET /api/dashboard/stream", () => {
     await reader.cancel().catch(() => {});
   });
 
+  it("forwards an update's newest saved time with its change event, and nothing else", async () => {
+    let emit: (event: "change", payload?: { newestSavedUs?: string; leadId?: string }) => void = () => {};
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-update" });
+    mocks.subscribe.mockImplementation((_tenant: string, listener: typeof emit) => { emit = listener; return vi.fn(); });
+    const abort = new AbortController();
+    const response = await GET(new Request("http://localhost/api/dashboard/stream", { signal: abort.signal }));
+    const reader = response.body!.getReader();
+    await readUntil(reader, "event: ready");
+    emit("change", { newestSavedUs: "1793859911562817", leadId: "11111111-1111-4111-8111-111111111111" });
+    const received = await readUntil(reader, "event: change");
+    expect(received).toContain('event: change\ndata: {"kind":"update","newestSavedUs":"1793859911562817"}');
+    expect(received).not.toContain("leadId");
+    abort.abort();
+    await reader.cancel().catch(() => {});
+  });
+
   it("forwards a timeline activity as an activity event carrying only the lead id", async () => {
     let emit: (event: "change" | "degraded" | "live" | "activity", payload?: { leadId: string }) => void = () => {};
     mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-activity" });

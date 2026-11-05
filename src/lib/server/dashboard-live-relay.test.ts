@@ -47,6 +47,24 @@ describe("dashboard live relay", () => {
     stopA1(); stopA2(); stopB();
   });
 
+  it("passes on an update's newest saved time only when it is a valid digit string; any other change stays plain", () => {
+    const a = vi.fn();
+    const stop = subscribeToTenantChanges("tenant-u", a);
+    const leadChange = mocks.channels[mocks.channels.length - 1].handlers.lead_change;
+    leadChange({ payload: { t: "2026-11-05T14:04:58.436425+00:00", kind: "update", newest_saved_us: "1793859911562817" } });
+    expect(a).toHaveBeenLastCalledWith("change", { newestSavedUs: "1793859911562817" });
+    a.mockClear();
+    // A new lead or delete (no kind), the old database function, a bad value or a missing message: a plain change.
+    for (const message of [{ payload: { t: "x" } }, { payload: { kind: "insert", newest_saved_us: "1" } }, { payload: { kind: "update" } },
+      { payload: { kind: "update", newest_saved_us: 1793859911562817 } }, { payload: { kind: "update", newest_saved_us: "1.5" } },
+      { payload: { kind: "update", newest_saved_us: "99999999999999999" } }, {}, undefined]) {
+      leadChange(message);
+      expect(a).toHaveBeenLastCalledWith("change");
+    }
+    expect(a).toHaveBeenCalledTimes(8);
+    stop();
+  });
+
   it("tears the channel down only when the last stream of that tenant leaves", () => {
     const stop1 = subscribeToTenantChanges("tenant-c", vi.fn());
     const stop2 = subscribeToTenantChanges("tenant-c", vi.fn());
