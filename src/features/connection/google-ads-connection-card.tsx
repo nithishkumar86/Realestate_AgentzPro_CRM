@@ -45,7 +45,7 @@ export function GoogleAdsConnectionCard() {
     const callbackMessage = result ? CALLBACK_MESSAGES[result] ?? null : null;
     if (callbackMessage) window.history.replaceState(null, "", window.location.pathname);
     let active = true;
-    void getGoogleAdsOverview()
+    void getGoogleAdsOverview({ campaigns: true })
       .then((data) => { if (active) { setOverview(data); setMessage(callbackMessage); } })
       .catch((error: unknown) => { if (active) setMessage({ tone: "danger", text: errorText(error, "Google Ads details could not be loaded. Try again.") }); })
       .finally(() => { if (active) setIsLoading(false); });
@@ -53,7 +53,7 @@ export function GoogleAdsConnectionCard() {
   }, []);
 
   async function reload(): Promise<void> {
-    setOverview(await getGoogleAdsOverview());
+    setOverview(await getGoogleAdsOverview({ campaigns: true }));
   }
 
   async function run(action: Exclude<Busy, null>, task: () => Promise<void>): Promise<void> {
@@ -126,6 +126,7 @@ export function GoogleAdsConnectionCard() {
         <h3><span className="google-step-number" aria-hidden="true">2</span>Lead form webhook</h3>
         {overview.webhookStopped && !webhook ? null : <p className="field-help">In Google Ads, open each lead form, go to Lead delivery → Webhook integration, and paste this URL and key. Then select Send test data.</p>}
         {webhook ? <>
+          <p className="field-help"><strong>Running more campaigns?</strong> Paste this same URL and key into each lead form. No new key needed.</p>
           <div className="field"><label htmlFor="google-webhook-url">Webhook URL</label>
             <div className="google-copy-row"><input id="google-webhook-url" readOnly value={webhook.url} onFocus={(event) => event.currentTarget.select()} />
               <button className={`google-copy-row__action${copied === "url" ? " google-copy-row__action--done" : ""}`} type="button" onClick={() => void copy("url", webhook.url)}>{copied === "url" ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}{copied === "url" ? "Copied" : "Copy"}</button></div></div>
@@ -133,10 +134,16 @@ export function GoogleAdsConnectionCard() {
             <div className="google-copy-row"><input id="google-webhook-key" type={showKey ? "text" : "password"} autoComplete="off" readOnly value={webhook.key} onFocus={(event) => event.currentTarget.select()} />
               <button className="google-copy-row__action" type="button" aria-pressed={showKey} onClick={() => setShowKey((current) => !current)}>{showKey ? <EyeOff aria-hidden="true" size={16} /> : <Eye aria-hidden="true" size={16} />}{showKey ? "Hide" : "Show"}</button>
               <button className={`google-copy-row__action${copied === "key" ? " google-copy-row__action--done" : ""}`} type="button" onClick={() => void copy("key", webhook.key)}>{copied === "key" ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}{copied === "key" ? "Copied" : "Copy"}</button></div></div>
-          <div className="meta-list">
+          {/* A real lead with the current key replaces the test / last-lead lines: leads are arriving, and from which campaigns. */}
+          {webhook.lastLeadAt ? <div className="google-arrival">
+            <strong className="google-arrival__status">Leads arriving<Check aria-hidden="true" size={18} /></strong>
+            {webhook.campaigns && webhook.campaigns.length > 0 ? <ul className="google-arrival__campaigns" aria-label="Campaigns sending leads">
+              {webhook.campaigns.map((campaign) => <li key={campaign.id}>{campaign.name}<Check aria-hidden="true" size={16} /></li>)}
+            </ul> : null}
+          </div> : <div className="meta-list">
             <div className={`meta-item${webhook.lastTestAt ? " google-status--ok" : ""}`}><span>Test lead</span><strong>{webhook.lastTestAt ? `Received ✓ ${formatDateTime(webhook.lastTestAt)}` : "Not received yet"}</strong></div>
-            <div className={`meta-item${webhook.lastLeadAt ? " google-status--ok" : ""}`}><span>Last lead</span><strong>{webhook.lastLeadAt ? formatDateTime(webhook.lastLeadAt) : "None yet"}</strong></div>
-          </div>
+            <div className="meta-item"><span>Last lead</span><strong>None yet</strong></div>
+          </div>}
           <div className="button-group">
             {confirmRotate ? <>
               <span className="field-help">The old key stops working at once. Any lead a form sends before you paste the new key into it is lost; Google does not resend it.</span>
@@ -148,6 +155,7 @@ export function GoogleAdsConnectionCard() {
             <button className="button button--danger" type="button" disabled={busy === "stop"} onClick={() => void run("stop", async () => { await stopGoogleAdsWebhook(); setConfirmRotate(false); await reload(); setStoppedNotice(true); })}>{busy === "stop" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <Unplug aria-hidden="true" size={18} />}Stop receiving Google Ads leads</button>
           </div>
         </> : overview.webhookStopped ? <>
+          <p className="google-stopped">Lead arrival stopped<X aria-hidden="true" size={18} /></p>
           <p className="field-help">To reconnect, generate a new webhook URL and key and add them to your Google Ads lead forms.</p>
           <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); setMessage({ tone: "success", text: "New webhook URL and key created. Add them to your Google Ads lead forms." }); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Generate new webhook URL and key</button></div>
         </> : <div className="button-group"><button className="button" type="button" disabled={busy === "webhook"} onClick={() => void run("webhook", async () => { await createGoogleAdsWebhook(); await reload(); })}>{busy === "webhook" ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <KeyRound aria-hidden="true" size={18} />}Create webhook URL and key</button></div>}

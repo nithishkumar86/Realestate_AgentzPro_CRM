@@ -40,13 +40,18 @@ export type GoogleAdsOverview = {
   connection: { email: string; connectedAt: string } | null;
   needsReconnect: boolean;
   linkedAccounts: Array<{ customerId: string; name: string | null }>;
-  webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null } | null;
+  /** lastLeadAt / lastTestAt count only deliveries made with the current key. campaigns: see getGoogleAdsOverview. */
+  webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null; campaigns: Array<{ id: string; name: string }> | null } | null;
   hasWebhook: boolean;
   webhookStopped: boolean;
 };
 export type GoogleAdsAccountOption = { customerId: string; name: string | null; loginCustomerId: string | null; selected: boolean };
 
-export async function getGoogleAdsOverview(): Promise<GoogleAdsOverview> { return request<GoogleAdsOverview>("/api/integrations/google"); }
+/**
+ * campaigns: true (Connection card only) also lists the campaigns Google has delivered leads from with the current
+ * key; without it webhook.campaigns is null, so /leads and the dashboard do no extra read.
+ */
+export async function getGoogleAdsOverview(options: { campaigns?: boolean } = {}): Promise<GoogleAdsOverview> { return request<GoogleAdsOverview>(options.campaigns ? "/api/integrations/google?campaigns=1" : "/api/integrations/google"); }
 export async function createGoogleAdsWebhook(): Promise<{ url: string; key: string }> { return request("/api/integrations/google/webhook", { method: "POST", body: "{}" }); }
 export async function getGoogleAdsAccountOptions(): Promise<{ accounts: GoogleAdsAccountOption[] }> { return request("/api/integrations/google/accounts"); }
 export async function saveGoogleAdsAccounts(customerIds: string[]): Promise<{ saved: boolean }> { return request("/api/integrations/google/accounts", { method: "POST", body: JSON.stringify({ customerIds }) }); }

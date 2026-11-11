@@ -7,7 +7,7 @@ vi.mock("@/services/crm-api-client", () => ({
     connection: null,
     needsReconnect: false,
     linkedAccounts: [],
-    webhook: { url: "https://crm.example.com/api/webhooks/google-ads/token", key: "secret-key-123", lastLeadAt: null, lastTestAt: null },
+    webhook: { url: "https://crm.example.com/api/webhooks/google-ads/token", key: "secret-key-123", lastLeadAt: null, lastTestAt: null, campaigns: null },
     hasWebhook: true,
     webhookStopped: false,
   }),
@@ -57,7 +57,7 @@ describe("GoogleAdsConnectionCard step order", () => {
     connection: { email: "owner@example.com", connectedAt: "2026-11-05T07:00:00.000Z" },
     needsReconnect: false,
     linkedAccounts: [],
-    webhook: { url: "https://crm.example.com/api/webhooks/google-ads/token", key: "secret-key-123", lastLeadAt: null, lastTestAt: null },
+    webhook: { url: "https://crm.example.com/api/webhooks/google-ads/token", key: "secret-key-123", lastLeadAt: null, lastTestAt: null, campaigns: null },
     hasWebhook: true,
     webhookStopped: false,
   };
@@ -122,6 +122,7 @@ describe("GoogleAdsConnectionCard stop leads", () => {
     fireEvent.click(within(popup).getByRole("button", { name: "OK" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByText("Lead arrival stopped")).toBeInTheDocument();
     expect(screen.getByText("To reconnect, generate a new webhook URL and key and add them to your Google Ads lead forms.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Generate new webhook URL and key" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Key")).not.toBeInTheDocument();
@@ -140,6 +141,85 @@ describe("GoogleAdsConnectionCard stop leads", () => {
     vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(stopped);
     render(<GoogleAdsConnectionCard />);
     expect(await screen.findByText("Disconnected")).toBeInTheDocument();
+    expect(screen.getByText("Lead arrival stopped")).toBeInTheDocument();
+    expect(screen.queryByText("Leads arriving")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Running more campaigns\?/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Generate new webhook URL and key" })).toBeInTheDocument();
+  });
+});
+
+describe("GoogleAdsConnectionCard lead status", () => {
+  const webhook = { url: "https://crm.example.com/api/webhooks/google-ads/token", key: "secret-key-123", lastLeadAt: null, lastTestAt: null, campaigns: null };
+  const live = { canManage: true, connection: null, needsReconnect: false, linkedAccounts: [], webhook, hasWebhook: true, webhookStopped: false };
+  const arriving = (campaigns: Array<{ id: string; name: string }> | null) => ({
+    ...live, webhook: { ...webhook, lastTestAt: "2026-11-11T09:00:00.000Z", lastLeadAt: "2026-11-11T10:00:00.000Z", campaigns },
+  });
+
+  it("asks the server for the campaign ticks", async () => {
+    vi.mocked(api.getGoogleAdsOverview).mockClear();
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(live);
+    render(<GoogleAdsConnectionCard />);
+    await screen.findByLabelText("Key");
+    expect(api.getGoogleAdsOverview).toHaveBeenCalledWith({ campaigns: true });
+  });
+
+  it("before any delivery with this key: waits for a test lead and tells the owner to reuse the same URL and key", async () => {
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(live);
+    render(<GoogleAdsConnectionCard />);
+    expect(await screen.findByText("Not received yet")).toBeInTheDocument();
+    expect(screen.getByText("None yet")).toBeInTheDocument();
+    expect(screen.getByText(/Paste this same URL and key into each lead form\. No new key needed\./)).toBeInTheDocument();
+    expect(screen.getByText(/Then select Send test data\./)).toBeInTheDocument();
+    expect(screen.queryByText("Leads arriving")).not.toBeInTheDocument();
+  });
+
+  it("after the test lead: shows it received and still waits for a real lead", async () => {
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce({ ...live, webhook: { ...webhook, lastTestAt: "2026-11-11T09:00:00.000Z" } });
+    render(<GoogleAdsConnectionCard />);
+    expect(await screen.findByText(/^Received ✓/)).toBeInTheDocument();
+    expect(screen.getByText("None yet")).toBeInTheDocument();
+    expect(screen.queryByText("Leads arriving")).not.toBeInTheDocument();
+  });
+
+  it("after a real lead: replaces the test and last-lead lines with Leads arriving and a tick per campaign", async () => {
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(arriving([{ id: "111", name: "Diwali" }, { id: "222", name: "Pongal" }]));
+    render(<GoogleAdsConnectionCard />);
+    expect(await screen.findByText("Leads arriving")).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Campaigns sending leads" });
+    expect(within(list).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["Diwali", "Pongal"]);
+    expect(screen.queryByText("Test lead")).not.toBeInTheDocument();
+    expect(screen.queryByText("Last lead")).not.toBeInTheDocument();
+    expect(screen.getByText(/Running more campaigns\?/)).toBeInTheDocument();
+  });
+
+  it.each([[[]], [null]])("shows Leads arriving without a list when there are no campaigns to name (%j)", async (campaigns) => {
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(arriving(campaigns));
+    render(<GoogleAdsConnectionCard />);
+    expect(await screen.findByText("Leads arriving")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Campaigns sending leads" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Test lead")).not.toBeInTheDocument();
+  });
+
+  it("starts over after Replace key: back to waiting for a test lead, ticks gone", async () => {
+    vi.mocked(api.createGoogleAdsWebhook).mockClear();
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce(arriving([{ id: "111", name: "Diwali" }])).mockResolvedValueOnce(live);
+    render(<GoogleAdsConnectionCard />);
+    expect(await screen.findByText("Leads arriving")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Replace key" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace key" }));
+    await waitFor(() => expect(api.createGoogleAdsWebhook).toHaveBeenCalledTimes(1));
+
+    expect(await screen.findByText("Not received yet")).toBeInTheDocument();
+    expect(screen.queryByText("Leads arriving")).not.toBeInTheDocument();
+    expect(screen.queryByText("Diwali")).not.toBeInTheDocument();
+  });
+
+  it("shows no setup note before a webhook exists", async () => {
+    vi.mocked(api.getGoogleAdsOverview).mockResolvedValueOnce({ ...live, webhook: null, hasWebhook: false });
+    render(<GoogleAdsConnectionCard />);
+    await screen.findByRole("button", { name: "Create webhook URL and key" });
+    expect(screen.queryByText(/Running more campaigns\?/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Lead arrival stopped")).not.toBeInTheDocument();
   });
 });
