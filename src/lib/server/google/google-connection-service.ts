@@ -14,6 +14,10 @@ import {
 
 // Cap on accounts checked when listing, so one huge manager hierarchy cannot run the request long.
 const MAX_ACCESSIBLE_ACCOUNTS = 50;
+// The Connection card's campaign ticks read only this company's newest Google-sent leads since the current key,
+// and list at most this many campaigns, so one read stays small for a company with many leads.
+const CAMPAIGN_LEADS_SCANNED = 1000;
+const MAX_CAMPAIGNS_LISTED = 50;
 
 export interface GoogleAdsAccountOption {
   customerId: string;
@@ -29,15 +33,26 @@ export interface GoogleAdsOverview {
   /** Google stopped accepting the saved sign-in (revoked from the Google account, or expired). */
   needsReconnect: boolean;
   linkedAccounts: Array<{ customerId: string; name: string | null }>;
-  /** Only for the owner: what to paste into Google Ads. */
-  webhook: { url: string; key: string; lastLeadAt: string | null; lastTestAt: string | null } | null;
+  /**
+   * Only for the owner: what to paste into Google Ads. lastLeadAt / lastTestAt count only deliveries made with the
+   * current key, so Replace key starts the card over. campaigns: the campaigns Google sent leads from with the current
+   * key (only when asked for); [] when those leads carried no campaign, null when not asked, no lead yet, or the
+   * lookup failed.
+   */
+  webhook: {
+    url: string;
+    key: string;
+    lastLeadAt: string | null;
+    lastTestAt: string | null;
+    campaigns: Array<{ id: string; name: string }> | null;
+  } | null;
   hasWebhook: boolean;
   /** The owner stopped Google Ads leads (Disconnected); creating a webhook again issues a new key. */
   webhookStopped: boolean;
 }
 
 type ConnectionRow = { id: string; google_sub: string; google_email: string; encrypted_refresh_token: string | null; status: string; connected_at: string };
-type WebhookRow = { url_token: string; encrypted_google_key: string; is_active: boolean; last_lead_received_at: string | null; last_test_received_at: string | null };
+type WebhookRow = { url_token: string; encrypted_google_key: string; is_active: boolean; last_lead_received_at: string | null; last_test_received_at: string | null; key_rotated_at: string | null };
 
 async function resolveOwner(): Promise<{ tenantId: string; userId: string }> {
   const access = await requireCrmAccess();
@@ -48,14 +63,15 @@ async function resolveOwner(): Promise<{ tenantId: string; userId: string }> {
 }
 
 export class GoogleConnectionService {
-  public async getOverview(origin: string): Promise<GoogleAdsOverview> {
+  /** includeCampaigns: only the Connection card asks for the campaign ticks; /leads and the dashboard never do. */
+  public async getOverview(origin: string, options: { includeCampaigns?: boolean } = {}): Promise<GoogleAdsOverview> {
     const access = await requireCrmAccess();
     const canManage = access.membershipRole === "owner";
     const db = getSupabaseAdminClient();
     const [connectionResult, accountsResult, webhookResult, reauthResult] = await Promise.all([
       db.from("google_connections").select("google_email,status,connected_at").eq("tenant_id", access.tenantId).maybeSingle(),
       db.from("google_ads_accounts").select("customer_id,descriptive_name").eq("tenant_id", access.tenantId).eq("is_manager", false).order("descriptive_name"),
-      db.from("google_lead_webhooks").select("url_token,encrypted_google_key,is_active,last_lead_received_at,last_test_received_at").eq("tenant_id", access.tenantId).maybeSingle(),
+      db.from("google_lead_webhooks").select("url_token,encrypted_google_key,is_active,last_lead_received_at,last_test_received_at,key_rotated_at").eq("tenant_id", access.tenantId).maybeSingle(),
       db.from("google_lead_events").select("id").eq("tenant_id", access.tenantId).eq("status", "names_pending").is("next_name_attempt_at", null).eq("last_error_code", "GOOGLE_REAUTHORIZATION_REQUIRED").limit(1),
     ]);
     if (connectionResult.error || accountsResult.error || webhookResult.error || reauthResult.error) {
@@ -66,6 +82,13 @@ export class GoogleConnectionService {
     // A switched-off webhook (stopWebhook) is "Disconnected": its URL and old key are never shown again.
     const webhook = webhookRow?.is_active ? webhookRow : null;
     const isConnected = connection?.status === "active";
+    // Replace key keeps the old delivery times on the row; only deliveries after the current key count.
+    const keyAt = webhook?.key_rotated_at ? new Date(webhook.key_rotated_at).toISOString() : null;
+    const lastLeadAt = webhook ? sinceKey(webhook.last_lead_received_at, keyAt) : null;
+    const lastTestAt = webhook ? sinceKey(webhook.last_test_received_at, keyAt) : null;
+    const campaigns = canManage && webhook && lastLeadAt && options.includeCampaigns
+      ? await this.listWebhookCampaigns(access.tenantId, keyAt)
+      : null;
     return {
       canManage,
       connection: isConnected && connection ? { email: connection.google_email, connectedAt: connection.connected_at } : null,
@@ -74,8 +97,9 @@ export class GoogleConnectionService {
       webhook: canManage && webhook ? {
         url: buildWebhookUrl(origin, webhook.url_token),
         key: decryptToken(webhook.encrypted_google_key),
-        lastLeadAt: webhook.last_lead_received_at,
-        lastTestAt: webhook.last_test_received_at,
+        lastLeadAt,
+        lastTestAt,
+        campaigns,
       } : null,
       hasWebhook: Boolean(webhook),
       webhookStopped: Boolean(webhookRow && !webhookRow.is_active),
@@ -247,6 +271,45 @@ export class GoogleConnectionService {
     const { error } = await getSupabaseAdminClient().rpc("requeue_google_lead_names", { p_tenant_id: tenantId });
     if (error) console.error(JSON.stringify({ operation: "google_connection", code: "NAME_REQUEUE_FAILED", tenant_id: tenantId }));
   }
+
+  /**
+   * The campaigns Google delivered this company's leads from since the current key (keyAt; null = since the start),
+   * for the Connection card's ticks. Only leads Google sent count (google_lead_event_id): a call-in lead credited to
+   * a campaign keeps it in lead_ad_ref, so it never adds a tick. Read-only. Any failure is logged and returns null,
+   * so the card still shows "Leads arriving" without names and the rest of the overview loads.
+   */
+  private async listWebhookCampaigns(tenantId: string, keyAt: string | null): Promise<Array<{ id: string; name: string }> | null> {
+    try {
+      const db = getSupabaseAdminClient();
+      let leadQuery = db.from("lead_data").select("google_campaign_id")
+        .eq("tenant_id", tenantId)
+        .not("google_lead_event_id", "is", null)
+        .not("google_campaign_id", "is", null);
+      if (keyAt) leadQuery = leadQuery.gt("created_at", keyAt);
+      const { data: leads, error: leadsError } = await leadQuery.order("created_at", { ascending: false }).limit(CAMPAIGN_LEADS_SCANNED);
+      if (leadsError) throw leadsError;
+      // Newest first, so the cap keeps the campaigns that delivered most recently.
+      const ids = [...new Set((leads ?? []).map((lead) => String(lead.google_campaign_id)))].slice(0, MAX_CAMPAIGNS_LISTED);
+      if (ids.length === 0) return [];
+      const { data: nameRows, error: namesError } = await db.from("google_ads_entity_names").select("entity_id,name")
+        .eq("tenant_id", tenantId).eq("entity_type", "campaign").in("entity_id", ids);
+      if (namesError) throw namesError;
+      const names = new Map((nameRows ?? []).map((row) => [String(row.entity_id), String(row.name ?? "").trim()]));
+      // Named as the Campaign filter names them, and sorted the same way (by name, then id).
+      return ids.map((id) => ({ id, name: names.get(id) || `Campaign ${id}` }))
+        .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id));
+    } catch (error) {
+      const dbCode = error && typeof error === "object" && "code" in error ? String(error.code) : null;
+      console.error(JSON.stringify({ operation: "google_overview", code: "WEBHOOK_CAMPAIGNS_LOOKUP_FAILED", tenant_id: tenantId, dbCode }));
+      return null;
+    }
+  }
+}
+
+/** A delivery time counts only when it came after the current key was made; with no key change yet, it always does. */
+function sinceKey(at: string | null, keyAt: string | null): string | null {
+  if (!at) return null;
+  return !keyAt || Date.parse(at) > Date.parse(keyAt) ? at : null;
 }
 
 async function discoverAccounts(accessToken: string): Promise<Array<Omit<GoogleAdsAccountOption, "selected">>> {
