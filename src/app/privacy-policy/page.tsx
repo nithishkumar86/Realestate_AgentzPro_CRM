@@ -9,11 +9,11 @@ import styles from "./privacy-policy.module.css";
 export const metadata: Metadata = {
   title: { absolute: "Privacy Policy | AgentzPro" },
   description:
-    "Privacy Policy for AgentzPro, operated by AI Digital Tamizha: what data we collect from Meta, Google Ads and your team, how we use, store, share and protect it, how Google user data is handled under the Limited Use requirements, and how to delete your data.",
+    "Privacy Policy for AgentzPro, operated by AI Digital Tamizha: what data we collect from Meta, Google Ads, your own tools (webhook) and your team, how we use, store, share and protect it, how Google user data is handled under the Limited Use requirements, and how to delete your data.",
 };
 
 const EFFECTIVE_DATE = "September 14, 2026";
-const LAST_UPDATED = "October 31, 2026";
+const LAST_UPDATED = "November 11, 2026";
 const GOOGLE_USER_DATA_POLICY_URL = "https://developers.google.com/terms/api-services-user-data-policy";
 
 const TOC = [
@@ -59,8 +59,9 @@ export default function PrivacyPolicyPage() {
             This Privacy Policy explains how <strong>AI Digital Tamizha</strong> (&quot;we&quot;, &quot;us&quot; or
             &quot;our&quot;) collects, uses, stores, shares and protects information in connection with{" "}
             <strong>AgentzPro</strong> (the &quot;Service&quot;), our multi-tenant, business-to-business lead
-            management CRM. AgentzPro receives leads from our customers&apos; Meta (Facebook and Instagram) Lead Ads and
-            Google Ads lead forms, and lets their teams manage and follow up on those leads. This is our own privacy
+            management CRM. AgentzPro receives leads from our customers&apos; Meta (Facebook and Instagram) Lead Ads,
+            Google Ads lead forms and their own tools (webhook), and lets their teams manage and follow up on those
+            leads. This is our own privacy
             policy for our own product. By using the Service, you agree to the practices described here.
           </p>
         </div>
@@ -129,13 +130,14 @@ export default function PrivacyPolicyPage() {
                 AgentzPro is a <strong>multi-tenant SaaS platform</strong>. Many independent businesses
                 (&quot;companies&quot; or &quot;tenants&quot;) use the Service under their own separate accounts. Each
                 company may connect its own Facebook Pages to receive Meta Lead Ads leads, connect its own Google Ads
-                accounts with Google Sign-In, and set up its own Google Ads lead form webhook. Each company&apos;s data
-                is kept separate, so one company can never see another company&apos;s data.
+                accounts with Google Sign-In, set up its own Google Ads lead form webhook, and create its own webhook
+                for leads from its own tools. Each company&apos;s data is kept separate, so one company can never see
+                another company&apos;s data.
               </p>
               <p>
                 This policy covers all data processed through AgentzPro: data about the companies and their team
                 members, and data about the people (&quot;leads&quot;) who submit a company&apos;s Facebook or Google
-                Ads lead forms or who call the company.
+                Ads lead forms, whose details the company&apos;s own tools send, or who call the company.
               </p>
             </section>
 
@@ -212,20 +214,30 @@ export default function PrivacyPolicyPage() {
                 and the data is delivered only to that company.
               </p>
 
-              <h3 className={styles.subheading}>3.7 Leads your team adds (call-in leads)</h3>
+              <h3 className={styles.subheading}>3.7 Leads from your own tools (webhook)</h3>
+              <p>
+                A company owner can create a webhook URL and add it to the company&apos;s own tools, such as a website
+                form plugin, Zapier, Pabbly or its own software. Those tools then send leads to AgentzPro. A lead may
+                include the person&apos;s name, email address and phone number, where the lead came from (for example
+                &quot;Landing Page&quot;), the tool&apos;s own lead ID, and any other answers the company chooses to
+                send. The company decides what its tools send. Each webhook URL contains a long secret code unique to
+                the company, and the leads are delivered only to that company.
+              </p>
+
+              <h3 className={styles.subheading}>3.8 Leads your team adds (call-in leads)</h3>
               <p>
                 Team members can add a lead by hand, for example when someone calls the company. They may enter the
                 person&apos;s name, phone number, email address, the platform and ad the person came from, the call
                 date and notes.
               </p>
 
-              <h3 className={styles.subheading}>3.8 Work your team does in the CRM</h3>
+              <h3 className={styles.subheading}>3.9 Work your team does in the CRM</h3>
               <p>
                 We store the statuses, notes, follow-up tasks, reminders and lead assignments your team records, and a
                 timeline of changes to each lead, so your team can see the history of every lead.
               </p>
 
-              <h3 className={styles.subheading}>3.9 Browser notifications</h3>
+              <h3 className={styles.subheading}>3.10 Browser notifications</h3>
               <p>
                 If a team member turns on reminder notifications, their browser gives us a push subscription (a
                 web address and encryption keys for that browser). We use it only to send that person their task
@@ -233,13 +245,13 @@ export default function PrivacyPolicyPage() {
                 browser settings.
               </p>
 
-              <h3 className={styles.subheading}>3.10 Billing information</h3>
+              <h3 className={styles.subheading}>3.11 Billing information</h3>
               <p>
                 When a company subscribes, our payment partner Razorpay collects the payment details. We do not receive
                 or store card or bank details. We keep the plan, number of seats, billing period and payment status.
               </p>
 
-              <h3 className={styles.subheading}>3.11 Technical information</h3>
+              <h3 className={styles.subheading}>3.12 Technical information</h3>
               <p>
                 When you use the Service, we and our hosting providers automatically process technical information
                 such as IP address, browser and device type, server logs and the actions taken in the app. We use it to
@@ -256,7 +268,7 @@ export default function PrivacyPolicyPage() {
                 <li>receive, show and organise each company&apos;s leads, and let its team update, assign and follow up on them;</li>
                 <li>show which campaign, ad group or ad each lead came from;</li>
                 <li>
-                  give each lead from Meta or Google Ads an AI label (Hot, Warm or Cold) to help the company decide who
+                  give each lead from Meta, Google Ads or a company&apos;s webhook an AI label (Hot, Warm or Cold) to help the company decide who
                   to contact first. Before
                   a lead is labelled, we remove the name, email address and phone number from the form&apos;s contact
                   fields, as described in Section 5;
@@ -469,9 +481,9 @@ export default function PrivacyPolicyPage() {
               <h2 className={styles.sectionTitle}>Data security</h2>
               <p>We protect the information in our care with technical and organisational measures, including:</p>
               <ul>
-                <li>encryption of Facebook access tokens, Google refresh tokens and webhook keys with AES-256-GCM before they are saved;</li>
+                <li>encryption of Facebook access tokens, Google refresh tokens, webhook keys and webhook URLs with AES-256-GCM before they are saved;</li>
                 <li>encrypted HTTPS connections for all data in transit, and encryption at rest by our database provider;</li>
-                <li>signature checks on every lead Meta sends us, and a secret key check on every Google Ads lead webhook;</li>
+                <li>signature checks on every lead Meta sends us, a secret key check on every Google Ads lead webhook, and a secret URL check on every company webhook;</li>
                 <li>company-separated database access rules, as described in Section 7; and</li>
                 <li>automatic sign-out of inactive sessions and bot checks at sign-in.</li>
               </ul>
