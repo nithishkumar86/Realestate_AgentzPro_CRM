@@ -52,3 +52,11 @@ describe("POST /api/leads/telecaller", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/leads/telecaller Came from", () => {
+  it("never accepts Webhook as where a call-in lead came from (it is a delivery channel, not an ad platform)", async () => {
+    const response = await post({ ...valid, cameFromPlatform: "custom_webhook" });
+    expect(response.status).toBe(400);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+});

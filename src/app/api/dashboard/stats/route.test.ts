@@ -83,3 +83,24 @@ describe("POST /api/dashboard/stats", () => {
     expect(JSON.stringify(await response.json())).not.toContain("secret");
   });
 });
+
+describe("POST /api/dashboard/stats on the Webhook view", () => {
+  it("accepts the custom_webhook platform with the common filters", async () => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.stats.mockResolvedValue({ tenantId: "tenant-a", platform: "custom_webhook", total: 0 });
+    const response = await POST(post({ platform: "custom_webhook", status: "Sale", label: "Hot", quickFilter: "month" }));
+    expect(response.status).toBe(200);
+    expect(mocks.stats).toHaveBeenCalledWith({ tenantId: "tenant-a", userId: "user-a" }, { platform: "custom_webhook", status: "Sale", label: "Hot", quickFilter: "month" });
+  });
+
+  it.each([
+    ["a Page filter", { pageRecordId: "00000000-0000-4000-8000-000000000001" }],
+    ["an Ad filter", { adId: "unattributed" }],
+    ["a Campaign filter", { campaignId: "22334455" }],
+  ])("rejects %s on the Webhook view before touching data", async (_name, filter) => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    const response = await POST(post({ platform: "custom_webhook", ...filter }));
+    expect(response.status).toBe(400);
+    expect(mocks.stats).not.toHaveBeenCalled();
+  });
+});

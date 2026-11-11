@@ -89,3 +89,18 @@ describe("authenticated lead CSV route", () => {
     expect(mocks.query).not.toHaveBeenCalled();
   });
 });
+
+describe("authenticated lead CSV route, webhook leads", () => {
+  it("accepts the Webhook source and writes the tool's lead_id, Webhook and the source it named", async () => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.query.mockResolvedValue({
+      timezone: "Asia/Kolkata", total: 1,
+      items: [{ leadgenId: "lp-42", leadName: "John Doe", email: "john@example.com", phone: "9876543210", facebookPage: "Webhook", adName: "Landing Page", adId: null, source: "custom_webhook", status: "New Lead", label: "Warm", leadDate: "2026-11-11T05:00:00Z", assigneeName: null }],
+    });
+    const response = await POST(new Request("http://localhost/api/leads/export", { method: "POST", body: JSON.stringify({ quickFilter: "all", source: "custom_webhook" }), headers: { "content-type": "application/json" } }));
+    expect(response.status).toBe(200);
+    expect(mocks.query).toHaveBeenLastCalledWith({ tenantId: "tenant-a", userId: "user-a" }, { quickFilter: "all", source: "custom_webhook" }, true);
+    const date = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-11-11T05:00:00Z"));
+    expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`lp-42,John Doe,"${date}",New Lead,Warm,john@example.com,9876543210,Webhook,Landing Page,,`);
+  });
+});

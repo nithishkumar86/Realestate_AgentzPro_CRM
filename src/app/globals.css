@@ -4079,3 +4079,9 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 :root[data-theme="dark"] .google-signin-button { border-color: #8e918f; background: #131314; color: #e3e3e3; }
 :root[data-theme="dark"] .google-signin-button:hover { background: #1f1f20; }
 @media (max-width: 640px) { .google-copy-row { flex-wrap: wrap; } .field .google-copy-row input { flex-basis: 100%; } .google-copy-row__action { flex: 1; min-height: 42px; border-left: 0; border-top: 1px solid var(--border); } .google-copy-row__action + .google-copy-row__action { border-left: 1px solid var(--border); } }
+
+/* Webhook card on the Connection page: the example body, in the same rounded box as the URL, with Copy built in. */
+.webhook-sample__label { font-size: .875rem; font-weight: 600; }
+.webhook-sample { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); box-shadow: var(--shadow-field); }
+.webhook-sample pre { flex: 1; min-width: 0; margin: 0; padding: 12px 14px; overflow-x: auto; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; line-height: 1.5; white-space: pre; }
+@media (max-width: 640px) { .webhook-sample { flex-wrap: wrap; } .webhook-sample pre { flex-basis: 100%; } .webhook-sample .google-copy-row__action { flex: 1; min-height: 42px; border-left: 0; border-top: 1px solid var(--border); } }

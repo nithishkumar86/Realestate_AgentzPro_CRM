@@ -498,3 +498,29 @@ describe("countNewLeadsOnFirstPage (the new-leads bar)", () => {
     await expect(countNewLeadsOnFirstPage(context, {}, since, 100)).rejects.toMatchObject({ code: "LEAD_QUERY_FAILED" });
   });
 });
+
+describe("webhook leads", () => {
+  it("shows the tool's lead_id, 'Webhook' as the page and the source it named as the ad, with no ad id", async () => {
+    const webhook = { leadgen_id: null, google_lead_id: null, google_campaign_id: null, lead_phone: "9876543210", ad_id: null, ad_name: null, lead_created_time: "2026-11-11T10:00:00Z", status: "New Lead", label: "Warm", label_source: "ai", lead_source: "custom_webhook", facebook_pages: null };
+    const leads = builder({ data: [
+      { ...webhook, id: "lead-1", lead_name: "John", custom_lead_ref: "lp-42", custom_source_name: "Landing Page" },
+      { ...webhook, id: "lead-2", lead_name: "Asha", custom_lead_ref: null, custom_source_name: null },
+    ], error: null, count: 2 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    const result = await queryLeads(context, {}, true);
+    expect(leads.select.mock.calls[0][0]).toContain("custom_lead_ref,custom_source_name");
+    expect(result.items[0]).toMatchObject({ source: "custom_webhook", leadgenId: "lp-42", facebookPage: "Webhook", adName: "Landing Page", adId: null });
+    expect(result.items[1]).toMatchObject({ source: "custom_webhook", leadgenId: "", facebookPage: "Webhook", adName: "-" });
+  });
+
+  it("filters the Webhook source by lead_platform, like any platform", async () => {
+    const leads = builder({ data: [], error: null, count: 0 });
+    const timezone = builder({ data: { timezone: "Asia/Kolkata" }, error: null });
+    mocks.from.mockImplementation((table: string) => table === "tenants" ? timezone : leads);
+    await queryLeads(context, { source: "custom_webhook" });
+    expect(leads.eq).toHaveBeenCalledWith("tenant_id", "tenant-a");
+    expect(leads.eq).toHaveBeenCalledWith("lead_platform", "custom_webhook");
+    expect(leads.eq).not.toHaveBeenCalledWith("lead_source", "custom_webhook");
+  });
+});
