@@ -59,7 +59,7 @@ export async function queryLeads(context: TenantRequestContext, request: LeadSea
   const page = Math.max(1, request.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, request.pageSize ?? 25));
   let query = getSupabaseAdminClient().from("lead_data")
-    .select("id,leadgen_id,google_lead_id,google_campaign_id,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,came_from_platform,came_from_ref_name,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
+    .select("id,leadgen_id,google_lead_id,google_campaign_id,custom_lead_ref,custom_source_name,lead_name,lead_email,lead_phone,ad_id,ad_name,lead_created_time,status,label,label_source,lead_source,came_from_platform,came_from_ref_name,assigned_user_id,facebook_pages!lead_data_facebook_page_record_id_fkey(facebook_page_name)", { count: "exact" })
     .eq("tenant_id", context.tenantId);
   if (request.leadId) query = query.eq("id", request.leadId);
   query = applyLeadOrder(applyLeadFilters(query, context, request, timezone), request);
@@ -196,6 +196,10 @@ function toLeadRow(lead: Record<string, unknown>): LeadRow {
   if (lead.lead_source === "google_ads") {
     const campaignId = asNullableString(lead.google_campaign_id);
     return { ...row, source: "google_ads", leadgenId: asNullableString(lead.google_lead_id) ?? "", facebookPage: "Google Ads", adName: adName ?? (campaignId ? `Google Ads · Campaign ${campaignId}` : "Unattributed") };
+  }
+  // A lead the company's own tool sent to its webhook: the tool's lead_id, and the "source" it named (e.g. "Landing Page").
+  if (lead.lead_source === "custom_webhook") {
+    return { ...row, source: "custom_webhook", leadgenId: asNullableString(lead.custom_lead_ref) ?? "", facebookPage: "Webhook", adName: asNullableString(lead.custom_source_name) ?? "-" };
   }
   return row;
 }

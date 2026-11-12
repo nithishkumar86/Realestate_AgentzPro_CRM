@@ -93,16 +93,18 @@ export const TIMELINE_FILTER_TYPES: Record<Exclude<TimelineFilter, "all">, reado
 };
 
 // Where a lead came from. Keep in sync with the `lead_data.lead_source` check constraint in
-// supabase/migrations/20261028120000_google_ads_leads.sql.
-export const LEAD_SOURCES = ["facebook", "telecaller", "google_ads"] as const;
+// supabase/migrations/20261111170000_custom_webhook_leads.sql. custom_webhook = sent by the company's own tools to its
+// webhook URL (shown as "Webhook").
+export const LEAD_SOURCES = ["facebook", "telecaller", "google_ads", "custom_webhook"] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
-export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = { facebook: "Facebook", telecaller: "Telecaller", google_ads: "Google Ads" };
+export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = { facebook: "Facebook", telecaller: "Telecaller", google_ads: "Google Ads", custom_webhook: "Webhook" };
 
-// Where a call-in lead can say it came from: every lead platform except Telecaller (that is how it entered, not where
-// the person came from). Keep in sync with call_in_platforms() and lead_data_came_from_check in
+// Where a call-in lead can say it came from: the ad platforms only. Telecaller is how it entered, not where the person
+// came from, and Webhook is a delivery channel, not an ad platform. Listed explicitly, so a new lead source never joins
+// the "+" form by accident. Keep in sync with call_in_platforms() and lead_data_came_from_check in
 // supabase/migrations/20261030120000_call_in_lead_came_from.sql.
-export type CallInPlatform = Exclude<LeadSource, "telecaller">;
-export const CALL_IN_PLATFORMS = LEAD_SOURCES.filter((source): source is CallInPlatform => source !== "telecaller");
+export type CallInPlatform = Extract<LeadSource, "facebook" | "google_ads">;
+export const CALL_IN_PLATFORMS = ["facebook", "google_ads"] as const satisfies readonly CallInPlatform[];
 /** What a call-in lead is credited to on each platform: a Facebook ad, a Google Ads campaign. */
 export const CALL_IN_REF_LABELS: Record<CallInPlatform, string> = { facebook: "Ad", google_ads: "Campaign" };
 

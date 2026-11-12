@@ -47,8 +47,10 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   // The leads page opens on ALL leads with no filter applied; the shared hook owns the filter state and its options.
   const filters = useLeadFilters({ autoSelectDefaultAd: false, onError: setError });
   const { quick, status, label, assignee, source, from, to, pageRecordId, adId, campaignId, search } = filters;
-  // Google Ads leads have no Facebook Page or ad: the Campaign filter replaces them, and Page / Ad show greyed out.
+  // Google Ads and webhook leads have no Facebook Page or ad, so Page / Ad show greyed out. On Google Ads the Campaign
+  // filter replaces them.
   const isGoogleAds = source === "google_ads";
+  const pageAdDisabled = isGoogleAds || source === "custom_webhook";
   const { sources } = useLeadSources();
   // The last successful load (its request and cursor), for the "new leads arrived" bar. Unset while a load runs, or
   // when the cursor could not be read: the bar then stays off and the table works as before.
@@ -186,7 +188,7 @@ export function LeadsPageClient({ focusLeadId }: Readonly<{ focusLeadId?: string
   const drawerLead = drawerLeadId ? leads.find((lead) => lead.id === drawerLeadId) ?? (focusedLead?.id === drawerLeadId ? focusedLead : null) : null;
 
   return <div className="mvp-leads">
-    <LeadFilterBar filters={filters} showAssignee showSource showCampaign={isGoogleAds} pageAdDisabled={isGoogleAds} sources={sources ?? LOADING_SOURCES} actions={<>
+    <LeadFilterBar filters={filters} showAssignee showSource showCampaign={isGoogleAds} pageAdDisabled={pageAdDisabled} sources={sources ?? LOADING_SOURCES} actions={<>
       <button className="mvp-gradient-button mvp-gradient-button--delete" type="button" disabled={selectedLeadIds.length === 0 || isDeleting} onClick={() => void deleteSelectedLeads()}>
         <Trash2 size={16} />{isDeleting ? "Deleting..." : selectedLeadIds.length > 0 ? `Delete (${selectedLeadIds.length})` : "Delete"}
       </button>

@@ -7,11 +7,12 @@ import { LeadsPageClient } from "@/features/leads/leads-page-client";
 import { LEADS_CHANGED_EVENT } from "@/components/task-bell";
 
 // The Source filter's connection checks (useLeadSources). By default the company uses every source.
-const sourceChecks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn() }));
-vi.mock("@/services/crm-api-client", () => ({ getConnectionOverview: sourceChecks.connection, getGoogleAdsOverview: sourceChecks.google }));
+const sourceChecks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn(), webhook: vi.fn() }));
+vi.mock("@/services/crm-api-client", () => ({ getConnectionOverview: sourceChecks.connection, getGoogleAdsOverview: sourceChecks.google, getCustomWebhookOverview: sourceChecks.webhook }));
 beforeEach(() => {
   sourceChecks.connection.mockReset().mockResolvedValue({ connectionStatus: "active", pages: [{ id: "page-1", status: "active" }] });
   sourceChecks.google.mockReset().mockResolvedValue({ connection: null, hasWebhook: true, webhookStopped: false, needsReconnect: false });
+  sourceChecks.webhook.mockReset().mockResolvedValue({ canManage: true, hasWebhook: true, webhookStopped: false, webhook: null });
 });
 
 vi.mock("next/link", () => ({
@@ -66,7 +67,7 @@ function jsonResponse(body: unknown, status = 200): Response {
  * Sending one there is what used to 400 every download, so the stub reproduces that contract
  * rather than accepting anything: put a pagination field back and these tests fail.
  */
-type DummyLead = { id: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string; source?: string };
+type DummyLead = { id: string; leadgenId?: string; leadName: string | null; phone: string | null; facebookPage: string; adName: string; leadDate: string; status: string; label: string; labelSource?: string; source?: string };
 
 /** `filterOptions` may be a list: the n-th filters load gets the n-th entry (the last one repeats). */
 /** The cursor the real query route returns: the newest lead's created_at exactly as Postgres writes it. */
@@ -646,23 +647,62 @@ describe("Source filter lists only the sources the company uses", () => {
     stubLeadApi();
     sourceChecks.connection.mockResolvedValue({ connectionStatus: "not_connected", pages: [] });
     sourceChecks.google.mockResolvedValue({ connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false });
+    sourceChecks.webhook.mockResolvedValue({ canManage: true, hasWebhook: false, webhookStopped: false, webhook: null });
     render(<LeadsPageClient />);
     expect(await listedSources()).toEqual(["All sources", "Telecaller"]);
   });
 
-  it("a company with Facebook and Google Ads connected sees all three", async () => {
+  it("a company with Facebook, Google Ads and a webhook connected sees all four", async () => {
     stubLeadApi();
     render(<LeadsPageClient />);
-    expect(await listedSources()).toEqual(["All sources", "Facebook", "Telecaller", "Google Ads"]);
+    expect(await listedSources()).toEqual(["All sources", "Facebook", "Telecaller", "Google Ads", "Webhook"]);
   });
 
   it("filters by a connected source and never offers one the company doesn't use", async () => {
     const sent = stubLeadApi();
     sourceChecks.google.mockResolvedValue({ connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false });
+    sourceChecks.webhook.mockResolvedValue({ canManage: true, hasWebhook: false, webhookStopped: false, webhook: null });
     render(<LeadsPageClient />);
     expect(await listedSources()).toEqual(["All sources", "Facebook", "Telecaller"]);
     fireEvent.click(screen.getByRole("option", { name: "Facebook" }));
     await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "facebook" }));
+  });
+
+  it("offers Webhook only once the company created its webhook, and keeps it after Stop", async () => {
+    stubLeadApi();
+    sourceChecks.webhook.mockResolvedValue({ canManage: true, hasWebhook: false, webhookStopped: true, webhook: null });
+    render(<LeadsPageClient />);
+    expect(await listedSources()).toContain("Webhook");
+  });
+});
+
+describe("Webhook source on /leads", () => {
+  it("shows a webhook lead with its lead_id, 'Webhook' and the source it named", async () => {
+    stubLeadApi([{ id: "lead-1", leadgenId: "lp-42", leadName: "John Doe", phone: "9876543210", facebookPage: "Webhook", adName: "Landing Page", leadDate: "2026-11-11T06:30:00Z", status: "New Lead", label: "Warm", source: "custom_webhook" }]);
+    render(<LeadsPageClient />);
+    const row = (await screen.findByText("John Doe")).closest("tr")!;
+    expect(within(row).getByText("lp-42")).toBeInTheDocument();
+    expect(within(row).getByText("Webhook")).toBeInTheDocument();
+    expect(within(row).getByText("Landing Page")).toBeInTheDocument();
+    expect(within(row).queryByRole("img", { name: "Added by telecaller" })).not.toBeInTheDocument();
+  });
+
+  it("drops a Facebook Page and ad when switching to Webhook, and greys Page and Ad out with no Campaign filter", async () => {
+    const sent = stubLeadApi();
+    await renderLeadsPage(sent);
+    await chooseFilter("Page", "Chennai Homes");
+    await chooseFilter("Ad", /karuvi/);
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ pageRecordId: PAGE_ID, adId: "6301-karuvi" }));
+
+    await waitFor(() => expect(sourceChecks.webhook).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); });
+    await chooseFilter("Source", "Webhook");
+    await waitFor(() => expect(sent.query.at(-1)).toMatchObject({ source: "custom_webhook" }));
+    expect(sent.query.at(-1)).not.toHaveProperty("pageRecordId");
+    expect(sent.query.at(-1)).not.toHaveProperty("adId");
+    expect(screen.getByRole("button", { name: "Page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ad" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Campaign" })).not.toBeInTheDocument();
   });
 });
 

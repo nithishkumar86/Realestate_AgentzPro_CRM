@@ -57,3 +57,16 @@ export async function getGoogleAdsAccountOptions(): Promise<{ accounts: GoogleAd
 export async function saveGoogleAdsAccounts(customerIds: string[]): Promise<{ saved: boolean }> { return request("/api/integrations/google/accounts", { method: "POST", body: JSON.stringify({ customerIds }) }); }
 export async function disconnectGoogleAds(): Promise<{ disconnected: boolean }> { return request("/api/integrations/google/disconnect", { method: "POST", body: "{}" }); }
 export async function stopGoogleAdsWebhook(): Promise<{ stopped: boolean }> { return request("/api/integrations/google/webhook", { method: "DELETE" }); }
+
+export type CustomWebhookOverview = {
+  canManage: boolean;
+  hasWebhook: boolean;
+  webhookStopped: boolean;
+  /** Owner only, and only with details: true (the Connection card). lastLeadAt counts only leads sent to the current URL. */
+  webhook: { url: string; lastLeadAt: string | null } | null;
+};
+
+/** details: true (Connection card only) adds the owner's webhook URL; /leads and the dashboard never ask for it. */
+export async function getCustomWebhookOverview(options: { details?: boolean } = {}): Promise<CustomWebhookOverview> { return request<CustomWebhookOverview>(options.details ? "/api/integrations/custom-webhook?details=1" : "/api/integrations/custom-webhook"); }
+export async function createCustomWebhook(): Promise<{ url: string }> { return request("/api/integrations/custom-webhook", { method: "POST", body: "{}" }); }
+export async function stopCustomWebhook(): Promise<{ stopped: boolean }> { return request("/api/integrations/custom-webhook", { method: "DELETE" }); }

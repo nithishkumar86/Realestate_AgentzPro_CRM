@@ -9,8 +9,17 @@ const requestSchema = z.object({ search: z.string().max(200).optional(), quickFi
 export async function POST(request: Request) {
   try {
     const result = await queryLeads(await resolveTenantRequestContext(), await parseJsonBody(request, requestSchema), true);
-    const csv = ["Lead ID,Lead Name,Lead Date,Status,Label,Email,Phone,Facebook Page,Ad Name,Ad ID,Assigned To", ...result.items.map((row) => [row.leadgenId, row.leadName, new Intl.DateTimeFormat("en-IN", { timeZone: result.timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(row.leadDate)), row.status, row.label, row.email, row.phone, row.source === "telecaller" ? null : row.facebookPage, row.source === "telecaller" ? null : row.adName, row.adId, row.assigneeName].map(csvValue).join(","))].join("\r\n");
+    const csv = ["Lead ID,Lead Name,Lead Date,Status,Label,Email,Phone,Facebook Page,Ad Name,Ad ID,Assigned To", ...result.items.map((row) => [row.leadgenId, row.leadName, new Intl.DateTimeFormat("en-IN", { timeZone: result.timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(row.leadDate)), row.status, row.label, row.email, row.phone, row.source === "telecaller" ? null : row.facebookPage, exportAdName(row), row.adId, row.assigneeName].map(csvValue).join(","))].join("\r\n");
     return new NextResponse(`\uFEFF${csv}`, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename=leads-${new Date().toISOString().slice(0, 10)}.csv` } });
   } catch (error) { return createErrorResponse(error); }
+}
+/**
+ * A call-in lead's Ad Name cell stays empty. So does a webhook lead's when its tool sent no "source": the table shows a
+ * "-" placeholder there, which csvValue's formula guard would otherwise write as '-.
+ */
+function exportAdName(row: { source: string; adName: string }): string | null {
+  if (row.source === "telecaller") return null;
+  if (row.source === "custom_webhook" && row.adName === "-") return null;
+  return row.adName;
 }
 function csvValue(value: string | null): string { const safe = String(value ?? "").replace(/^[=+\-@\t\r]/, "'$&"); return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe; }

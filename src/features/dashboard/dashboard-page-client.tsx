@@ -14,7 +14,7 @@ import { LeadActiveFilters, LeadFilterBar } from "@/features/leads/lead-filters"
 import { GOOGLE_CAMPAIGN_ID_PATTERN } from "@/features/leads/lead-options";
 import { useLeadFilters } from "@/features/leads/use-lead-filters";
 import { useLeadSources, type ConnectionHealth } from "@/features/leads/use-lead-sources";
-import { getConnectionOverview, getGoogleAdsOverview } from "@/services/crm-api-client";
+import { getConnectionOverview, getCustomWebhookOverview, getGoogleAdsOverview } from "@/services/crm-api-client";
 
 const LIVE_TEXT: Record<LiveState, string> = {
   connecting: "Connecting…",
@@ -99,14 +99,17 @@ function DashboardView({ platforms, initialPlatform, initialHealth }: { platform
   // Each connection's health is loaded the first time a platform that depends on it is shown. It is skipped only once
   // it has LOADED (not once it was requested), so React Strict Mode's mount → unmount → mount still shows the warning.
   const healthLoaded = platform.connection === "meta" ? health.meta !== null
-    : platform.connection === "google" ? health.google !== null : true;
+    : platform.connection === "google" ? health.google !== null
+      : platform.connection === "webhook" ? health.webhook !== null : true;
   useEffect(() => {
     const connection = platform.connection;
     if (!connection || healthLoaded) return;
     let isMounted = true;
     const load = connection === "meta"
       ? getConnectionOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, meta: overview.connectionStatus })); })
-      : getGoogleAdsOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, google: { hasWebhook: overview.hasWebhook, webhookStopped: overview.webhookStopped, needsReconnect: overview.needsReconnect } })); });
+      : connection === "google"
+        ? getGoogleAdsOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, google: { hasWebhook: overview.hasWebhook, webhookStopped: overview.webhookStopped, needsReconnect: overview.needsReconnect } })); })
+        : getCustomWebhookOverview().then((overview) => { if (isMounted) setHealth((current) => ({ ...current, webhook: { hasWebhook: overview.hasWebhook, webhookStopped: overview.webhookStopped } })); });
     // Connection health is best-effort; leave the warning hidden if it can't be loaded (showing the platform again retries).
     void load.catch(() => {});
     return () => { isMounted = false; };
@@ -228,6 +231,10 @@ function ConnectionNotice({ platform, health }: { platform: DashboardPlatform; h
   if (platform.connection === "google" && health.google?.needsReconnect) {
     return <Notice tone="warning" title="Google Ads sign-in needs attention. Campaign and ad group names may not update."
       action={<Link className="button button--secondary" href="/connection">Reconnect Google Ads</Link>} />;
+  }
+  if (platform.connection === "webhook" && health.webhook?.webhookStopped) {
+    return <Notice tone="warning" title="Webhook is stopped. New webhook leads are refused."
+      action={<Link className="button button--secondary" href="/connection">Open Connection</Link>} />;
   }
   return null;
 }

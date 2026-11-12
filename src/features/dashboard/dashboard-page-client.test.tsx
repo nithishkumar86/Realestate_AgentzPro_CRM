@@ -5,9 +5,9 @@ import { CHART_SETTLE_MS } from "@/features/dashboard/dashboard-download";
 import { DashboardPageClient } from "@/features/dashboard/dashboard-page-client";
 import { DASHBOARD_PLATFORMS } from "@/features/dashboard/dashboard-platforms";
 
-const mocks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn() }));
+const mocks = vi.hoisted(() => ({ connection: vi.fn(), google: vi.fn(), webhook: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ children, href, ...props }: { children: React.ReactNode; href: string }) => <a href={href} {...props}>{children}</a> }));
-vi.mock("@/services/crm-api-client", () => ({ getConnectionOverview: mocks.connection, getGoogleAdsOverview: mocks.google }));
+vi.mock("@/services/crm-api-client", () => ({ getConnectionOverview: mocks.connection, getGoogleAdsOverview: mocks.google, getCustomWebhookOverview: mocks.webhook }));
 vi.mock("@/features/dashboard/navigation", () => ({ reloadPage: vi.fn(), goToLogin: vi.fn() }));
 // recharts needs real layout; the charts' own maths is covered by dashboard-format tests and the browser run.
 vi.mock("@/features/dashboard/dashboard-charts", () => ({
@@ -47,6 +47,8 @@ const META_CONNECTED = { connectionStatus: "active", pages: [{ id: PAGE_ID, stat
 const META_NONE = { connectionStatus: "not_connected", pages: [] };
 const GOOGLE_SIGNED_IN = { connection: { email: "owner@example.com", connectedAt: "2026-10-01T00:00:00Z" }, hasWebhook: false, webhookStopped: false, needsReconnect: false };
 const GOOGLE_NONE = { connection: null, hasWebhook: false, webhookStopped: false, needsReconnect: false };
+const WEBHOOK_ON = { canManage: true, hasWebhook: true, webhookStopped: false, webhook: null };
+const WEBHOOK_NONE = { canManage: true, hasWebhook: false, webhookStopped: false, webhook: null };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 const statBodies: Array<Record<string, unknown>> = [];
@@ -60,9 +62,11 @@ beforeEach(() => {
   filterLoads = 0;
   FakeEventSource.instances = [];
   nextStats = respond();
-  // By default the company uses every platform: a Facebook Page is connected and Google Ads is signed in with a webhook.
+  // By default the company uses every platform: a Facebook Page is connected, Google Ads is signed in with a webhook,
+  // and the custom webhook was created.
   mocks.connection.mockReset().mockResolvedValue(META_CONNECTED);
   mocks.google.mockReset().mockResolvedValue({ ...GOOGLE_SIGNED_IN, hasWebhook: true });
+  mocks.webhook.mockReset().mockResolvedValue(WEBHOOK_ON);
   window.history.replaceState(null, "", "/dashboard");
   vi.stubGlobal("EventSource", FakeEventSource);
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
@@ -224,7 +228,7 @@ describe("dashboard platform switch", () => {
     expect(statBodies[0]).toMatchObject({ platform: "facebook" });
     fireEvent.click(screen.getByRole("button", { name: "Leads platform: Facebook" }));
     const list = await screen.findByRole("listbox", { name: "Leads platform" });
-    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["Facebook", "Google Ads", "Telecaller"]);
+    expect(within(list).getAllByRole("option").map((option) => option.textContent)).toEqual(["Facebook", "Google Ads", "Webhook", "Telecaller"]);
   });
 
   it("switches the whole dashboard to Google Ads: own breakdowns, Page/Ad greyed out, stale page cleared, URL kept", async () => {
@@ -429,6 +433,7 @@ describe("only the platforms the company uses", () => {
   it("a new company with nothing connected opens on Telecaller and lists only Telecaller", async () => {
     mocks.connection.mockResolvedValue(META_NONE);
     mocks.google.mockResolvedValue(GOOGLE_NONE);
+    mocks.webhook.mockResolvedValue(WEBHOOK_NONE);
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     expect(statBodies.map((body) => body.platform)).toEqual(["telecaller"]); // no Facebook request first
@@ -454,14 +459,14 @@ describe("only the platforms the company uses", () => {
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     expect(statBodies[0]).toMatchObject({ platform: "google_ads" });
-    expect(await listedPlatforms()).toEqual(["Google Ads", "Telecaller"]);
+    expect(await listedPlatforms()).toEqual(["Google Ads", "Webhook", "Telecaller"]);
   });
 
   it("Sign in with Google alone does not list Google Ads: no lead arrives without the webhook", async () => {
     mocks.google.mockResolvedValue(GOOGLE_SIGNED_IN);
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
-    expect(await listedPlatforms()).toEqual(["Facebook", "Telecaller"]);
+    expect(await listedPlatforms()).toEqual(["Facebook", "Webhook", "Telecaller"]);
   });
 
   it("keeps a disconnected Facebook Page and a stopped Google webhook, so their old leads stay reachable", async () => {
@@ -469,7 +474,7 @@ describe("only the platforms the company uses", () => {
     mocks.google.mockResolvedValue({ ...GOOGLE_NONE, webhookStopped: true });
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
-    expect(await listedPlatforms()).toEqual(["Facebook", "Google Ads", "Telecaller"]);
+    expect(await listedPlatforms()).toEqual(["Facebook", "Google Ads", "Webhook", "Telecaller"]);
   });
 
   it("a link to a platform the company doesn't use opens its first platform and corrects the URL", async () => {
@@ -496,9 +501,48 @@ describe("only the platforms the company uses", () => {
   it("keeps a platform whose connection check failed, so an error never hides real leads", async () => {
     mocks.connection.mockRejectedValue(new Error("network"));
     mocks.google.mockResolvedValue(GOOGLE_NONE);
+    mocks.webhook.mockResolvedValue(WEBHOOK_NONE);
     render(<DashboardPageClient />);
     await screen.findByTestId("month-leads");
     expect(statBodies[0]).toMatchObject({ platform: "facebook" });
     expect(await listedPlatforms()).toEqual(["Facebook", "Telecaller"]);
+  });
+
+  it("lists Webhook only once the company created its webhook, and keeps it after Stop", async () => {
+    mocks.webhook.mockResolvedValue(WEBHOOK_NONE);
+    const { unmount } = render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(await listedPlatforms()).toEqual(["Facebook", "Google Ads", "Telecaller"]);
+    unmount();
+    mocks.webhook.mockResolvedValue({ ...WEBHOOK_NONE, webhookStopped: true });
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(await listedPlatforms()).toEqual(["Facebook", "Google Ads", "Webhook", "Telecaller"]);
+  });
+});
+
+describe("dashboard Webhook view", () => {
+  it("shows webhook leads with the common charts only, and no Page, Ad or Campaign filter", async () => {
+    render(<DashboardPageClient initialPlatform="custom_webhook" />);
+    await screen.findByTestId("month-leads");
+    expect(statBodies[0]).toMatchObject({ platform: "custom_webhook" });
+    expect(statBodies[0]).not.toHaveProperty("pageRecordId");
+    expect(screen.getByText("This Month Webhook Leads")).toBeInTheDocument();
+    expect(screen.getByTestId("Leads by label")).toBeInTheDocument();
+    expect(screen.getByTestId("Leads by status")).toBeInTheDocument();
+    expect(screen.queryByTestId("Leads by Facebook Page")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Page" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Campaign" })).not.toBeInTheDocument();
+  });
+
+  it("warns that new webhook leads are refused once the owner stopped the webhook, on the Webhook view only", async () => {
+    mocks.webhook.mockResolvedValue({ ...WEBHOOK_NONE, webhookStopped: true });
+    render(<DashboardPageClient initialPlatform="custom_webhook" />);
+    await screen.findByTestId("month-leads");
+    expect(await screen.findByText("Webhook is stopped. New webhook leads are refused.")).toBeInTheDocument();
+    cleanup();
+    render(<DashboardPageClient />);
+    await screen.findByTestId("month-leads");
+    expect(screen.queryByText("Webhook is stopped. New webhook leads are refused.")).not.toBeInTheDocument();
   });
 });

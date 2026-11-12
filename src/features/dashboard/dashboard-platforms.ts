@@ -22,7 +22,7 @@ export interface DashboardPlatform {
   /** `idSuffix`: show the id's last 4 digits after the name, as the Ad filter does (Facebook ads). */
   items: { title: string; subtitle: string; ariaLabel: string; idSuffix: boolean } | null;
   filters: { page: boolean; ad: boolean; campaign: boolean };
-  connection: "meta" | "google" | null;
+  connection: "meta" | "google" | "webhook" | null;
   emptyState: { title: string; description: string };
 }
 
@@ -44,6 +44,17 @@ export const DASHBOARD_PLATFORMS = [
     filters: { page: false, ad: false, campaign: true },
     connection: "google",
     emptyState: { title: "No Google Ads leads match these filters", description: "Leads from your Google Ads lead forms show up here instantly once Google Ads is connected." },
+  },
+  {
+    // Leads the company's own tools send to its webhook URL. No groups or items: totals, status, label and timeline,
+    // like Telecaller, so get_dashboard_platform_stats_v2 needs no change.
+    id: "custom_webhook",
+    label: "Webhook",
+    group: null,
+    items: null,
+    filters: { page: false, ad: false, campaign: false },
+    connection: "webhook",
+    emptyState: { title: "No webhook leads match these filters", description: "Leads your tools send to your webhook URL show up here instantly." },
   },
   {
     id: "telecaller",
