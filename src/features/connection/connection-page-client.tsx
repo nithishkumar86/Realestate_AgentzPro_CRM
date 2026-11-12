@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, Loader2, Plug, RefreshCw, ThumbsUp, Unplug, X } from "lucide-react";
+import { Check, Loader2, Plug, RefreshCw, Unplug, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { notifyFacebookConnectionChanged } from "@/components/facebook-reconnect-banner";
 import { EmptyState, LoadingState, Notice, PageHeader, StatusBadge, displayValue } from "@/components/ui";
+import { FacebookIcon } from "@/features/connection/brand-icons";
 import { loadFacebookSdk } from "@/features/connection/facebook-sdk";
 import { IntegrationCardTitle } from "@/features/connection/integration-card-title";
 import { formatDateTime } from "@/lib/date-utils";
@@ -143,7 +144,7 @@ export function ConnectionPageClient() {
   return <div className="stack">
     <PageHeader title="Integrations" description="Connect the tools that send leads to your CRM." />
     <section className="panel integration-card integration-card--facebook" aria-labelledby="facebook-title"><div className="panel__body stack">
-    <div className="section-title"><IntegrationCardTitle id="facebook-title" icon={ThumbsUp} title="Facebook" description="Manage the Facebook Pages that will receive Meta Lead Ads leads." />
+    <div className="section-title"><IntegrationCardTitle id="facebook-title" icon={FacebookIcon} title="Facebook" description="Manage the Facebook Pages that will receive Meta Lead Ads leads." />
       {overview ? <ConnectionStatusBadge status={overview.connectionStatus} /> : null}
     </div>
     {message ? <Notice tone={message.tone} title={message.text} /> : null}
