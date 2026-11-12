@@ -3490,7 +3490,7 @@ button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; bord
   --chart-warm: #f59e0b;
   --chart-cold: #2f80ed;
   --chart-muted: #8b95a7;
-  /* One distinct colour per lead status, in LEAD_STATUSES order. */
+  /* Older dashboard colours; status bars now use the /leads colours (STATUS_HIGHLIGHTS). Only --status-12 is still used (Top ads, 8th bar). */
   --status-1: #2563eb;
   --status-2: #dc2626;
   --status-3: #d97706;
