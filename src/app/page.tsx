@@ -203,7 +203,7 @@ export default async function HomePage() {
             </li>
             <li className={styles.step}>
               <h3>Connect your lead sources</h3>
-              <p>Connect your Facebook Page and your Google Ads account from the Connection page.</p>
+              <p>Connect your Facebook Page and your Google Ads account from the Integrations page.</p>
             </li>
             <li className={styles.step}>
               <h3>Follow up on every lead</h3>
@@ -241,7 +241,7 @@ export default async function HomePage() {
                 <li>
                   <CheckCircle2 size={18} aria-hidden="true" />
                   <span>
-                    Disconnect Google from the Connection page whenever you like. We then revoke our access and delete
+                    Disconnect Google from the Integrations page whenever you like. We then revoke our access and delete
                     your sign-in token.
                   </span>
                 </li>
@@ -263,7 +263,7 @@ export default async function HomePage() {
                 </li>
                 <li>
                   <CheckCircle2 size={18} aria-hidden="true" />
-                  <span>Disconnect a Page from the Connection page at any time to stop new leads from it.</span>
+                  <span>Disconnect a Page from the Integrations page at any time to stop new leads from it.</span>
                 </li>
               </ul>
             </div>

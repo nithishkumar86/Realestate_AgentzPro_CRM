@@ -234,7 +234,7 @@ function ConnectionNotice({ platform, health }: { platform: DashboardPlatform; h
   }
   if (platform.connection === "webhook" && health.webhook?.webhookStopped) {
     return <Notice tone="warning" title="Webhook is stopped. New webhook leads are refused."
-      action={<Link className="button button--secondary" href="/connection">Open Connection</Link>} />;
+      action={<Link className="button button--secondary" href="/connection">Open Integrations</Link>} />;
   }
   return null;
 }

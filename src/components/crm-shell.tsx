@@ -14,7 +14,7 @@ const navigation = [
   { href: "/leads", label: "Leads", icon: ClipboardList },
   { href: "/tasks", label: "Tasks", icon: CalendarCheck },
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-  { href: "/connection", label: "Connection", icon: Link2 },
+  { href: "/connection", label: "Integrations", icon: Link2 },
 ] as const;
 
 export interface CrmShellProps {

@@ -140,7 +140,7 @@ export function ConnectionPageClient() {
   function clearPageSelection(): void { setEligiblePages([]); setConnectionId(null); setSelectedPageIds([]); }
 
   return <div className="stack">
-    <PageHeader title="Connection" description="Manage the Facebook Pages that will receive Meta Lead Ads leads." />
+    <PageHeader title="Integrations" description="Manage the Facebook Pages that will receive Meta Lead Ads leads." />
     {message ? <Notice tone={message.tone} title={message.text} /> : null}
     {declinedPermissions ? <Notice tone="warning" title="Some Facebook permissions were not approved.">Facebook will not ask for a declined permission again unless it is re-requested.{declinedPermissions.length > 0 ? ` Missing: ${declinedPermissions.join(", ")}.` : ""} <button className="button button--secondary" type="button" disabled={isConnecting} onClick={() => void handleConnect("rerequest")}>{isConnecting ? <Loader2 className="spin" aria-hidden="true" size={18} /> : <RefreshCw aria-hidden="true" size={18} />}Grant permissions</button></Notice> : null}
     {overview && !canManage ? <Notice tone="info" title="Only the company owner can connect or disconnect Facebook Pages." /> : null}

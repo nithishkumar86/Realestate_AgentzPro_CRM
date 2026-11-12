@@ -4,7 +4,7 @@ import { CustomWebhookConnectionCard } from "@/features/connection/custom-webhoo
 import { GoogleAdsConnectionCard } from "@/features/connection/google-ads-connection-card";
 
 export const metadata: Metadata = {
-  title: "Connection",
+  title: "Integrations",
 };
 
 export default function ConnectionPage() {
