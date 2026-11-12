@@ -72,7 +72,7 @@ export function CustomWebhookConnectionCard() {
   const webhook = overview?.webhook ?? null;
 
   return <section className="panel" aria-labelledby="custom-webhook-title"><div className="panel__body stack">
-    <div className="section-title"><div><h2 id="custom-webhook-title">Webhook</h2><p>Receive leads from any tool that can send a POST request: website forms, Zapier, Pabbly or your own software.</p></div>
+    <div className="section-title"><div><h2 id="custom-webhook-title">Webhook</h2><p>Receive leads from any tool that can send a POST request: website form plugins, Zapier, Pabbly or your own software.</p></div>
       {overview ? <StatusBadge tone={overview.hasWebhook ? "success" : overview.webhookStopped ? "danger" : "info"}>{overview.hasWebhook ? "Receiving leads" : overview.webhookStopped ? "Disconnected" : "Not set up"}</StatusBadge> : null}
     </div>
     {message ? <Notice tone={message.tone} title={message.text} /> : null}
@@ -81,7 +81,7 @@ export function CustomWebhookConnectionCard() {
     {overview && canManage ? <div className="google-ads-step">
       {webhook ? <>
         <p className="field-help">Paste this URL into a tool that sends leads from its own server, such as Zapier, Pabbly, your CRM or a WordPress / Elementor webhook action. Method: <strong>POST</strong>, as JSON or form data.</p>
-        <p className="field-help"><strong>Keep this URL secret.</strong> Never put it in your website&apos;s HTML or JavaScript: anyone who has it can send leads.</p>
+        <p className="field-help"><strong>Keep this URL secret.</strong> Never put it in your website&apos;s HTML or JavaScript: anyone who has it can send leads. Leads sent from a web page are refused.</p>
         <div className="field"><label htmlFor={urlInputId}>Webhook URL</label>
           <div className="google-copy-row"><input id={urlInputId} type={showUrl ? "text" : "password"} autoComplete="off" readOnly value={webhook.url} onFocus={(event) => event.currentTarget.select()} />
             <button className="google-copy-row__action" type="button" aria-pressed={showUrl} onClick={() => setShowUrl((current) => !current)}>{showUrl ? <EyeOff aria-hidden="true" size={16} /> : <Eye aria-hidden="true" size={16} />}{showUrl ? "Hide" : "Show"}</button>

@@ -48,6 +48,31 @@ describe("POST /api/webhooks/custom/[token]", () => {
     expect(mocks.ingest).not.toHaveBeenCalled();
   });
 
+  it.each(["cross-site", "same-site", "same-origin", "none"])(
+    "refuses a request sent from a web page (Sec-Fetch-Site: %s) with 403, before reading the body or the token",
+    async (site) => {
+      vi.spyOn(console, "info").mockImplementation(() => {});
+      const response = await post("name=Asha&phone=9876543210", { "content-type": "application/x-www-form-urlencoded", "sec-fetch-site": site, origin: "https://client-site.example" });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "Send webhook leads from a server (Zapier, Pabbly, a form plugin's webhook or your own software), not from a web page." });
+      expect(mocks.ingest).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts server software: Node.js fetch (Sec-Fetch-Mode only), curl and a relay that forwards a visitor's Origin", async () => {
+    mocks.ingest.mockResolvedValue({ status: 200, duplicate: false });
+    const senders: Array<Record<string, string>> = [
+      { "content-type": "application/json", "sec-fetch-mode": "cors", "user-agent": "node" },
+      { "content-type": "application/x-www-form-urlencoded", "user-agent": "curl/8.11.0" },
+      { "content-type": "application/json", origin: "https://client-site.example" },
+    ];
+    for (const headers of senders) {
+      const response = await post("{\"phone\":\"9876543210\"}", headers);
+      expect(response.status).toBe(200);
+    }
+    expect(mocks.ingest).toHaveBeenCalledTimes(3);
+  });
+
   it("answers 500 (safe to retry) when the service throws, without leaking details", async () => {
     mocks.ingest.mockRejectedValue(new Error("secret detail"));
     const response = await post("{}");

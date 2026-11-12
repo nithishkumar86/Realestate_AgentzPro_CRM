@@ -39,7 +39,7 @@ describe("CustomWebhookConnectionCard", () => {
     render(<CustomWebhookConnectionCard />);
     expect(await screen.findByLabelText("Example webhook body")).toHaveTextContent("\"lead_id\": \"optional-your-own-id\"");
     expect(SAMPLE_WEBHOOK_BODY).toContain("\"source\": \"Landing Page\"");
-    expect(screen.getByText(/Never put it in your website/)).toBeInTheDocument();
+    expect(screen.getByText(/Never put it in your website/)).toHaveTextContent("Leads sent from a web page are refused.");
     expect(screen.getByText(/Phone or email is required/)).toBeInTheDocument();
     expect(screen.getByText("None yet")).toBeInTheDocument();
   });
