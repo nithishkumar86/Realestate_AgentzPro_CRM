@@ -4088,3 +4088,20 @@ body.mvp-drawer-resizing .mvp-lead-drawer { animation: none; pointer-events: non
 .webhook-sample { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); box-shadow: var(--shadow-field); }
 .webhook-sample pre { flex: 1; min-width: 0; margin: 0; padding: 12px 14px; overflow-x: auto; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; line-height: 1.5; white-space: pre; }
 @media (max-width: 640px) { .webhook-sample { flex-wrap: wrap; } .webhook-sample pre { flex-basis: 100%; } .webhook-sample .google-copy-row__action { flex: 1; min-height: 42px; border-left: 0; border-top: 1px solid var(--border); } }
+
+/* Integrations page: one card per lead source, told apart by a colored top band and icon badge. */
+.integration-card { --integration-accent: var(--primary); border-top: 4px solid var(--integration-accent); }
+.integration-card--facebook { --integration-accent: #1877f2; }
+.integration-card--google { --integration-accent: #188038; }
+.integration-card--webhook { --integration-accent: #7c3aed; }
+:root[data-theme="dark"] .integration-card--facebook { --integration-accent: #4599ff; }
+:root[data-theme="dark"] .integration-card--google { --integration-accent: #5bb974; }
+:root[data-theme="dark"] .integration-card--webhook { --integration-accent: #a78bfa; }
+.integration-card__title { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.integration-card__title > div { min-width: 0; }
+.integration-card__title + .status-badge { flex: 0 0 auto; white-space: nowrap; }
+.integration-card__icon { display: inline-grid; flex: 0 0 auto; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: color-mix(in srgb, var(--integration-accent) 14%, transparent); color: var(--integration-accent); }
+/* Facebook's parts (summary, Page picker, connected Pages) as sections of its card, spaced like the Google Ads steps. */
+.integration-card__section { display: grid; gap: 14px; padding-top: 18px; border-top: 1px solid var(--border); }
+.integration-card__section h3 { margin: 0; font-size: 1rem; }
+.integration-card__section .section-title { margin-bottom: 0; }

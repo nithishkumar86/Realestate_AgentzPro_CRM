@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Unplug, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, RefreshCw, Unplug, Webhook, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { LoadingState, Notice, StatusBadge } from "@/components/ui";
+import { IntegrationCardTitle } from "@/features/connection/integration-card-title";
 import { formatDateTime } from "@/lib/date-utils";
 import { createCustomWebhook, getCustomWebhookOverview, stopCustomWebhook, type CustomWebhookOverview } from "@/services/crm-api-client";
 
@@ -71,8 +72,8 @@ export function CustomWebhookConnectionCard() {
   const canManage = overview?.canManage === true;
   const webhook = overview?.webhook ?? null;
 
-  return <section className="panel" aria-labelledby="custom-webhook-title"><div className="panel__body stack">
-    <div className="section-title"><div><h2 id="custom-webhook-title">Webhook</h2><p>Receive leads from any tool that can send a POST request: website form plugins, Zapier, Pabbly or your own software.</p></div>
+  return <section className="panel integration-card integration-card--webhook" aria-labelledby="custom-webhook-title"><div className="panel__body stack">
+    <div className="section-title"><IntegrationCardTitle id="custom-webhook-title" icon={Webhook} title="Webhook" description="Receive leads from any tool that can send a POST request: website form plugins, Zapier, Pabbly or your own software." />
       {overview ? <StatusBadge tone={overview.hasWebhook ? "success" : overview.webhookStopped ? "danger" : "info"}>{overview.hasWebhook ? "Receiving leads" : overview.webhookStopped ? "Disconnected" : "Not set up"}</StatusBadge> : null}
     </div>
     {message ? <Notice tone={message.tone} title={message.text} /> : null}
