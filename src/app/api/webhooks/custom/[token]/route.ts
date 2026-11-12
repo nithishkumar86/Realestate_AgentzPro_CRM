@@ -38,8 +38,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
  * A web page's form or script posting here would put the secret URL in that page's source, where any visitor can copy
  * it, so a browser request is refused and the owner sees why at the first test. Every current browser (Chrome, Edge,
  * Firefox, Safari) adds Sec-Fetch-Site to each request and a page cannot remove it; HTTP clients used on servers (curl,
- * Python, Node.js fetch) do not send it. Not Origin: a company's own server relay may forward a visitor's Origin.
- * Not Sec-Fetch-Mode: Node.js's built-in fetch sends that one.
+ * Python, Node.js fetch) do not send it. Not Origin: Sec-Fetch-Site already covers every current browser, and refusing
+ * on Origin as well could refuse a server tool that sets it. Not Sec-Fetch-Mode: Node.js's built-in fetch sends that
+ * one. A server that passes on every header from a visitor's browser is refused too; the message says what to do.
  */
 function isBrowserRequest(headers: Headers): boolean {
   return headers.has("sec-fetch-site");

@@ -59,7 +59,7 @@ describe("POST /api/webhooks/custom/[token]", () => {
     },
   );
 
-  it("accepts server software: Node.js fetch (Sec-Fetch-Mode only), curl and a relay that forwards a visitor's Origin", async () => {
+  it("accepts server software: Node.js fetch (Sec-Fetch-Mode only), curl and a server tool that sets Origin", async () => {
     mocks.ingest.mockResolvedValue({ status: 200, duplicate: false });
     const senders: Array<Record<string, string>> = [
       { "content-type": "application/json", "sec-fetch-mode": "cors", "user-agent": "node" },
