@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 const EFFECTIVE_DATE = "October 15, 2026";
-const LAST_UPDATED = "October 31, 2026";
+const LAST_UPDATED = "November 12, 2026";
 
 const TOC = [
   ["agreement", "1. Agreement to these terms"],
@@ -206,7 +206,7 @@ export default function TermsPage() {
                   or affiliated with Meta Platforms, Inc.
                 </li>
                 <li>
-                  <strong>Disconnecting.</strong> You can disconnect your Facebook Pages at any time on the Connection
+                  <strong>Disconnecting.</strong> You can disconnect your Facebook Pages at any time on the Integrations
                   page, and you can also remove our app from your Facebook account settings.
                 </li>
               </ul>
@@ -244,11 +244,11 @@ export default function TermsPage() {
                   AgentzPro, and we never combine it with other companies&apos; data.
                 </li>
                 <li>
-                  <strong>Keep your webhook key private.</strong> The webhook address and key shown on the Connection
+                  <strong>Keep your webhook key private.</strong> The webhook address and key shown on the Integrations
                   page are for your company only. Do not share them. You can replace the key at any time.
                 </li>
                 <li>
-                  <strong>Disconnecting.</strong> The company owner can disconnect Google on the Connection page at any
+                  <strong>Disconnecting.</strong> The company owner can disconnect Google on the Integrations page at any
                   time, which revokes our access, and can separately stop Google Ads leads, which refuses all new
                   deliveries. You can also remove our access at{" "}
                   <ExternalLink href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</ExternalLink>.

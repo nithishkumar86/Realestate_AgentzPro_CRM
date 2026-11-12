@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 const EFFECTIVE_DATE = "September 14, 2026";
-const LAST_UPDATED = "November 11, 2026";
+const LAST_UPDATED = "November 12, 2026";
 const GOOGLE_USER_DATA_POLICY_URL = "https://developers.google.com/terms/api-services-user-data-policy";
 
 const TOC = [
@@ -426,7 +426,7 @@ export default function PrivacyPolicyPage() {
               </p>
 
               <h3 className={styles.subheading}>6.7 Disconnecting Google and deleting Google data</h3>
-              <p>AgentzPro has two separate controls on the Connection page, both for the company owner:</p>
+              <p>AgentzPro has two separate controls on the Integrations page, both for the company owner:</p>
               <ul>
                 <li>
                   <strong>Disconnect Google sign-in.</strong> We revoke our access with Google and immediately delete
@@ -503,11 +503,11 @@ export default function PrivacyPolicyPage() {
               <ul>
                 <li><strong>Delete leads:</strong> on the Leads page, tick the leads you want to remove and press Delete.</li>
                 <li>
-                  <strong>Disconnect Facebook:</strong> the owner disconnects a Page on the Connection page. You can also
+                  <strong>Disconnect Facebook:</strong> the owner disconnects a Page on the Integrations page. You can also
                   remove AgentzPro from your Facebook account&apos;s Business Integrations settings.
                 </li>
                 <li>
-                  <strong>Disconnect Google Ads:</strong> the owner disconnects Google on the Connection page, or removes
+                  <strong>Disconnect Google Ads:</strong> the owner disconnects Google on the Integrations page, or removes
                   access at myaccount.google.com/permissions (see Section 6.7).
                 </li>
                 <li><strong>Turn off reminders:</strong> turn off notifications for AgentzPro in your browser settings.</li>
