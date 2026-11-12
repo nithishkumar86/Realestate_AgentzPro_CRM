@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { cloneElement, type ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { StatusRankChart, TimelineChart, timelineSummary } from "@/features/dashboard/dashboard-charts";
+import { LEAD_STATUSES, STATUS_HIGHLIGHTS } from "@/features/leads/lead-options";
 
 // jsdom has no layout, so ResponsiveContainer would measure 0x0 and draw nothing; give it a real size.
 vi.mock("recharts", async (importOriginal) => {
@@ -35,9 +36,25 @@ describe("StatusRankChart", () => {
     // 0-lead statuses get an empty track and no bar (the bar's min-width would otherwise show a stub).
     expect(bars.map((bar) => bar.style.width)).toEqual(["100%", "33.33333333333333%"]);
     expect(container.querySelectorAll(".dash-rank__track")).toHaveLength(5);
-    // Sale is LEAD_STATUSES[5] -> --status-6, New Lead is [0] -> --status-1, even though Sale ranks first.
-    expect(bars[0].style.background).toBe("var(--status-6)");
-    expect(bars[1].style.background).toBe("var(--status-1)");
+    // Each bar takes its status's /leads colour (Sale pink, New Lead maroon), whatever its rank.
+    expect(bars.map((bar) => bar.getAttribute("data-tone"))).toEqual(["pink", "maroon"]);
+    // No inline colour: the tone's CSS paints the bar, as on /leads.
+    expect(bars.map((bar) => bar.style.background)).toEqual(["", ""]);
+  });
+
+  it("colours every status's bar with the same tone the /leads Status box uses (STATUS_HIGHLIGHTS)", () => {
+    const { container } = render(<StatusRankChart data={LEAD_STATUSES.map((status) => ({ status, count: 1 }))} ariaLabel="Leads by status" />);
+    const tones = [...container.querySelectorAll<HTMLElement>(".dash-rank__row")].map((row) => [
+      row.querySelector(".dash-rank__name")?.textContent, row.querySelector(".dash-rank__bar")?.getAttribute("data-tone"),
+    ]);
+    expect(tones).toEqual(LEAD_STATUSES.map((status) => [status, STATUS_HIGHLIGHTS[status]]));
+  });
+
+  it("gives a status outside LEAD_STATUSES no tone, so its bar stays grey", () => {
+    const { container } = render(<StatusRankChart data={[{ status: "Some old status", count: 2 }]} ariaLabel="Leads by status" />);
+    const bar = container.querySelector<HTMLElement>(".dash-rank__bar");
+    expect(bar).not.toBeNull();
+    expect(bar).not.toHaveAttribute("data-tone");
   });
 
   it("still shows every status (all empty bars) when no leads are in view", () => {

@@ -3608,6 +3608,17 @@ button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; bord
 .dash-rank__name { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
 .dash-rank__track { height: 14px; border-radius: 999px; background: var(--surface-muted); overflow: hidden; }
 .dash-rank__bar { display: block; height: 100%; min-width: 6px; border-radius: 999px; transition: width 0.4s ease; }
+/* Leads by status bars: each status in its /leads colour (STATUS_HIGHLIGHTS). Same hexes as the /leads Status box
+   (.mvp-row-dropdown[data-tone]), in both themes; change both together. A bar with no tone stays grey. */
+.dash-rank__bar { background: var(--tone, var(--chart-muted)); }
+.dash-rank__bar[data-tone="green"] { --tone: #15803d; }
+.dash-rank__bar[data-tone="red"] { --tone: #d92d20; }
+.dash-rank__bar[data-tone="pink"] { --tone: #db2777; }
+.dash-rank__bar[data-tone="gray"] { --tone: #667085; }
+.dash-rank__bar[data-tone="blue"] { --tone: #2563eb; }
+.dash-rank__bar[data-tone="maroon"] { --tone: #7c2d12; }
+.dash-rank__bar[data-tone="yellow"] { --tone: #eab308; }
+.dash-rank__bar[data-tone="golden"] { --tone: #b45309; }
 .dash-rank__value { white-space: nowrap; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .dash-rank__value strong { color: var(--text); }
 

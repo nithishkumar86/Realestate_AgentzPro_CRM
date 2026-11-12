@@ -15,7 +15,7 @@ export const LEAD_STATUSES = [
   "Didn't pick the call",
   "Details send via WhatsApp",
   "Disqualified",
-  // Appended last on purpose: the dashboard colours each status by its position (--status-N).
+  // Appended last on purpose, so existing statuses keep their positions.
   "Asking Time for Taking Decision",
 ] as const;
 
@@ -32,9 +32,10 @@ export function isFinalLeadStatus(status: LeadStatus): boolean {
   return (FINAL_LEAD_STATUSES as readonly LeadStatus[]).includes(status);
 }
 
-// Colours every status in the leads table and the drawer's status banner, so a telecaller spots a lead's
-// stage at a glance. Single source of truth for both: `satisfies Record<LeadStatus, ...>` means a status
-// added to LEAD_STATUSES without a colour here fails the build. UI-only rule.
+// Colours every status in the leads table, the drawer's status banner and the dashboard's "Leads by status"
+// bars, so a telecaller spots a lead's stage at a glance. Single source of truth for all three:
+// `satisfies Record<LeadStatus, ...>` means a status added to LEAD_STATUSES without a colour here fails the
+// build. UI-only rule.
 export const STATUS_HIGHLIGHTS = {
   "New Lead": "maroon",
   "Not reachable": "yellow",

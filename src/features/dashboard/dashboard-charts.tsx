@@ -3,7 +3,7 @@
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { DashboardStats } from "@/lib/server/dashboard-service";
 import { CHART_COLORS, formatBucketLabel, formatBucketTooltip, formatCount, rankStatuses } from "@/features/dashboard/dashboard-format";
-import { LEAD_STATUSES, type LeadStatus } from "@/features/leads/lead-options";
+import { LEAD_STATUSES, statusHighlight, type LeadStatus } from "@/features/leads/lead-options";
 
 const LABEL_COLORS: Record<string, string> = { Hot: "var(--chart-hot)", Warm: "var(--chart-warm)", Cold: "var(--chart-cold)", "Not Interested": "var(--chart-muted)" };
 
@@ -101,7 +101,8 @@ export function labelDonutData(byLabel: DashboardStats["byLabel"]): DonutDatum[]
  * Ranked status bars: all 13 statuses every time, biggest first (0-lead statuses at the bottom), each
  * with its count and share. Plain HTML rather than an SVG chart so long status names wrap instead of
  * being cut off. Each status keeps the same colour whatever its rank, so a colour means the same
- * status after a filter change.
+ * status after a filter change. The colour is the status's /leads colour (STATUS_HIGHLIGHTS); a status
+ * outside LEAD_STATUSES gets no tone and its bar stays grey.
  */
 export function StatusRankChart({ data, ariaLabel }: { data: DashboardStats["byStatus"]; ariaLabel: string }) {
   const rows = rankStatuses(data);
@@ -110,12 +111,11 @@ export function StatusRankChart({ data, ariaLabel }: { data: DashboardStats["byS
   return <div className="dash-rank">
     <ol className="dash-rank__list" aria-label={`${ariaLabel}: ${summary}.`}>
       {rows.map((row) => {
-        const statusIndex = LEAD_STATUSES.indexOf(row.status as LeadStatus);
-        const color = statusIndex >= 0 ? `var(--status-${statusIndex + 1})` : "var(--chart-muted)";
+        const tone = (LEAD_STATUSES as readonly string[]).includes(row.status) ? statusHighlight(row.status as LeadStatus) : undefined;
         return <li key={row.status} className="dash-rank__row">
           <span className="dash-rank__name">{row.status}</span>
           <span className="dash-rank__track" aria-hidden="true">
-            {row.count > 0 ? <span className="dash-rank__bar" style={{ width: `${(row.count / max) * 100}%`, background: color }} /> : null}
+            {row.count > 0 ? <span className="dash-rank__bar" data-tone={tone} style={{ width: `${(row.count / max) * 100}%` }} /> : null}
           </span>
           <span className="dash-rank__value"><strong>{formatCount(row.count)}</strong> · {row.share}%</span>
         </li>;
