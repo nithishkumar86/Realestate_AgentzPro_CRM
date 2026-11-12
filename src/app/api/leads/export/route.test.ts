@@ -103,4 +103,15 @@ describe("authenticated lead CSV route, webhook leads", () => {
     const date = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-11-11T05:00:00Z"));
     expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`lp-42,John Doe,"${date}",New Lead,Warm,john@example.com,9876543210,Webhook,Landing Page,,`);
   });
+
+  it("leaves the Ad Name cell empty for a webhook lead sent without a source (never '-)", async () => {
+    mocks.context.mockResolvedValue({ tenantId: "tenant-a", userId: "user-a" });
+    mocks.query.mockResolvedValue({
+      timezone: "Asia/Kolkata", total: 1,
+      items: [{ leadgenId: "", leadName: "Asha", email: "asha@example.com", phone: null, facebookPage: "Webhook", adName: "-", adId: null, source: "custom_webhook", status: "New Lead", label: "Warm", leadDate: "2026-11-11T05:00:00Z", assigneeName: null }],
+    });
+    const response = await POST(new Request("http://localhost/api/leads/export", { method: "POST", body: JSON.stringify({ quickFilter: "all", source: "custom_webhook" }), headers: { "content-type": "application/json" } }));
+    const date = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date("2026-11-11T05:00:00Z"));
+    expect((await response.text()).replace(/^﻿/, "").split("\r\n")[1]).toBe(`,Asha,"${date}",New Lead,Warm,asha@example.com,,Webhook,,,`);
+  });
 });
