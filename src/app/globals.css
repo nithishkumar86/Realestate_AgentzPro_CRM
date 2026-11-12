@@ -2636,6 +2636,9 @@ button.mvp-field-box__control:disabled { pointer-events: none; opacity: .5; bord
   .mvp-user-menu { padding-top: 0; border-top: 0; }
   .mvp-user-menu__popup { top: calc(100% + 6px); bottom: auto; animation-name: user-menu-in-down; }
  .mvp-shell { grid-template-columns: 1fr; }.mvp-sidebar { position: static; height: auto; gap: 14px; padding: 14px; border-right: 0; border-bottom: 1px solid var(--border); }.mvp-sidebar__nav { grid-template-columns: repeat(3, 1fr); }.mvp-nav-link { justify-content: center; font-size: .8rem; }.mvp-main { padding: 22px 14px; }.mvp-filters { grid-template-columns: 1fr 1fr; } }
+/* Phones: the menu as 2 rows of 2. Three columns need about 381px, wider than a 360-375px screen, so every CRM page
+   scrolled sideways. Must stay after the 780px block above: same selector, so the later rule wins. */
+@media (max-width: 480px) { .mvp-sidebar__nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ---------------------------------------------------------------------- */
 /* Auth pages: login, onboarding, billing (login_system_plan.md)          */
